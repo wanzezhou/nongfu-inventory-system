@@ -1,0 +1,17 @@
+:root {
+  --primary-color: #409EFF;
+  --sidebar-bg: #1f2d3d;
+  --sidebar-text: #bfcbd9;
+  --sidebar-active-text: #409EFF;
+  --header-bg: #ffffff;
+  --content-bg: #f0f2f5;
+  --card-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+body {
+  background-color: var(--content-bg);
+}
+
+.el-menu {
+  border-right: none !important;
+}
