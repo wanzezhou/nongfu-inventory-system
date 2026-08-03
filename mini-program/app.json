@@ -1,0 +1,10 @@
+{
+  "pages": [
+    "pages/order/order",
+    "pages/success/success"
+  ],
+  "window": {
+    "navigationStyle": "custom"
+  },
+  "sitemapLocation": "sitemap.json"
+}

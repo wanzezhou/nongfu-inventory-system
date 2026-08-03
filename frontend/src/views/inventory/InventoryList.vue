@@ -26,7 +26,7 @@
               v-for="item in categoryList"
               :key="item.id"
               :label="item.name"
-              :value="item.id"
+              :value="item.name"
             />
           </el-select>
         </el-form-item>
@@ -88,7 +88,7 @@
         </el-table-column>
         <el-table-column prop="lastStockInTime" label="最后入库时间" width="170" />
         <el-table-column prop="lastStockOutTime" label="最后出库时间" width="170" />
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        <el-table-column label="操作" width="120" fixed="right" align="center" class-name="action-column">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleCheckStock(row)">
               <el-icon><Edit /></el-icon>

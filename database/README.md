@@ -21,6 +21,9 @@
 |--------|------|
 | `init.sql` | 数据库初始化脚本，创建完整的数据库表结构（9张表） |
 | `test_data.sql` | 测试数据脚本，插入示例数据用于系统测试和演示 |
+| `backup.bat` | 一键备份脚本，双击即可备份当前数据库 |
+| `restore.bat` | 一键恢复脚本，双击即可从备份恢复数据库 |
+| `backup/` | 备份文件目录，存放所有备份的 SQL 文件 |
 | `README.md` | 数据库说明文档（本文档） |
 
 ### 文件执行顺序
@@ -270,15 +273,65 @@ ORDER BY settlement_type;
 
 ---
 
-## 7. 重新初始化说明
+## 7. 数据库备份与恢复
+
+### 7.1 一键备份（推荐）
+
+直接双击 `database/backup.bat` 文件，即可自动备份当前数据库。
+
+备份文件会保存在 `database/backup/` 目录下，文件名格式：
+```
+nongfu_inventory_YYYYMMDD_HHMM.sql
+```
+
+例如：`nongfu_inventory_20260710_2323.sql`
+
+### 7.2 一键恢复
+
+直接双击 `database/restore.bat` 文件，按提示操作：
+1. 输入 `yes` 确认恢复
+2. 输入要恢复的备份文件名（如 `nongfu_inventory_20260710_2323.sql`）
+3. 等待恢复完成
+
+⚠️ **注意**：恢复操作会覆盖当前数据库的所有数据，请确认后再操作。
+
+### 7.3 命令行备份
+
+```bash
+mysqldump -u root nongfu_inventory > backup.sql
+```
+
+### 7.4 命令行恢复
+
+```bash
+mysql -u root nongfu_inventory < backup.sql
+```
+
+### 7.5 MySQL Workbench 备份
+
+1. 菜单 **Server** → **Data Export**
+2. 选择 `nongfu_inventory` 数据库
+3. 选择导出路径和文件名
+4. 点击 **Start Export**
+
+### 7.6 MySQL Workbench 恢复
+
+1. 菜单 **Server** → **Data Import**
+2. 选择备份的 SQL 文件
+3. 选择目标数据库
+4. 点击 **Start Import**
+
+---
+
+## 8. 重新初始化说明
 
 如需重新初始化数据库（清除所有数据并重建表结构），请按以下步骤操作：
 
-### 7.1 注意事项
+### 8.1 注意事项
 - **此操作将清除所有数据**，请确保已备份重要数据
 - 脚本已包含 `DROP TABLE IF EXISTS` 语句，会按外键依赖逆序删除表
 
-### 7.2 操作步骤
+### 8.2 操作步骤
 
 1. **关闭所有连接**到 `nongfu_inventory` 数据库的应用程序
 2. **执行初始化脚本**：
@@ -290,7 +343,7 @@ ORDER BY settlement_type;
    source /path/to/test_data.sql
    ```
 
-### 7.3 表删除顺序
+### 8.3 表删除顺序
 
 脚本按照以下顺序删除表（外键依赖逆序）：
 1. `financial_settlement`

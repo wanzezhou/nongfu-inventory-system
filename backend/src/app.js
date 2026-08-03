@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const { testConnection } = require('./config/db');
@@ -9,6 +10,7 @@ const inventoryRoutes = require('./routes/inventoryRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const supplierRoutes = require('./routes/supplierRoutes');
+const workerRoutes = require('./routes/workerRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,6 +19,9 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// 静态文件服务 - 商品图片
+app.use('/product_images', express.static(path.join(__dirname, '../../商品档案/商品图片')));
 
 // 测试数据库连接
 testConnection();
@@ -28,6 +33,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/suppliers', supplierRoutes);
+app.use('/api/workers', workerRoutes);
 
 // 根路由
 app.get('/', (req, res) => {

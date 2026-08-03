@@ -15,21 +15,6 @@
             </template>
           </el-input>
         </el-form-item>
-        <el-form-item label="区域">
-          <el-select
-            v-model="queryForm.area"
-            placeholder="全部区域"
-            clearable
-            style="width: 150px"
-          >
-            <el-option
-              v-for="item in areaOptions"
-              :key="item"
-              :label="item"
-              :value="item"
-            />
-          </el-select>
-        </el-form-item>
         <el-form-item label="状态">
           <el-select
             v-model="queryForm.status"
@@ -70,26 +55,6 @@
         <el-table-column prop="name" label="水站名称" min-width="150" />
         <el-table-column prop="contact" label="联系人" width="100" />
         <el-table-column prop="phone" label="联系电话" width="130" />
-        <el-table-column prop="area" label="区域" width="100" />
-        <el-table-column prop="creditLimit" label="信用额度" width="110" align="right">
-          <template #default="{ row }">
-            <span class="money-text">¥{{ formatMoney(row.creditLimit) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="currentDebt" label="当前欠款" width="110" align="right">
-          <template #default="{ row }">
-            <span :class="['money-text', row.currentDebt > 0 ? 'debt-text' : '']">
-              ¥{{ formatMoney(row.currentDebt) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="paymentMethod" label="付款方式" width="140">
-          <template #default="{ row }">
-            <el-tag :type="row.paymentMethod === 1 ? 'success' : 'warning'" size="small">
-              {{ row.paymentMethod === 1 ? '先付款后拿货' : '先拿货后付款' }}
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">
@@ -97,7 +62,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right" align="center">
+        <el-table-column label="操作" width="150" fixed="right" align="center" class-name="action-column">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
@@ -151,16 +116,6 @@
             <el-form-item label="地址" prop="address">
               <el-input v-model="stationForm.address" type="textarea" :rows="2" placeholder="请输入详细地址" />
             </el-form-item>
-            <el-form-item label="区域" prop="area">
-              <el-select v-model="stationForm.area" placeholder="请选择区域" style="width: 50%">
-                <el-option
-                  v-for="item in areaOptions"
-                  :key="item"
-                  :label="item"
-                  :value="item"
-                />
-              </el-select>
-            </el-form-item>
             <el-form-item label="状态" prop="status">
               <el-switch
                 v-model="stationForm.status"
@@ -169,30 +124,6 @@
                 active-text="启用"
                 inactive-text="停用"
               />
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="信用信息" name="credit">
-          <el-form
-            ref="creditFormRef"
-            :model="stationForm"
-            :rules="creditRules"
-            label-width="120px"
-          >
-            <el-form-item label="信用额度" prop="creditLimit">
-              <el-input-number v-model="stationForm.creditLimit" :min="0" :precision="2" :step="1000" />
-              <span class="unit-label">元</span>
-            </el-form-item>
-            <el-form-item label="付款方式" prop="paymentMethod">
-              <el-radio-group v-model="stationForm.paymentMethod">
-                <el-radio :value="1">先付款后拿货</el-radio>
-                <el-radio :value="2">先拿货后付款</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item label="当前欠款" prop="currentDebt">
-              <el-input-number v-model="stationForm.currentDebt" :min="0" :precision="2" :step="100" />
-              <span class="unit-label">元</span>
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -255,12 +186,10 @@ const activeTab = ref('basic')
 const isEdit = ref(false)
 
 const basicFormRef = ref(null)
-const creditFormRef = ref(null)
 const invoiceFormRef = ref(null)
 
 const queryForm = reactive({
   keyword: '',
-  area: '',
   status: null
 })
 
@@ -272,19 +201,13 @@ const pagination = reactive({
 
 const tableData = ref([])
 
-const areaOptions = ['朝阳区', '海淀区', '西城区', '东城区', '丰台区', '通州区']
-
 const stationForm = reactive({
   id: null,
   name: '',
   contact: '',
   phone: '',
   address: '',
-  area: '',
   status: 1,
-  creditLimit: 0,
-  paymentMethod: 1,
-  currentDebt: 0,
   bankName: '',
   bankAccount: '',
   accountName: '',
@@ -297,13 +220,7 @@ const stationForm = reactive({
 const basicRules = {
   name: [{ required: true, message: '请输入水站名称', trigger: 'blur' }],
   contact: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
-  phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }],
-  area: [{ required: true, message: '请选择区域', trigger: 'change' }]
-}
-
-const creditRules = {
-  creditLimit: [{ required: true, message: '请输入信用额度', trigger: 'blur' }],
-  paymentMethod: [{ required: true, message: '请选择付款方式', trigger: 'change' }]
+  phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }]
 }
 
 const formatMoney = (value) => {
@@ -316,13 +233,27 @@ const fetchData = async () => {
   try {
     const res = await getStations({
       keyword: queryForm.keyword,
-      area: queryForm.area,
       status: queryForm.status,
       page: pagination.page,
       pageSize: pagination.pageSize
     })
     if (res.data) {
-      tableData.value = res.data.list || res.data || []
+      const rawList = res.data.list || res.data || []
+      tableData.value = rawList.map(item => ({
+        id: item.station_id,
+        name: item.station_name,
+        contact: item.contact_name,
+        phone: item.phone,
+        address: item.address,
+        status: item.status,
+        bankName: item.bank_name || '',
+        bankAccount: item.bank_account || '',
+        accountName: item.account_name || '',
+        invoiceTitle: item.invoice_title || '',
+        taxNumber: item.tax_number || '',
+        invoiceAddress: item.invoice_address || '',
+        invoicePhone: item.invoice_phone || ''
+      }))
       pagination.total = res.data.total || tableData.value.length
     }
   } catch (error) {
@@ -338,24 +269,21 @@ const generateMockData = () => {
   const stations = []
   const names = ['朝阳路水站', '中关村水站', '西单水站', '王府井水站', '丰台科技园水站', '通州万达水站']
   const contacts = ['张三', '李四', '王五', '赵六', '钱七', '孙八']
+  const areas = ['朝阳区', '海淀区', '西城区', '东城区', '丰台区', '通州区']
   for (let i = 1; i <= 10; i++) {
     stations.push({
       id: i,
       name: names[i % names.length],
       contact: contacts[i % contacts.length],
       phone: `138${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
-      address: `北京市${areaOptions[i % areaOptions]}某某街道${i}号`,
-      area: areaOptions[i % areaOptions.length],
-      creditLimit: (Math.floor(Math.random() * 50) + 10) * 1000,
-      currentDebt: Math.floor(Math.random() * 20) * 1000,
-      paymentMethod: i % 2 === 0 ? 1 : 2,
+      address: `北京市${areas[i % areas.length]}某某街道${i}号`,
       status: i % 5 === 0 ? 0 : 1,
       bankName: '中国工商银行',
       bankAccount: '6222021234567890' + i,
       accountName: names[i % names.length],
       invoiceTitle: names[i % names.length] + '有限公司',
       taxNumber: '91110105MA012345' + String(i).padStart(2, '0'),
-      invoiceAddress: `北京市${areaOptions[i % areaOptions.length]}某某路${i}号`,
+      invoiceAddress: `北京市${areas[i % areas.length]}某某路${i}号`,
       invoicePhone: `010-${String(Math.floor(Math.random() * 10000000)).padStart(7, '0')}`
     })
   }
@@ -369,7 +297,6 @@ const handleSearch = () => {
 
 const handleReset = () => {
   queryForm.keyword = ''
-  queryForm.area = ''
   queryForm.status = null
   pagination.page = 1
   fetchData()
@@ -399,16 +326,12 @@ const handleEdit = (row) => {
   dialogTitle.value = '编辑水站'
   activeTab.value = 'basic'
   Object.assign(stationForm, {
-    id: row.id,
-    name: row.name,
-    contact: row.contact,
-    phone: row.phone,
-    address: row.address || '',
-    area: row.area,
-    status: row.status,
-    creditLimit: row.creditLimit || 0,
-    paymentMethod: row.paymentMethod || 1,
-    currentDebt: row.currentDebt || 0,
+      id: row.id,
+      name: row.name,
+      contact: row.contact,
+      phone: row.phone,
+      address: row.address || '',
+      status: row.status,
     bankName: row.bankName || '',
     bankAccount: row.bankAccount || '',
     accountName: row.accountName || '',
@@ -445,11 +368,7 @@ const resetForm = () => {
     contact: '',
     phone: '',
     address: '',
-    area: '',
     status: 1,
-    creditLimit: 0,
-    paymentMethod: 1,
-    currentDebt: 0,
     bankName: '',
     bankAccount: '',
     accountName: '',
@@ -459,23 +378,19 @@ const resetForm = () => {
     invoicePhone: ''
   })
   basicFormRef.value?.resetFields()
-  creditFormRef.value?.resetFields()
   invoiceFormRef.value?.resetFields()
 }
 
 const validateAllForms = async () => {
   try {
     await basicFormRef.value?.validate()
-    await creditFormRef.value?.validate()
     return true
   } catch (error) {
     if (error) {
-      if (['name', 'contact', 'phone', 'area'].includes(error.name)) {
-        activeTab.value = 'basic'
-      } else if (['creditLimit', 'paymentMethod'].includes(error.name)) {
-        activeTab.value = 'credit'
+        if (['name', 'contact', 'phone'].includes(error.name)) {
+          activeTab.value = 'basic'
+        }
       }
-    }
     return false
   }
 }
@@ -486,20 +401,31 @@ const handleSubmit = async () => {
 
   submitLoading.value = true
   try {
+    const payload = {
+      station_name: stationForm.name,
+      contact_name: stationForm.contact,
+      phone: stationForm.phone,
+      address: stationForm.address,
+      status: stationForm.status,
+      bank_name: stationForm.bankName,
+      bank_account: stationForm.bankAccount,
+      account_name: stationForm.accountName,
+      invoice_title: stationForm.invoiceTitle,
+      tax_number: stationForm.taxNumber,
+      invoice_address: stationForm.invoiceAddress,
+      invoice_phone: stationForm.invoicePhone
+    }
     if (isEdit.value) {
-      await updateStation(stationForm.id, stationForm)
+      await updateStation(stationForm.id, payload)
       ElMessage.success('修改成功')
     } else {
-      await createStation(stationForm)
+      await createStation(payload)
       ElMessage.success('新增成功')
     }
     dialogVisible.value = false
     fetchData()
   } catch (error) {
     console.error('提交失败:', error)
-    ElMessage.success(isEdit.value ? '修改成功' : '新增成功')
-    dialogVisible.value = false
-    fetchData()
   } finally {
     submitLoading.value = false
   }

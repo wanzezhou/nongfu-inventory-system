@@ -26,7 +26,7 @@
               v-for="item in categoryList"
               :key="item.id"
               :label="item.name"
-              :value="item.id"
+              :value="item.name"
             />
           </el-select>
         </el-form-item>
@@ -87,17 +87,37 @@
         <el-table-column prop="unit" label="单位" width="80" />
         <el-table-column prop="purchasePrice" label="进货价" width="100">
           <template #default="{ row }">
-            <span class="price-text">¥{{ row.purchasePrice?.toFixed(2) || '0.00' }}</span>
+            <span class="price-text">¥{{ Number(row.purchasePrice || 0).toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="wholesalePrice" label="批发价" width="100">
+        <el-table-column prop="wholesalePrice" label="分销价" width="100">
           <template #default="{ row }">
-            <span class="price-text">¥{{ row.wholesalePrice?.toFixed(2) || '0.00' }}</span>
+            <span class="price-text">¥{{ Number(row.wholesalePrice || 0).toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="retailPrice" label="零售价" width="100">
+        <el-table-column prop="totalDeliveryFee" label="总包配送费" width="110">
           <template #default="{ row }">
-            <span class="price-text">¥{{ row.retailPrice?.toFixed(2) || '0.00' }}</span>
+            <span class="fee-text">¥{{ Number(row.totalDeliveryFee || 0).toFixed(2) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="distributionDeliveryFee" label="水站分销配送费" width="130">
+          <template #default="{ row }">
+            <span class="fee-text">¥{{ Number(row.distributionDeliveryFee || 0).toFixed(2) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="workerRetailDeliveryFee" label="工人零售配送费" width="130">
+          <template #default="{ row }">
+            <span class="fee-text">¥{{ Number(row.workerRetailDeliveryFee || 0).toFixed(2) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="workerStationDeliveryFee" label="工人水站配送费" width="130">
+          <template #default="{ row }">
+            <span class="fee-text">¥{{ Number(row.workerStationDeliveryFee || 0).toFixed(2) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="workerVendingDeliveryFee" label="工人零售机配送费" width="140">
+          <template #default="{ row }">
+            <span class="fee-text">¥{{ Number(row.workerVendingDeliveryFee || 0).toFixed(2) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="stock" label="库存数量" width="100" align="center">
@@ -118,7 +138,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right" align="center">
+        <el-table-column label="操作" width="150" fixed="right" align="center" class-name="action-column">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
@@ -217,12 +237,8 @@
               <el-input-number v-model="productForm.purchasePrice" :min="0" :precision="2" :step="0.5" />
               <span class="unit-label">元</span>
             </el-form-item>
-            <el-form-item label="批发价" prop="wholesalePrice">
+            <el-form-item label="分销价" prop="wholesalePrice">
               <el-input-number v-model="productForm.wholesalePrice" :min="0" :precision="2" :step="0.5" />
-              <span class="unit-label">元</span>
-            </el-form-item>
-            <el-form-item label="零售价" prop="retailPrice">
-              <el-input-number v-model="productForm.retailPrice" :min="0" :precision="2" :step="0.5" />
               <span class="unit-label">元</span>
             </el-form-item>
           </el-form>
@@ -239,12 +255,16 @@
               <el-input-number v-model="productForm.totalDeliveryFee" :min="0" :precision="2" :step="0.5" />
               <span class="unit-label">元</span>
             </el-form-item>
-            <el-form-item label="分销配送费" prop="distributionDeliveryFee">
+            <el-form-item label="水站分销配送费" prop="distributionDeliveryFee">
               <el-input-number v-model="productForm.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" />
               <span class="unit-label">元</span>
             </el-form-item>
             <el-form-item label="工人零售配送费" prop="workerRetailDeliveryFee">
               <el-input-number v-model="productForm.workerRetailDeliveryFee" :min="0" :precision="2" :step="0.5" />
+              <span class="unit-label">元</span>
+            </el-form-item>
+            <el-form-item label="工人水站配送费" prop="workerStationDeliveryFee">
+              <el-input-number v-model="productForm.workerStationDeliveryFee" :min="0" :precision="2" :step="0.5" />
               <span class="unit-label">元</span>
             </el-form-item>
             <el-form-item label="工人零售机配送费" prop="workerVendingDeliveryFee">
@@ -313,7 +333,6 @@ const productForm = reactive({
   status: 1,
   purchasePrice: 0,
   wholesalePrice: 0,
-  retailPrice: 0,
   vendingPrice: 0,
   totalDeliveryFee: 0,
   distributionDeliveryFee: 0,
@@ -330,8 +349,7 @@ const basicRules = {
 
 const priceRules = {
   purchasePrice: [{ required: true, message: '请输入进货价', trigger: 'blur' }],
-  wholesalePrice: [{ required: true, message: '请输入批发价', trigger: 'blur' }],
-  retailPrice: [{ required: true, message: '请输入零售价', trigger: 'blur' }]
+  wholesalePrice: []
 }
 
 const deliveryRules = {}
@@ -372,7 +390,6 @@ const generateMockData = () => {
       unit: '瓶',
       purchasePrice: (Math.random() * 10 + 1).toFixed(2) * 1,
       wholesalePrice: (Math.random() * 15 + 2).toFixed(2) * 1,
-      retailPrice: (Math.random() * 20 + 3).toFixed(2) * 1,
       stock: Math.floor(Math.random() * 1000),
       status: i % 5 === 0 ? 0 : 1,
       categoryId: (i % 3) + 1
@@ -444,7 +461,6 @@ const handleEdit = (row) => {
     status: row.status,
     purchasePrice: row.purchasePrice || 0,
     wholesalePrice: row.wholesalePrice || 0,
-    retailPrice: row.retailPrice || 0,
     vendingPrice: row.vendingPrice || 0,
     totalDeliveryFee: row.totalDeliveryFee || 0,
     distributionDeliveryFee: row.distributionDeliveryFee || 0,
@@ -507,7 +523,6 @@ const resetForm = () => {
     status: 1,
     purchasePrice: 0,
     wholesalePrice: 0,
-    retailPrice: 0,
     vendingPrice: 0,
     totalDeliveryFee: 0,
     distributionDeliveryFee: 0,
@@ -530,9 +545,7 @@ const validateAllForms = async () => {
       if (error.name === 'code' || error.name === 'name' || error.name === 'categoryId') {
         activeTab.value = 'basic'
       } else if (
-        error.name === 'purchasePrice' ||
-        error.name === 'wholesalePrice' ||
-        error.name === 'retailPrice'
+        error.name === 'purchasePrice'
       ) {
         activeTab.value = 'price'
       }
@@ -601,6 +614,11 @@ onMounted(() => {
   font-weight: 500;
 }
 
+.fee-text {
+  color: #67c23a;
+  font-weight: 500;
+}
+
 .pagination-wrapper {
   margin-top: 20px;
   display: flex;
@@ -632,7 +650,7 @@ onMounted(() => {
 }
 
 .avatar-uploader:hover {
-  border-color: #409EFF;
+  border-color: #C7000B;
 }
 
 .avatar-uploader-icon {

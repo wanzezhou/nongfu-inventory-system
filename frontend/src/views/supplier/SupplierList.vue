@@ -72,7 +72,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right" align="center">
+        <el-table-column label="操作" width="150" fixed="right" align="center" class-name="action-column">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
@@ -247,7 +247,21 @@ const fetchData = async () => {
       pageSize: pagination.pageSize
     })
     if (res.data) {
-      tableData.value = res.data.list || res.data || []
+      const rawList = res.data.list || res.data || []
+      tableData.value = rawList.map(item => ({
+        supplierId: item.supplier_id,
+        supplierName: item.supplier_name,
+        contactName: item.contact_name,
+        phone: item.phone,
+        address: item.address,
+        bankName: item.bank_name || '',
+        bankAccount: item.bank_account || '',
+        accountName: item.account_name || '',
+        taxNumber: item.tax_number || '',
+        invoiceTitle: item.invoice_title || '',
+        status: item.status,
+        remark: item.remark || ''
+      }))
       pagination.total = res.data.total || tableData.value.length
     }
   } catch (error) {
@@ -362,20 +376,30 @@ const handleSubmit = async () => {
 
   submitLoading.value = true
   try {
+    const payload = {
+      supplier_name: supplierForm.supplierName,
+      contact_name: supplierForm.contactName,
+      phone: supplierForm.phone,
+      address: supplierForm.address,
+      bank_name: supplierForm.bankName,
+      bank_account: supplierForm.bankAccount,
+      account_name: supplierForm.accountName,
+      tax_number: supplierForm.taxNumber,
+      invoice_title: supplierForm.invoiceTitle,
+      status: supplierForm.status,
+      remark: supplierForm.remark
+    }
     if (isEdit.value) {
-      await updateSupplier(supplierForm.supplierId, supplierForm)
+      await updateSupplier(supplierForm.supplierId, payload)
       ElMessage.success('修改成功')
     } else {
-      await addSupplier(supplierForm)
+      await addSupplier(payload)
       ElMessage.success('新增成功')
     }
     dialogVisible.value = false
     fetchData()
   } catch (error) {
     console.error('提交失败:', error)
-    ElMessage.success(isEdit.value ? '修改成功' : '新增成功')
-    dialogVisible.value = false
-    fetchData()
   } finally {
     submitLoading.value = false
   }

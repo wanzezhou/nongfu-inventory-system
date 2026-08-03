@@ -1,0 +1,204 @@
+<view class="page">
+  <!-- 品牌区：多层渐变 + 装饰光斑 -->
+  <view class="brand-bar">
+    <view class="brand-deco-circle deco-1"></view>
+    <view class="brand-deco-circle deco-2"></view>
+    <view class="brand-content">
+      <view class="brand-title">
+        <text class="brand-name">农夫山泉</text>
+        <text class="brand-sys">经销商订货系统</text>
+      </view>
+      <text class="brand-sub">{{editMode ? '编辑订单信息后重新提交' : '天然水 · 自然配送'}}</text>
+    </view>
+  </view>
+
+  <scroll-view class="content" scroll-y>
+    <!-- 客户信息卡片 -->
+    <view class="card card-stagger" style="animation-delay: 0.05s">
+      <view class="card-header">
+        <view class="card-accent-bar"></view>
+        <text class="card-title">客户信息</text>
+      </view>
+      <view class="input-group">
+        <view class="field">
+          <text class="field-label">订单类型 <text class="required">*</text></text>
+          <picker class="field-picker" mode="selector" range="{{orderTypeNames}}" value="{{selectedOrderTypeIndex}}" bindchange="onOrderTypeChange">
+            <view class="picker-display">
+              <text>{{orderTypeNames[selectedOrderTypeIndex]}}</text>
+              <text class="picker-arrow">›</text>
+            </view>
+          </picker>
+        </view>
+        <view class="field">
+          <text class="field-label">创建人 <text class="required">*</text></text>
+          <picker class="field-picker" mode="selector" range="{{workerNames}}" value="{{selectedWorkerIndex}}" bindchange="onWorkerChange">
+            <view class="picker-display {{selectedWorkerIndex < 0 ? 'placeholder' : ''}}">
+              <text>{{selectedWorkerIndex < 0 ? '请选择创建人' : workerNames[selectedWorkerIndex]}}</text>
+              <text class="picker-arrow">›</text>
+            </view>
+          </picker>
+        </view>
+        <!-- 水站分销/返货：选择水站 -->
+        <view wx:if="{{selectedOrderType === 2 || selectedOrderType === 5}}" class="field">
+          <text class="field-label">水站名称 <text class="required">*</text></text>
+          <picker class="field-picker" mode="selector" range="{{stationNames}}" value="{{selectedStationIndex}}" bindchange="onStationChange">
+            <view class="picker-display {{selectedStationIndex < 0 ? 'placeholder' : ''}}">
+              <text>{{selectedStationIndex < 0 ? '请选择水站' : stationNames[selectedStationIndex]}}</text>
+              <text class="picker-arrow">›</text>
+            </view>
+          </picker>
+        </view>
+        <view wx:if="{{selectedOrderType === 2 || selectedOrderType === 5}}" class="field">
+          <text class="field-label">联系人</text>
+          <view class="field-display {{!form.customerName ? 'placeholder' : ''}}">
+            <text>{{form.customerName}}</text>
+          </view>
+        </view>
+        <view wx:if="{{selectedOrderType === 2 || selectedOrderType === 5}}" class="field">
+          <text class="field-label">联系电话</text>
+          <view class="field-display {{!form.customerPhone ? 'placeholder' : ''}}">
+            <text>{{form.customerPhone}}</text>
+          </view>
+        </view>
+        <view wx:if="{{selectedOrderType === 2 || selectedOrderType === 5}}" class="field">
+          <text class="field-label">水站地址</text>
+          <view class="field-display {{!form.customerAddress ? 'placeholder' : ''}}">
+            <text>{{form.customerAddress}}</text>
+          </view>
+        </view>
+        <!-- 非水站类型：手动输入客户信息 -->
+        <view wx:if="{{selectedOrderType !== 2 && selectedOrderType !== 5}}" class="field">
+          <text class="field-label">客户姓名 <text class="required">*</text></text>
+          <input class="field-input" placeholder="请输入客户姓名" value="{{form.customerName}}" bindinput="onCustomerNameInput" placeholder-class="placeholder" />
+        </view>
+        <view wx:if="{{selectedOrderType !== 2 && selectedOrderType !== 5}}" class="field">
+          <text class="field-label">联系电话 <text class="required">*</text></text>
+          <input class="field-input" placeholder="请输入联系电话" type="number" value="{{form.customerPhone}}" bindinput="onCustomerPhoneInput" placeholder-class="placeholder" />
+        </view>
+        <view wx:if="{{selectedOrderType !== 2 && selectedOrderType !== 5}}" class="field">
+          <text class="field-label">配送地址</text>
+          <textarea class="field-textarea" placeholder="请输入配送地址" value="{{form.customerAddress}}" bindinput="onCustomerAddressInput" placeholder-class="placeholder" />
+        </view>
+      </view>
+    </view>
+
+    <!-- 商品明细卡片 -->
+    <view class="card card-stagger" style="animation-delay: 0.12s">
+      <view class="card-header between">
+        <view class="header-left">
+          <view class="card-accent-bar"></view>
+          <text class="card-title">商品明细</text>
+        </view>
+        <view class="add-btn" bindtap="showProductPicker">
+          <text class="add-icon">+</text>
+          <text>添加商品</text>
+        </view>
+      </view>
+
+      <view wx:if="{{orderItems.length === 0}}" class="empty-state">
+        <view class="empty-icon-wrap">
+          <text class="empty-icon">📦</text>
+        </view>
+        <text class="empty-text">还没有添加商品</text>
+        <text class="empty-hint">点击右上角添加商品开始下单</text>
+      </view>
+
+      <view wx:else class="item-list">
+        <view wx:for="{{orderItems}}" wx:key="id" class="item-card" style="animation-delay: {{index * 0.04}}s">
+          <view class="remove-btn" bindtap="removeItem" data-index="{{index}}">
+            <text class="remove-icon">✕</text>
+          </view>
+          <view class="item-content">
+            <view class="item-main">
+              <view class="item-meta">
+                <text class="item-name">{{item.productName}}</text>
+                <text class="item-spec">{{item.spec}}</text>
+              </view>
+            </view>
+            <view class="item-actions">
+              <view wx:if="{{selectedOrderType == 2 || selectedOrderType == 3}}" class="price-control">
+                <text class="price-label">{{selectedOrderType == 2 ? '分销价' : '零售价'}}</text>
+                <text class="price-prefix">¥</text>
+                <input class="price-input" type="digit" value="{{item.unitPrice}}" bindinput="onPriceInput" data-index="{{index}}" />
+              </view>
+              <view class="qty-control-wrapper">
+                <text class="qty-label">数量</text>
+                <view class="qty-control">
+                  <view class="qty-btn {{item.quantity <= 1 ? 'disabled' : ''}}" bindtap="decreaseQty" data-index="{{index}}">-</view>
+                  <input class="qty-input" type="number" value="{{item.quantity}}" bindinput="onQtyInput" data-index="{{index}}" />
+                  <view class="qty-btn" bindtap="increaseQty" data-index="{{index}}">+</view>
+                </view>
+              </view>
+              <view class="item-subtotal-inline">
+                <text class="subtotal-label">小计</text>
+                <text class="subtotal-value">¥{{item.subtotalStr}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 订单备注卡片 -->
+    <view class="card card-stagger" style="animation-delay: 0.19s">
+      <view class="card-header">
+        <view class="card-accent-bar"></view>
+        <text class="card-title">订单备注</text>
+      </view>
+      <textarea class="remark-textarea" placeholder="请输入备注信息（选填）" value="{{form.remark}}" bindinput="onRemarkInput" placeholder-class="placeholder" />
+    </view>
+
+    <view class="bottom-space"></view>
+  </scroll-view>
+
+  <!-- 底部栏：毛玻璃 + 层次阴影 -->
+  <view class="bottom-bar">
+    <view class="total-wrap">
+      <view class="total-breakdown">
+        <view class="breakdown-row">
+          <text class="breakdown-label">商品金额</text>
+          <text class="breakdown-value">¥{{orderAmountStr}}</text>
+        </view>
+        <view class="breakdown-row" wx:if="{{deliveryFee > 0}}">
+          <text class="breakdown-label">配送费</text>
+          <text class="breakdown-value">¥{{deliveryFeeStr}}</text>
+        </view>
+      </view>
+      <view class="total-row">
+        <text class="total-label">应收总额</text>
+        <text class="total-price">¥{{totalAmountStr}}</text>
+      </view>
+    </view>
+    <button class="submit-btn {{orderItems.length === 0 ? 'disabled' : ''}}" bindtap="submitOrder" loading="{{submitting}}" disabled="{{submitting || orderItems.length === 0}}">
+      {{editMode ? '保存修改' : '提交订单'}}
+    </button>
+  </view>
+
+  <!-- 商品选择弹窗：底部抽屉式 -->
+  <view wx:if="{{showPicker}}" class="modal-mask" bindtap="hideProductPicker">
+    <view class="modal-panel" catchtap="preventBubble">
+      <view class="modal-handle"></view>
+      <view class="modal-header">
+        <text class="modal-title">选择商品</text>
+        <view class="modal-close" bindtap="hideProductPicker">✕</view>
+      </view>
+      <view class="modal-search">
+        <input class="search-input" placeholder="搜索商品名称" value="{{searchKeyword}}" bindinput="onSearchInput" placeholder-class="placeholder" confirm-type="search" />
+      </view>
+      <scroll-view class="modal-scroll" scroll-y>
+        <view wx:if="{{filteredProducts.length === 0}}" class="modal-empty">
+          <text>暂无匹配商品</text>
+        </view>
+        <view wx:for="{{filteredProducts}}" wx:key="id" class="product-card {{item.stock <= 0 ? 'out-stock' : ''}}" bindtap="selectProduct" data-id="{{item.id}}">
+          <view class="product-info">
+            <image wx:if="{{item.image}}" class="product-thumb" src="{{item.image}}" mode="aspectFill" />
+            <view wx:else class="product-thumb-placeholder">
+              <text class="placeholder-text">{{item.name[0]}}</text>
+            </view>
+            <text class="product-name {{item.stock <= 0 ? 'name-dim' : ''}}">{{item.name}}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>

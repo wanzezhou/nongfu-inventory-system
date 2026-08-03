@@ -8,13 +8,36 @@ function generatePurchaseId() {
   return `PR${timestamp}${random}`;
 }
 
+// 格式化库存数据，转成前端需要的驼峰命名
+function formatInventory(item, baseUrl) {
+  if (!item) return null;
+  return {
+    id: item.product_id,
+    inventoryId: item.inventory_id,
+    code: item.product_code,
+    name: item.product_name,
+    spec: item.specification,
+    unit: item.unit,
+    category: item.category,
+    stock: Number(item.quantity) || 0,
+    lastStockInTime: item.last_in_time,
+    lastStockOutTime: item.last_out_time,
+    updatedAt: item.updated_at,
+    image: item.image_url ? `${baseUrl}${item.image_url}` : null
+  };
+}
+
 // 获取库存列表
 async function getInventoryList(req, res) {
   try {
-    const { keyword, category, page = 1, pageSize = 10, sortBy = 'quantity', sortOrder = 'desc' } = req.query;
+    const { keyword, category, categoryId, page = 1, pageSize = 10, sortBy = 'quantity', sortOrder = 'desc', sortProp } = req.query;
 
-    // 构建查询条件
-    let whereClause = 'WHERE i.quantity IS NOT NULL';
+    // 兼容前端传的 categoryId 和 sortProp
+    const actualCategory = category || categoryId;
+    const actualSortBy = sortBy || sortProp || 'quantity';
+
+    // 构建查询条件 - 以products表为主表，LEFT JOIN inventory
+    let whereClause = 'WHERE p.status = 1';
     const params = [];
 
     // 关键词模糊搜索（商品名称或商品编码）
@@ -24,21 +47,21 @@ async function getInventoryList(req, res) {
     }
 
     // 分类筛选
-    if (category) {
+    if (actualCategory) {
       whereClause += ' AND p.category = ?';
-      params.push(category);
+      params.push(actualCategory);
     }
 
     // 验证排序字段，防止SQL注入
-    const allowedSortFields = ['quantity', 'last_in_time', 'last_out_time', 'updated_at'];
-    const actualSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'quantity';
+    const allowedSortFields = ['quantity', 'last_in_time', 'last_out_time', 'updated_at', 'product_name', 'product_code'];
+    const sortField = allowedSortFields.includes(actualSortBy) ? actualSortBy : 'quantity';
     const actualSortOrder = sortOrder === 'asc' ? 'ASC' : 'DESC';
 
     // 计算总数
     const countSql = `
-      SELECT COUNT(*) as total 
-      FROM inventory i
-      LEFT JOIN products p ON i.product_id = p.product_id
+      SELECT COUNT(*) as total
+      FROM products p
+      LEFT JOIN inventory i ON p.product_id = i.product_id
       ${whereClause}
     `;
     const [countResult] = await pool.execute(countSql, params);
@@ -50,9 +73,9 @@ async function getInventoryList(req, res) {
     const offset = (currentPage - 1) * size;
 
     const listSql = `
-      SELECT 
+      SELECT
         i.inventory_id,
-        i.product_id,
+        p.product_id,
         i.quantity,
         i.last_in_time,
         i.last_out_time,
@@ -62,18 +85,22 @@ async function getInventoryList(req, res) {
         p.specification,
         p.unit,
         p.category,
+        p.image_url,
         p.purchase_price,
         p.wholesale_price,
         p.retail_price
-      FROM inventory i
-      LEFT JOIN products p ON i.product_id = p.product_id
+      FROM products p
+      LEFT JOIN inventory i ON p.product_id = i.product_id
       ${whereClause}
-      ORDER BY i.${actualSortBy} ${actualSortOrder}
+      ORDER BY i.${sortField} ${actualSortOrder}
       LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}
     `;
     const [list] = await pool.execute(listSql, params);
 
-    return pagination(res, list, total, currentPage, size);
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const formattedList = list.map(item => formatInventory(item, baseUrl));
+
+    return pagination(res, formattedList, total, currentPage, size);
   } catch (err) {
     console.error('获取库存列表失败:', err);
     return error(res, '获取库存列表失败: ' + err.message);
@@ -122,7 +149,12 @@ async function getInventoryByProductId(req, res) {
 async function stockIn(req, res) {
   const connection = await pool.getConnection();
   try {
-    const { product_id, quantity, unit_price, supplier_id, remark } = req.body;
+    // 兼容驼峰和蛇形命名
+    const product_id = req.body.product_id || req.body.productId;
+    const quantity = req.body.quantity;
+    const unit_price = req.body.unit_price ?? req.body.unitPrice ?? 0;
+    const supplier_id = req.body.supplier_id || req.body.supplierId;
+    const remark = req.body.remark;
 
     // 校验必填字段
     if (!product_id || !quantity) {
@@ -225,7 +257,11 @@ async function stockIn(req, res) {
 async function stockOut(req, res) {
   const connection = await pool.getConnection();
   try {
-    const { product_id, quantity, out_type, remark } = req.body;
+    // 兼容驼峰和蛇形命名
+    const product_id = req.body.product_id || req.body.productId;
+    const quantity = req.body.quantity;
+    const out_type = req.body.out_type || req.body.type || 1;
+    const remark = req.body.remark;
 
     // 校验必填字段
     if (!product_id || !quantity) {

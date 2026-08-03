@@ -2,15 +2,24 @@
   <el-container class="main-layout">
     <el-aside :width="isCollapse ? '64px' : '220px'" class="sidebar">
       <div class="logo">
-        <span v-if="!isCollapse" class="logo-text">农夫山泉</span>
-        <span v-else class="logo-text">农</span>
+        <div class="logo-icon" v-if="!isCollapse">
+          <svg viewBox="0 0 32 32" class="logo-svg" fill="none">
+            <path d="M16 4C16 4 6 14 6 21C6 26.5 10.5 29 16 29C21.5 29 26 26.5 26 21C26 14 16 4 16 4Z" fill="#C7000B" opacity="0.9"/>
+            <path d="M16 10C16 10 10 16 10 21C10 23.8 12.5 25.5 16 25.5C19.5 25.5 22 23.8 22 21C22 16 16 10 16 10Z" fill="#ffffff" opacity="0.85"/>
+          </svg>
+        </div>
+        <div class="logo-text-wrapper" v-if="!isCollapse">
+          <span class="logo-text">农夫山泉</span>
+          <span class="logo-subtitle">经销商管理系统</span>
+        </div>
+        <span v-else class="logo-text-collapsed">农</span>
       </div>
       <el-menu
         :default-active="activeMenu"
         :collapse="isCollapse"
-        :background-color="'#1f2d3d'"
-        :text-color="'#bfcbd9'"
-        :active-text-color="'#409EFF'"
+        :background-color="'#1A1A2E'"
+        :text-color="'#8E8E9E'"
+        :active-text-color="'#ffffff'"
         router
         class="sidebar-menu"
       >
@@ -38,7 +47,15 @@
           <el-icon><OfficeBuilding /></el-icon>
           <template #title>供应商管理</template>
         </el-menu-item>
+        <el-menu-item index="/worker">
+          <el-icon><User /></el-icon>
+          <template #title>员工管理</template>
+        </el-menu-item>
       </el-menu>
+      <div class="sidebar-footer" v-if="!isCollapse">
+        <div class="sidebar-footer-line"></div>
+        <span class="sidebar-footer-text">NONGFU SPRING</span>
+      </div>
     </el-aside>
 
     <el-container>
@@ -54,8 +71,7 @@
           <span class="current-date">{{ currentDate }}</span>
           <el-dropdown>
             <div class="user-info">
-              <el-avatar :size="32" src="https://cube.elemecdn.com/3/7c/3ea6beec64369c2042693f20991d9.jpeg">
-              </el-avatar>
+              <el-avatar :size="32" class="admin-avatar">管</el-avatar>
               <span class="username">管理员</span>
             </div>
             <template #dropdown>
@@ -108,67 +124,265 @@ const toggleCollapse = () => {
 <style scoped>
 .main-layout {
   height: 100vh;
-}
-
-.sidebar {
-  background-color: #1f2d3d;
-  transition: width 0.3s;
   overflow: hidden;
 }
 
+/* ===== 侧边栏：深色质感 + 多层光照 ===== */
+.sidebar {
+  background: 
+    radial-gradient(ellipse at top left, rgba(199, 0, 11, 0.08) 0%, transparent 40%),
+    linear-gradient(180deg, #1A1A2E 0%, #12121F 100%);
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  box-shadow: 
+    inset 1px 0 0 rgba(255, 255, 255, 0.04),
+    inset -1px 0 0 rgba(0, 0, 0, 0.3),
+    4px 0 32px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, 
+    rgba(199, 0, 11, 0.15) 0%, 
+    rgba(255, 255, 255, 0.03) 30%, 
+    rgba(255, 255, 255, 0.02) 70%,
+    rgba(199, 0, 11, 0.08) 100%);
+}
+
 .logo {
-  height: 60px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #1f2d3d;
-  color: #fff;
-  font-size: 18px;
-  font-weight: bold;
-  border-bottom: 1px solid #2d3e50;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.logo::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(199, 0, 11, 0.2), transparent);
+}
+
+.logo-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  animation: logoFloat 5s ease-in-out infinite;
+  position: relative;
+}
+
+.logo-icon::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(199, 0, 11, 0.3) 0%, transparent 70%);
+  animation: logoPulse 3s ease-in-out infinite;
+}
+
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-2px) rotate(1deg); }
+}
+
+@keyframes logoPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+}
+
+.logo-svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 2px 8px rgba(199, 0, 11, 0.5));
+  position: relative;
+  z-index: 1;
+}
+
+.logo-text-wrapper {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
 }
 
 .logo-text {
-  color: #409EFF;
-  font-size: 18px;
-  font-weight: bold;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
   white-space: nowrap;
+  background: linear-gradient(135deg, #ffffff 0%, #E0E0E8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.logo-subtitle {
+  color: rgba(142, 142, 158, 0.75);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.logo-text-collapsed {
+  color: #C7000B;
+  font-size: 24px;
+  font-weight: 700;
+  text-shadow: 0 0 16px rgba(199, 0, 11, 0.6);
+  animation: collapsedGlow 2.5s ease-in-out infinite;
+}
+
+@keyframes collapsedGlow {
+  0%, 100% { text-shadow: 0 0 12px rgba(199, 0, 11, 0.4); }
+  50% { text-shadow: 0 0 20px rgba(199, 0, 11, 0.7); }
 }
 
 .sidebar-menu {
   border-right: none;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 0;
 }
 
+.sidebar-menu::-webkit-scrollbar {
+  width: 3px;
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.sidebar-footer {
+  padding: 16px 20px;
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  position: relative;
+}
+
+.sidebar-footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+}
+
+.sidebar-footer-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  margin-bottom: 12px;
+}
+
+.sidebar-footer-text {
+  font-size: 9px;
+  color: #3A3A4A;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* ===== 顶栏：苹果级毛玻璃 ===== */
 .header {
-  background-color: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  box-shadow: 
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    0 4px 20px rgba(0, 0, 0, 0.02);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 28px;
+  height: 60px;
+  position: relative;
+  z-index: 10;
+}
+
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(0, 0, 0, 0.04) 20%, 
+    rgba(0, 0, 0, 0.04) 80%, 
+    transparent 100%);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
 }
 
 .collapse-btn {
   font-size: 20px;
   cursor: pointer;
-  color: #606266;
-  transition: color 0.3s;
+  color: #8E8E9E;
+  padding: 8px;
+  border-radius: 10px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .collapse-btn:hover {
-  color: #409EFF;
+  color: #C7000B;
+  background-color: rgba(199, 0, 11, 0.06);
+  transform: scale(1.08);
+}
+
+.collapse-btn:active {
+  transform: scale(0.9);
+  transition-duration: 0.1s;
 }
 
 .page-title {
-  font-size: 18px;
-  font-weight: 500;
-  color: #303133;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1A1A2E;
+  letter-spacing: 0.3px;
+  animation: titleFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes titleFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .header-right {
@@ -178,8 +392,19 @@ const toggleCollapse = () => {
 }
 
 .current-date {
-  color: #606266;
-  font-size: 14px;
+  color: #9E9EAE;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  transition: all 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.current-date:hover {
+  background: rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
 }
 
 .user-info {
@@ -187,43 +412,185 @@ const toggleCollapse = () => {
   align-items: center;
   gap: 10px;
   cursor: pointer;
+  padding: 5px 14px 5px 5px;
+  border-radius: 22px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.user-info:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.user-info:active {
+  transform: scale(0.96);
+  transition-duration: 0.1s;
 }
 
 .username {
-  color: #303133;
-  font-size: 14px;
+  color: #1A1A2E;
+  font-size: 13px;
+  font-weight: 500;
 }
 
+.admin-avatar {
+  background: linear-gradient(135deg, #C7000B 0%, #8A0007 100%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 
+    0 2px 10px rgba(199, 0, 11, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-avatar::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.2) 50%, transparent 70%);
+  animation: avatarShine 4s ease-in-out infinite;
+}
+
+@keyframes avatarShine {
+  0%, 100% { transform: translate(-100%, -100%); }
+  50% { transform: translate(0%, 0%); }
+}
+
+/* ===== 主内容区 ===== */
 .main-content {
-  background-color: #f0f2f5;
-  padding: 20px;
+  background-color: #F5F5F7;
+  padding: 28px;
   overflow-y: auto;
+  position: relative;
+}
+
+.main-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.main-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+}
+
+.main-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .page-placeholder {
   background: #fff;
   padding: 60px;
   text-align: center;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .page-placeholder h2 {
-  color: #303133;
+  color: #1A1A2E;
   margin-bottom: 12px;
 }
 
 .page-placeholder p {
-  color: #909399;
+  color: #8E8E9E;
 }
 
-.fade-enter-active,
+/* ===== 页面切换动画：弹性曲线 ===== */
+.fade-enter-active {
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .fade-leave-active {
-  transition: opacity 0.3s ease;
+  transition: all 0.25s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.fade-enter-from,
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(16px) scale(0.98);
+  filter: blur(2px);
+}
+
 .fade-leave-to {
   opacity: 0;
+  transform: translateY(-8px) scale(0.99);
+}
+
+/* ===== 菜单项：苹果级精致交互 ===== */
+:deep(.el-menu-item) {
+  margin: 4px 10px;
+  border-radius: 10px;
+  height: 46px;
+  line-height: 46px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+:deep(.el-menu-item::before) {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent);
+  transition: left 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+:deep(.el-menu-item:hover::before) {
+  left: 100%;
+}
+
+:deep(.el-menu-item:hover) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  transform: translateX(2px);
+}
+
+:deep(.el-menu-item.is-active) {
+  background: linear-gradient(135deg, #C7000B 0%, #9A0008 100%) !important;
+  color: #ffffff !important;
+  border-radius: 10px;
+  box-shadow: 
+    0 6px 16px rgba(199, 0, 11, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  transform: translateX(0);
+  animation: activeItemGlow 3s ease-in-out infinite;
+}
+
+@keyframes activeItemGlow {
+  0%, 100% {
+    box-shadow: 
+      0 6px 16px rgba(199, 0, 11, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  }
+  50% {
+    box-shadow: 
+      0 8px 20px rgba(199, 0, 11, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  }
+}
+
+:deep(.el-menu-item.is-active::after) {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 22px;
+  background: #C7000B;
+  border-radius: 0 3px 3px 0;
+  box-shadow: 
+    0 0 10px rgba(199, 0, 11, 0.8),
+    0 0 4px rgba(199, 0, 11, 1);
 }
 </style>

@@ -179,6 +179,7 @@ CREATE TABLE orders (
     payment_status          TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '付款状态：0-未付款，1-已付款，2-部分付款',
     paid_amount             DECIMAL(12,2)   NOT NULL DEFAULT 0.00 COMMENT '已付款金额',
     order_status            TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '订单状态：0-待处理，1-已发货，2-已完成，3-已取消',
+    created_by              VARCHAR(50)     DEFAULT NULL COMMENT '创建人ID，外键关联workers表',
     remark                  VARCHAR(500)    DEFAULT NULL COMMENT '备注',
     created_at              DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at              DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -186,11 +187,13 @@ CREATE TABLE orders (
     KEY idx_order_type (order_type),
     KEY idx_station (station_id),
     KEY idx_worker (worker_id),
+    KEY idx_created_by (created_by),
     KEY idx_order_status (order_status),
     KEY idx_payment_status (payment_status),
     KEY idx_created_at (created_at),
     CONSTRAINT fk_order_station FOREIGN KEY (station_id) REFERENCES sub_stations(station_id) ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT fk_order_worker FOREIGN KEY (worker_id) REFERENCES workers(worker_id) ON DELETE SET NULL ON UPDATE CASCADE
+    CONSTRAINT fk_order_worker FOREIGN KEY (worker_id) REFERENCES workers(worker_id) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT fk_order_creator FOREIGN KEY (created_by) REFERENCES workers(worker_id) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单主表';
 
 -- ============================================================
