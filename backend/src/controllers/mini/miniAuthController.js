@@ -348,6 +348,64 @@ async function smsLogin(req, res) {
   }
 }
 
+// ==================== 追加：账号密码登录 ====================
+async function passwordLogin(req, res) {
+  try {
+    const bcrypt = require('bcryptjs');
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.json({ code: 400, message: '请输入账号和密码', data: null });
+    }
+
+    // 按 username 查询
+    const [rows] = await pool.query(
+      'SELECT * FROM mini_accounts WHERE username = ? AND status = 1 LIMIT 1',
+      [username]
+    );
+    if (rows.length === 0) {
+      return res.json({ code: 404, message: '账号或密码错误', data: null });
+    }
+    const account = rows[0];
+    if (!account.password_hash) {
+      return res.json({ code: 400, message: '该账号未设置密码，请使用微信或验证码登录', data: null });
+    }
+
+    // bcrypt 比对
+    const ok = await bcrypt.compare(password, account.password_hash);
+    if (!ok) {
+      return res.json({ code: 400, message: '账号或密码错误', data: null });
+    }
+
+    // 更新最后登录时间
+    await pool.query('UPDATE mini_accounts SET last_login_at = NOW() WHERE id = ?', [account.id]);
+
+    // 获取显示名并签发 token
+    const name = await getDisplayName(account.role, account.target_id);
+    const token = signToken(account);
+
+    return res.json({
+      code: 200,
+      message: '登录成功',
+      data: {
+        token,
+        needBind: false,
+        userInfo: {
+          role: account.role,
+          name,
+          phone: account.phone,
+          avatar: account.avatar_url
+        }
+      }
+    });
+  } catch (error) {
+    return res.json({
+      code: 500,
+      message: '账号密码登录失败: ' + error.message,
+      data: null
+    });
+  }
+}
+
 // 获取当前用户信息
 async function getMe(req, res) {
   try {
@@ -434,6 +492,7 @@ module.exports = {
   bindPhone,
   sendSms,
   smsLogin,
+  passwordLogin,
   getMe,
   updatePhone,
   logout

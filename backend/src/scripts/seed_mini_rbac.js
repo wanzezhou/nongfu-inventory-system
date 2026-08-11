@@ -87,6 +87,99 @@ async function seedMiniRbac() {
       console.log('users表idx_phone索引已存在，跳过');
     }
 
+    // 6. 为 mini_accounts 表添加 username 列（幂等处理）
+    const [usernameColumnRows] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      ['mini_accounts', 'username']
+    );
+
+    if (usernameColumnRows.length === 0) {
+      await pool.query(`
+        ALTER TABLE mini_accounts
+        ADD COLUMN username VARCHAR(50) DEFAULT NULL COMMENT '登录账号' AFTER phone
+      `);
+      console.log('mini_accounts表已添加username列');
+    } else {
+      console.log('mini_accounts表username列已存在，跳过');
+    }
+
+    // 7. 为 mini_accounts 表添加 password_hash 列（幂等处理）
+    const [passwordHashColumnRows] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      ['mini_accounts', 'password_hash']
+    );
+
+    if (passwordHashColumnRows.length === 0) {
+      await pool.query(`
+        ALTER TABLE mini_accounts
+        ADD COLUMN password_hash VARCHAR(255) DEFAULT NULL COMMENT 'bcrypt密码哈希' AFTER username
+      `);
+      console.log('mini_accounts表已添加password_hash列');
+    } else {
+      console.log('mini_accounts表password_hash列已存在，跳过');
+    }
+
+    // 8. 为 mini_accounts.username 添加 UNIQUE 索引 idx_username（幂等处理）
+    const [usernameIndexRows] = await pool.query(
+      `SELECT INDEX_NAME FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+      ['mini_accounts', 'idx_username']
+    );
+
+    if (usernameIndexRows.length === 0) {
+      await pool.query(`ALTER TABLE mini_accounts ADD UNIQUE INDEX idx_username (username)`);
+      console.log('mini_accounts表已添加idx_username索引');
+    } else {
+      console.log('mini_accounts表idx_username索引已存在，跳过');
+    }
+
+    // 6. 为 mini_accounts 表添加 username 列（幂等）
+    const [usernameCol] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      ['mini_accounts', 'username']
+    );
+    if (usernameCol.length === 0) {
+      await pool.query(`
+        ALTER TABLE mini_accounts
+        ADD COLUMN username VARCHAR(50) DEFAULT NULL COMMENT '登录账号' AFTER phone
+      `);
+      console.log('mini_accounts表已添加username列');
+    } else {
+      console.log('mini_accounts表username列已存在，跳过');
+    }
+
+    // 7. 为 mini_accounts 表添加 password_hash 列（幂等）
+    const [pwdCol] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      ['mini_accounts', 'password_hash']
+    );
+    if (pwdCol.length === 0) {
+      await pool.query(`
+        ALTER TABLE mini_accounts
+        ADD COLUMN password_hash VARCHAR(255) DEFAULT NULL COMMENT 'bcrypt密码哈希' AFTER username
+      `);
+      console.log('mini_accounts表已添加password_hash列');
+    } else {
+      console.log('mini_accounts表password_hash列已存在，跳过');
+    }
+
+    // 8. 为 mini_accounts.username 添加 UNIQUE 索引 idx_username（幂等）
+    const [usernameIdx] = await pool.query(
+      `SELECT INDEX_NAME FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+      ['mini_accounts', 'idx_username']
+    );
+    if (usernameIdx.length === 0) {
+      await pool.query(`ALTER TABLE mini_accounts ADD UNIQUE INDEX idx_username (username)`);
+      console.log('mini_accounts表已添加idx_username唯一索引');
+    } else {
+      console.log('mini_accounts表idx_username索引已存在，跳过');
+    }
+
     console.log('mini RBAC 迁移完成');
     process.exit(0);
   } catch (error) {
