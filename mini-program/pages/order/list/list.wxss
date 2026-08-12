@@ -1,4 +1,70 @@
-.container {
-  padding: 40rpx;
+.order-list-page {
+  padding-bottom: 160rpx;
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 20rpx 24rpx;
+  background: #fff;
+}
+.search-input {
+  flex: 1;
+  background: #F6F6F8;
+  border-radius: 40rpx;
+  height: 72rpx;
+  padding: 0 30rpx;
+  font-size: 26rpx;
+  color: #1F1F2E;
+}
+.search-btn {
+  padding: 0 36rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  background: linear-gradient(135deg, #C7000B, #E63946);
+  color: #fff;
+  font-size: 26rpx;
+  border-radius: 40rpx;
+  font-weight: 600;
+}
+
+.tabs {
+  display: flex;
+  background: #fff;
+  border-bottom: 1rpx solid #F1F1F5;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.tab {
+  flex: 1;
   text-align: center;
+  padding: 24rpx 0;
+  font-size: 26rpx;
+  color: #8E8E9E;
+  position: relative;
+  transition: color .2s ease;
+}
+.tab.active {
+  color: #C7000B;
+  font-weight: 700;
+}
+.tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48rpx;
+  height: 6rpx;
+  border-radius: 4rpx;
+  background: linear-gradient(90deg, #C7000B, #E63946);
+}
+
+.list-tip {
+  text-align: center;
+  padding: 24rpx;
+  font-size: 24rpx;
+  color: #B8B8C4;
 }

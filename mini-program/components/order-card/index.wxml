@@ -1,0 +1,28 @@
+<view class="order-card" bindtap="onTap">
+  <view class="oc-head">
+    <text class="oc-no">{{order.orderNo}}</text>
+    <view class="oc-status tag tag-{{statusClass}}">{{statusText}}</view>
+  </view>
+  <view class="oc-body">
+    <view class="oc-row">
+      <text class="oc-label">客户</text>
+      <text class="oc-value text-ellipsis">{{order.customerName || '-'}}</text>
+    </view>
+    <view class="oc-row">
+      <text class="oc-label">类型</text>
+      <text class="oc-value">{{order.orderTypeText || '-'}}</text>
+    </view>
+    <view class="oc-row" wx:if="{{order.workerName}}">
+      <text class="oc-label">配送员</text>
+      <text class="oc-value">{{order.workerName}}</text>
+    </view>
+    <view class="oc-row" wx:if="{{order.stationName}}">
+      <text class="oc-label">水站</text>
+      <text class="oc-value">{{order.stationName}}</text>
+    </view>
+  </view>
+  <view class="oc-foot">
+    <text class="oc-time">{{order.createdAt || ''}}</text>
+    <text class="oc-amount price">¥{{order.totalAmount || 0}}</text>
+  </view>
+</view>

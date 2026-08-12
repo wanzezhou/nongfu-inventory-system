@@ -1,4 +1,24 @@
-<view class="container">
-  <text>订单列表页（待实现）</text>
+<view class="order-list-page">
+  <view class="search-bar">
+    <input class="search-input" placeholder="搜索订单号/客户名"
+           value="{{keyword}}" bindinput="onSearchInput"
+           confirm-type="search" bindconfirm="onSearch" />
+    <view class="search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <view class="tabs">
+    <view class="tab {{activeTab === index ? 'active' : ''}}"
+          wx:for="{{tabs}}" wx:key="status" data-index="{{index}}" bindtap="onTabTap">
+      {{item.label}}
+    </view>
+  </view>
+
+  <view class="list">
+    <order-card wx:for="{{list}}" wx:key="id" order="{{item}}" bindtap="goDetail" />
+    <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无订单" />
+    <view class="list-tip" wx:if="{{loading}}">加载中...</view>
+    <view class="list-tip" wx:if="{{finished && list.length > 0}}">已加载全部</view>
+  </view>
+
+  <role-tab-bar></role-tab-bar>
 </view>
-<role-tab-bar></role-tab-bar>

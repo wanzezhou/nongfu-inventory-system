@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "修改订单",
-  "usingComponents": {}
+  "usingComponents": {
+    "product-picker": "/components/product-picker/index"
+  }
 }

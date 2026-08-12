@@ -1,0 +1,71 @@
+<view class="pp-mask" wx:if="{{visible}}" bindtap="close">
+  <view class="pp-panel" catchtap="noop">
+
+    <view class="pp-head">
+      <text class="pp-title">选择商品</text>
+      <text class="pp-close" bindtap="close">✕</text>
+    </view>
+
+    <view class="pp-search">
+      <input class="pp-search-input" placeholder="搜索商品名称/规格"
+             value="{{keyword}}" bindinput="onSearch" confirm-type="search" />
+    </view>
+
+    <scroll-view class="pp-list" scroll-y>
+      <view class="p-item" wx:for="{{displayProducts}}" wx:key="id">
+        <image class="p-thumb" src="{{item.image}}" mode="aspectFill"></image>
+        <view class="p-info">
+          <view class="p-name {{item.stock <= 0 ? 'dim' : ''}}">{{item.name}}</view>
+          <view class="p-meta">
+            <text class="stock {{item.stockCls}}">{{item.stock}}</text>
+            <text class="p-spec">{{item.spec}}/{{item.unit}}</text>
+          </view>
+          <view class="p-price" wx:if="{{showPrice}}">¥{{item.priceText}}</view>
+        </view>
+        <view class="p-add {{item.stock <= 0 ? 'disabled' : ''}}" catchtap="addItem" data-index="{{index}}">＋</view>
+      </view>
+      <view class="pp-empty" wx:if="{{displayProducts.length === 0}}">
+        <view class="pp-empty-icon">📦</view>
+        <view class="pp-empty-text">暂无商品</view>
+      </view>
+    </scroll-view>
+
+    <view class="pp-selected" wx:if="{{selected.length > 0}}">
+      <view class="pp-selected-title">已选商品</view>
+      <scroll-view class="pp-selected-list" scroll-y>
+        <view class="s-item" wx:for="{{selected}}" wx:key="productId">
+          <image class="s-thumb" src="{{item.image}}" mode="aspectFill"></image>
+          <view class="s-info">
+            <view class="s-name">{{item.name}}</view>
+            <view class="s-row">
+              <view class="s-qty">
+                <text class="qty-btn" catchtap="decQty" data-index="{{index}}">−</text>
+                <input class="qty-input" type="number" value="{{item.qty}}"
+                       data-index="{{index}}" bindinput="onQtyInput" />
+                <text class="qty-btn" catchtap="incQty" data-index="{{index}}">＋</text>
+              </view>
+              <view class="s-price" wx:if="{{showPrice}}">
+                <text class="s-price-label">{{priceLabel}}</text>
+                <input class="s-price-input" type="digit" value="{{item.unitPrice}}"
+                       data-index="{{index}}" bindinput="onPriceInput" />
+              </view>
+            </view>
+          </view>
+          <view class="s-right">
+            <view class="s-subtotal price">¥{{item.subtotal}}</view>
+            <view class="s-del" catchtap="removeItem" data-index="{{index}}">✕</view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <view class="pp-foot">
+      <view class="pp-total">
+        <text class="pp-total-label">商品合计</text>
+        <text class="pp-total-value price">¥{{totalAmount}}</text>
+      </view>
+      <view class="pp-confirm" bindtap="confirm">确定 ({{selected.length}})</view>
+    </view>
+
+  </view>
+</view>

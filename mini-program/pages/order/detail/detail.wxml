@@ -1,3 +1,92 @@
-<view class="container">
-  <text>订单详情页（待实现）</text>
+<view class="detail-page" wx:if="{{order}}">
+  <view class="status-banner {{statusClass}}">
+    <view class="status-main">
+      <text class="status-text">{{statusText}}</text>
+      <text class="status-type">{{order.orderTypeText}}</text>
+    </view>
+    <view class="status-no">{{order.orderNo}}</view>
+  </view>
+
+  <view class="card block">
+    <view class="block-title">基本信息</view>
+    <view class="info-row">
+      <text class="info-label">客户名称</text>
+      <text class="info-value">{{order.customerName || '-'}}</text>
+    </view>
+    <view class="info-row" wx:if="{{order.customerPhone}}">
+      <text class="info-label">联系电话</text>
+      <text class="info-value">{{order.customerPhone}}</text>
+    </view>
+    <view class="info-row" wx:if="{{order.customerAddress}}">
+      <text class="info-label">配送地址</text>
+      <text class="info-value">{{order.customerAddress}}</text>
+    </view>
+    <view class="info-row" wx:if="{{order.stationName}}">
+      <text class="info-label">水站</text>
+      <text class="info-value">{{order.stationName}}</text>
+    </view>
+    <view class="info-row" wx:if="{{order.contactName}}">
+      <text class="info-label">联系人</text>
+      <text class="info-value">{{order.contactName}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">创建人</text>
+      <text class="info-value">{{order.creatorName || '-'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">创建时间</text>
+      <text class="info-value">{{order.createdAt}}</text>
+    </view>
+    <view class="info-row" wx:if="{{order.remark}}">
+      <text class="info-label">备注</text>
+      <text class="info-value">{{order.remark}}</text>
+    </view>
+  </view>
+
+  <view class="card block">
+    <view class="block-title">商品明细</view>
+    <view class="item-row" wx:for="{{order.items}}" wx:key="id">
+      <view class="item-info">
+        <view class="item-name">{{item.productName}}</view>
+        <view class="item-meta">{{item.spec || ''}} × {{item.quantity}}{{item.unit || ''}}</view>
+      </view>
+      <view class="item-right">
+        <view class="item-price" wx:if="{{item.unitPrice > 0}}">¥{{item.unitPrice}}</view>
+        <view class="item-subtotal price">¥{{item.subtotal}}</view>
+      </view>
+    </view>
+    <view class="amount-row">
+      <text class="amount-label">商品金额</text>
+      <text class="amount-value">¥{{order.orderAmount}}</text>
+    </view>
+    <view class="amount-row">
+      <text class="amount-label">配送费</text>
+      <text class="amount-value">¥{{order.deliveryFee}}</text>
+    </view>
+    <view class="amount-row total">
+      <text class="amount-label">合计</text>
+      <text class="amount-value price">¥{{order.totalAmount}}</text>
+    </view>
+  </view>
+
+  <view class="card block">
+    <view class="block-title">配送信息</view>
+    <view class="info-row">
+      <text class="info-label">配送方式</text>
+      <text class="info-value">{{deliveryTypeText}}</text>
+    </view>
+    <view class="info-row" wx:if="{{order.workerName}}">
+      <text class="info-label">配送员工</text>
+      <text class="info-value">{{order.workerName}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">配送费</text>
+      <text class="info-value price">¥{{order.deliveryFee}}</text>
+    </view>
+  </view>
+
+  <view class="bottom-bar" wx:if="{{canEdit || canDeliver}}">
+    <view class="bottom-btn edit" wx:if="{{canEdit}}" bindtap="goEdit">修改订单</view>
+    <view class="bottom-btn deliver" wx:if="{{canDeliver}}" bindtap="goDeliver">去配送</view>
+  </view>
 </view>
