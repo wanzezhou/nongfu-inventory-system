@@ -1,4 +1,104 @@
-.container {
-  padding: 40rpx;
-  text-align: center;
+.home-page { padding: 0 0 160rpx; }
+
+.top-bar {
+  padding: 32rpx 40rpx 40rpx;
+  background:
+    radial-gradient(ellipse at top right, rgba(199, 0, 11, 0.14), transparent 55%),
+    linear-gradient(180deg, #FFFFFF 0%, #F6F6F8 100%);
 }
+.top-greeting {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 8rpx;
+}
+.greeting-text {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #1A1A2E;
+  letter-spacing: 1rpx;
+}
+.role-tag { font-size: 22rpx; padding: 4rpx 16rpx; border-radius: 20rpx; }
+.role-tag.tag-admin    { background: rgba(199, 0, 11, 0.12); color: #C7000B; }
+.role-tag.tag-worker   { background: rgba(16, 185, 129, 0.12); color: #10B981; }
+.role-tag.tag-station  { background: rgba(245, 158, 11, 0.12); color: #F59E0B; }
+.role-tag.tag-salesman { background: rgba(59, 130, 246, 0.12); color: #3B82F6; }
+.date-text {
+  font-size: 24rpx;
+  color: #8E8E9E;
+  letter-spacing: 1rpx;
+}
+
+.stat-grid {
+  display: grid;
+  gap: 20rpx;
+  padding: 0 24rpx;
+  margin-top: 20rpx;
+}
+.stat-grid.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.stat-grid.grid-4 { grid-template-columns: repeat(2, 1fr); }
+
+.section-title {
+  padding: 40rpx 40rpx 16rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #1F1F2E;
+  letter-spacing: 2rpx;
+}
+.section-title::before {
+  content: '';
+  display: inline-block;
+  width: 6rpx;
+  height: 26rpx;
+  background: linear-gradient(180deg, #C7000B, #E63946);
+  border-radius: 4rpx;
+  margin-right: 14rpx;
+  vertical-align: -3rpx;
+}
+
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20rpx;
+  padding: 0 24rpx;
+}
+.quick-item {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 28rpx 12rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #1F1F2E;
+  box-shadow: 0 4rpx 20rpx rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  transition: transform .15s ease;
+}
+.quick-item:active { transform: scale(0.96); }
+.q-ic { font-size: 44rpx; }
+
+.list-card { margin-top: 0; padding: 12rpx 28rpx; }
+.order-row {
+  display: grid;
+  grid-template-columns: 2fr 3fr auto;
+  align-items: center;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #EFEFF4;
+}
+.order-row:last-child { border-bottom: none; }
+.o-no {
+  font-size: 24rpx;
+  font-family: 'SFMono-Regular', Menlo, monospace;
+  color: #5A5A6E;
+}
+.o-name {
+  font-size: 28rpx;
+  color: #1F1F2E;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 20rpx;
+}
+.o-amount { font-size: 28rpx; font-weight: 700; }

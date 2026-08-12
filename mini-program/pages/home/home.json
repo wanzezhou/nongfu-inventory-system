@@ -1,6 +1,9 @@
 {
   "navigationBarTitleText": "首页",
+  "enablePullDownRefresh": true,
   "usingComponents": {
-    "role-tab-bar": "/components/role-tab-bar/index"
+    "role-tab-bar": "/components/role-tab-bar/index",
+    "stat-card": "/components/stat-card/index",
+    "empty-state": "/components/empty-state/index"
   }
 }
