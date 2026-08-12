@@ -23,12 +23,14 @@ function formatMiniAccount(ma) {
 }
 
 // 固定的关联查询片段：根据 role 关联对应的实体表，取实体名称
+// 注意：workers/sub_stations 表 collation 为 utf8mb4_unicode_ci，与 mini_accounts(utf8mb4_0900_ai_ci) 不同，
+// 关联时需 CONVERT + COLLATE 统一，否则报 Illegal mix of collations
 const JOIN_CLAUSE = `
 FROM mini_accounts ma
-LEFT JOIN users u ON ma.role = 'admin' AND ma.target_id = CAST(u.id AS CHAR)
-LEFT JOIN workers w ON ma.role = 'worker' AND ma.target_id = w.worker_id
-LEFT JOIN sub_stations s ON ma.role = 'station' AND ma.target_id = s.station_id
-LEFT JOIN salesmen sm ON ma.role = 'salesman' AND ma.target_id = sm.salesman_id
+LEFT JOIN users u ON ma.role = 'admin' AND ma.target_id = CAST(u.id AS CHAR) COLLATE utf8mb4_0900_ai_ci
+LEFT JOIN workers w ON ma.role = 'worker' AND ma.target_id = CONVERT(w.worker_id USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+LEFT JOIN sub_stations s ON ma.role = 'station' AND ma.target_id = CONVERT(s.station_id USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+LEFT JOIN salesmen sm ON ma.role = 'salesman' AND ma.target_id = CONVERT(sm.salesman_id USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
 `;
 
 async function getMiniAccountList(req, res) {
