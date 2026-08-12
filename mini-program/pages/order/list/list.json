@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "订单列表",
+  "usingComponents": {
+    "role-tab-bar": "/components/role-tab-bar/index"
+  }
+}

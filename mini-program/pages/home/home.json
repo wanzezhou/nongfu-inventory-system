@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "首页",
+  "usingComponents": {
+    "role-tab-bar": "/components/role-tab-bar/index"
+  }
+}
