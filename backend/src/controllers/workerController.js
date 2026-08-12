@@ -15,6 +15,7 @@ function formatWorker(worker) {
     name: worker.worker_name,
     workerName: worker.worker_name,
     phone: worker.phone,
+    employeeType: worker.employee_type,
     vehicleType: worker.vehicle_type,
     bankName: worker.bank_name,
     bankAccount: worker.bank_account,
@@ -26,7 +27,7 @@ function formatWorker(worker) {
 
 async function getWorkerList(req, res) {
   try {
-    const { keyword, status, vehicleType, page = 1, pageSize = 10 } = req.query;
+    const { keyword, status, vehicleType, employeeType, page = 1, pageSize = 10 } = req.query;
 
     let whereClause = 'WHERE 1=1';
     const params = [];
@@ -44,6 +45,11 @@ async function getWorkerList(req, res) {
     if (vehicleType !== undefined && vehicleType !== '' && vehicleType !== null) {
       whereClause += ' AND vehicle_type = ?';
       params.push(Number(vehicleType));
+    }
+
+    if (employeeType !== undefined && employeeType !== '' && employeeType !== null) {
+      whereClause += ' AND employee_type = ?';
+      params.push(Number(employeeType));
     }
 
     const countSql = `SELECT COUNT(*) as total FROM workers ${whereClause}`;
@@ -104,6 +110,8 @@ async function createWorker(req, res) {
       workerName,
       worker_name,
       phone,
+      employeeType,
+      employee_type,
       vehicleType,
       vehicle_type,
       bankName,
@@ -114,6 +122,7 @@ async function createWorker(req, res) {
     } = req.body;
 
     const name = workerName || worker_name;
+    const eType = employeeType !== undefined ? employeeType : (employee_type !== undefined ? employee_type : 2);
     const vType = vehicleType !== undefined ? vehicleType : (vehicle_type !== undefined ? vehicle_type : 1);
     const bName = bankName !== undefined ? bankName : bank_name;
     const bAccount = bankAccount !== undefined ? bankAccount : bank_account;
@@ -126,14 +135,15 @@ async function createWorker(req, res) {
     const now = new Date();
 
     const sql = `INSERT INTO workers (
-      worker_id, worker_name, phone, vehicle_type,
+      worker_id, worker_name, phone, employee_type, vehicle_type,
       bank_name, bank_account, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       worker_id,
       name,
       phone || null,
+      Number(eType) || 2,
       Number(vType) || 1,
       bName || null,
       bAccount || null,
@@ -160,6 +170,8 @@ async function updateWorker(req, res) {
       workerName,
       worker_name,
       phone,
+      employeeType,
+      employee_type,
       vehicleType,
       vehicle_type,
       bankName,
@@ -185,6 +197,11 @@ async function updateWorker(req, res) {
     if (phone !== undefined) {
       updateFields.push('phone = ?');
       values.push(phone);
+    }
+    const eType = employeeType !== undefined ? employeeType : employee_type;
+    if (eType !== undefined) {
+      updateFields.push('employee_type = ?');
+      values.push(Number(eType));
     }
     const vType = vehicleType !== undefined ? vehicleType : vehicle_type;
     if (vType !== undefined) {

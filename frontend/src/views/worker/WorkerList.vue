@@ -15,6 +15,18 @@
             </template>
           </el-input>
         </el-form-item>
+        <el-form-item label="员工类型">
+          <el-select
+            v-model="queryForm.employeeType"
+            placeholder="全部类型"
+            clearable
+            style="width: 140px"
+          >
+            <el-option label="店长" :value="1" />
+            <el-option label="配送员工" :value="2" />
+            <el-option label="业务员" :value="3" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="车辆类型">
           <el-select
             v-model="queryForm.vehicleType"
@@ -52,6 +64,14 @@
             <el-icon><Plus /></el-icon>
             新增员工
           </el-button>
+          <el-button @click="handleExport" :loading="exporting">
+            <el-icon><Download /></el-icon>
+            导出
+          </el-button>
+          <el-button @click="importDialogVisible = true">
+            <el-icon><Upload /></el-icon>
+            导入
+          </el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -65,6 +85,13 @@
       >
         <el-table-column prop="workerName" label="员工姓名" width="120" />
         <el-table-column prop="phone" label="联系电话" width="140" />
+        <el-table-column prop="employeeType" label="员工类型" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="employeeTypeTagType(row.employeeType)" size="small">
+              {{ employeeTypeLabel(row.employeeType) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="vehicleType" label="配送车辆" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.vehicleType === 1 ? 'primary' : 'success'" size="small">
@@ -135,6 +162,13 @@
         <el-form-item label="联系电话" prop="phone">
           <el-input v-model="workerForm.phone" placeholder="请输入联系电话" />
         </el-form-item>
+        <el-form-item label="员工类型" prop="employeeType">
+          <el-select v-model="workerForm.employeeType" style="width: 100%">
+            <el-option label="店长" :value="1" />
+            <el-option label="配送员工" :value="2" />
+            <el-option label="业务员" :value="3" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="配送车辆" prop="vehicleType">
           <el-radio-group v-model="workerForm.vehicleType">
             <el-radio :value="1">电动车（终端零售）</el-radio>
@@ -163,19 +197,36 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <ImportDialog v-model="importDialogVisible" module="workers" matchFieldText="员工姓名" @success="fetchData" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Download, Upload } from '@element-plus/icons-vue'
 import {
   getWorkerList,
   addWorker,
   updateWorker,
   deleteWorker
 } from '@/api/worker'
+import { exportData, downloadBlob } from '@/api/excel'
+import ImportDialog from '@/components/ImportDialog.vue'
+
+const importDialogVisible = ref(false)
+const exporting = ref(false)
+
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    const response = await exportData('workers')
+    downloadBlob(response.data, `员工数据_${Date.now()}.xlsx`)
+  } catch { } finally {
+    exporting.value = false
+  }
+}
 
 const loading = ref(false)
 const submitLoading = ref(false)
@@ -184,8 +235,18 @@ const dialogTitle = ref('')
 const isEdit = ref(false)
 const formRef = ref(null)
 
+const employeeTypeLabel = (type) => {
+  const map = { 1: '店长', 2: '配送员工', 3: '业务员' }
+  return map[type] || '未知'
+}
+const employeeTypeTagType = (type) => {
+  const map = { 1: 'danger', 2: 'primary', 3: 'success' }
+  return map[type] || 'info'
+}
+
 const queryForm = reactive({
   keyword: '',
+  employeeType: null,
   vehicleType: null,
   status: null
 })
@@ -202,6 +263,7 @@ const workerForm = reactive({
   workerId: null,
   workerName: '',
   phone: '',
+  employeeType: 2,
   vehicleType: 1,
   bankName: '',
   bankAccount: '',
@@ -217,6 +279,7 @@ const fetchData = async () => {
   try {
     const res = await getWorkerList({
       keyword: queryForm.keyword,
+      employeeType: queryForm.employeeType,
       vehicleType: queryForm.vehicleType,
       status: queryForm.status,
       page: pagination.page,
@@ -259,6 +322,7 @@ const handleSearch = () => {
 
 const handleReset = () => {
   queryForm.keyword = ''
+  queryForm.employeeType = null
   queryForm.vehicleType = null
   queryForm.status = null
   pagination.page = 1
@@ -290,6 +354,7 @@ const handleEdit = (row) => {
     workerId: row.workerId || row.id,
     workerName: row.workerName || row.name,
     phone: row.phone,
+    employeeType: row.employeeType,
     vehicleType: row.vehicleType,
     bankName: row.bankName,
     bankAccount: row.bankAccount,
@@ -349,6 +414,7 @@ const resetForm = () => {
     workerId: null,
     workerName: '',
     phone: '',
+    employeeType: 2,
     vehicleType: 1,
     bankName: '',
     bankAccount: '',
