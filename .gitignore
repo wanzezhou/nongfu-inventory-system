@@ -25,3 +25,6 @@ npm-debug.log*
 
 # Mini program build
 mini-program/miniprogram_npm/
+
+# WeChat devtools private config
+mini-program/project.private.config.json
