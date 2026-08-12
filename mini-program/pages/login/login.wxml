@@ -1,3 +1,33 @@
-<view class="container">
-  <text>登录页（待实现）</text>
+<view class="login-page">
+  <view class="brand-area">
+    <view class="logo-circle">
+      <view class="logo-glow"></view>
+      <text class="logo-emoji">💧</text>
+    </view>
+    <view class="brand-title">农夫山泉经销商</view>
+    <view class="brand-subtitle">晟之溪商贸 · 小程序端</view>
+  </view>
+
+  <view class="content">
+    <view class="form-card">
+      <view class="form-item">
+        <view class="field-label">账号</view>
+        <input class="input" type="text" maxlength="50" placeholder="请输入登录账号"
+               value="{{username}}" bindinput="onUsernameInput"
+               confirm-type="next" placeholder-class="input-placeholder" />
+      </view>
+
+      <view class="form-item">
+        <view class="field-label">密码</view>
+        <input class="input" password placeholder="请输入密码" maxlength="32"
+               value="{{password}}" bindinput="onPasswordInput"
+               confirm-type="done" bindconfirm="handleLogin" placeholder-class="input-placeholder" />
+      </view>
+
+      <button class="btn-primary login-btn" bindtap="handleLogin"
+              loading="{{loading}}" disabled="{{loading}}">登 录</button>
+    </view>
+
+    <view class="admin-hint">无法登录？请联系管理员开通小程序账号</view>
+  </view>
 </view>
