@@ -1,3 +1,34 @@
-<view class="container">
-  <text>新建报销页（待实现）</text>
+<view class="reimburse-create-page">
+  <view class="card block">
+    <view class="block-title">报销信息</view>
+    <view class="form-row">
+      <text class="form-label">报销类型</text>
+      <picker range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onTypeChange">
+        <view class="form-value {{type ? '' : 'placeholder'}}">{{type || '请选择报销类型'}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <text class="form-label">报销金额</text>
+      <view class="amount-wrap">
+        <text class="amount-symbol">¥</text>
+        <input class="form-input amount-input" type="digit" placeholder="请输入金额" value="{{amount}}" bindinput="onAmount" />
+      </view>
+    </view>
+    <view class="form-row">
+      <text class="form-label">报销说明</text>
+      <textarea class="form-textarea" placeholder="请填写报销事由、用途等说明" value="{{description}}" bindinput="onDescription" maxlength="200" />
+    </view>
+    <view class="form-row">
+      <text class="form-label">备注</text>
+      <input class="form-input" placeholder="选填" value="{{remark}}" bindinput="onRemark" />
+    </view>
+  </view>
+
+  <view class="submit-bar">
+    <view class="submit-total">
+      <text class="st-label">报销金额</text>
+      <text class="st-value price">¥{{amount || '0.00'}}</text>
+    </view>
+    <view class="submit-btn" bindtap="submit">提交申请</view>
+  </view>
 </view>

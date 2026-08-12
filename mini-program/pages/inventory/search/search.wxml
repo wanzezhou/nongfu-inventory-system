@@ -1,3 +1,28 @@
-<view class="container">
-  <text>库存查询页（待实现）</text>
+<view class="inv-page">
+  <view class="search-bar">
+    <input class="search-input" placeholder="搜索商品名称/编码"
+           value="{{keyword}}" bindinput="onSearchInput"
+           confirm-type="search" bindconfirm="onSearch" />
+    <view class="search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <view class="inv-list">
+    <view class="inv-item" wx:for="{{list}}" wx:key="productId">
+      <image class="inv-thumb" src="{{item.imageUrl}}" mode="aspectFill"></image>
+      <view class="inv-info">
+        <view class="inv-name">{{item.name}}</view>
+        <view class="inv-meta">
+          <text class="inv-code">{{item.productCode || ''}}</text>
+          <text class="inv-spec">{{item.spec || ''}}/{{item.unit || ''}}</text>
+        </view>
+      </view>
+      <view class="inv-stock">
+        <text class="stock {{item.stockCls}}">{{item.quantity}}</text>
+        <text class="inv-status {{item.stockStatus}}">{{stockStatusText(item.stockStatus)}}</text>
+      </view>
+    </view>
+    <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无库存数据" />
+    <view class="list-tip" wx:if="{{loading}}">加载中...</view>
+    <view class="list-tip" wx:if="{{finished && list.length > 0}}">已加载全部</view>
+  </view>
 </view>

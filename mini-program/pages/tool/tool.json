@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "工具",
-  "usingComponents": {}
+  "usingComponents": {
+    "role-tab-bar": "/components/role-tab-bar/index"
+  }
 }

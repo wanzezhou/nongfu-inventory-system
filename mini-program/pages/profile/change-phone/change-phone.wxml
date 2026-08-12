@@ -1,3 +1,12 @@
-<view class="container">
-  <text>修改手机号页（待实现）</text>
+<view class="change-phone-page">
+  <view class="card block">
+    <view class="block-title">更换手机号</view>
+    <view class="form-row">
+      <text class="form-label">新手机号</text>
+      <input class="form-input" type="number" maxlength="11" placeholder="请输入新的手机号" value="{{phone}}" bindinput="onPhone" />
+    </view>
+  </view>
+
+  <view class="save-btn" bindtap="submit">确认修改</view>
+  <view class="save-tip">修改后请使用新手机号进行登录</view>
 </view>

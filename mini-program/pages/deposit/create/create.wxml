@@ -1,3 +1,41 @@
-<view class="container">
-  <text>登记押金页（待实现）</text>
+<view class="deposit-create-page">
+  <view class="card block">
+    <view class="block-title">押金信息</view>
+    <view class="form-row">
+      <text class="form-label">选择水站</text>
+      <picker range="{{stations}}" range-key="name" value="{{stationIndex}}" bindchange="onStationChange">
+        <view class="form-value {{stationId ? '' : 'placeholder'}}">{{stationIndex > -1 ? stations[stationIndex].name : '请选择水站'}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <text class="form-label">桶类型</text>
+      <input class="form-input" placeholder="如：19L桶装水" value="{{barrelType}}" bindinput="onBarrelType" />
+    </view>
+    <view class="form-row">
+      <text class="form-label">数量</text>
+      <input class="form-input" type="number" placeholder="请输入桶数量" value="{{quantity}}" bindinput="onQuantity" />
+    </view>
+    <view class="form-row">
+      <text class="form-label">单价</text>
+      <input class="form-input" type="digit" placeholder="每桶押金单价" value="{{unitPrice}}" bindinput="onUnitPrice" />
+    </view>
+    <view class="form-row">
+      <text class="form-label">收退类型</text>
+      <picker range="{{depositTypes}}" range-key="label" value="{{depositTypeIndex}}" bindchange="onDepositTypeChange">
+        <view class="form-value {{depositType ? '' : 'placeholder'}}">{{depositTypeLabel || '请选择收退类型'}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <text class="form-label">备注</text>
+      <input class="form-input" placeholder="选填" value="{{remark}}" bindinput="onRemark" />
+    </view>
+  </view>
+
+  <view class="submit-bar">
+    <view class="submit-total">
+      <text class="st-label">押金金额</text>
+      <text class="st-value price">¥{{totalAmount}}</text>
+    </view>
+    <view class="submit-btn" bindtap="submit">提交登记</view>
+  </view>
 </view>

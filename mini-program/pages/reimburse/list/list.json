@@ -1,4 +1,7 @@
 {
   "navigationBarTitleText": "报销管理",
-  "usingComponents": {}
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "empty-state": "/components/empty-state/index"
+  }
 }
