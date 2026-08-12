@@ -1,6 +1,9 @@
 {
-  "navigationBarTitleText": "待配送",
+  "navigationBarTitleText": "接单大厅",
+  "enablePullDownRefresh": true,
   "usingComponents": {
-    "role-tab-bar": "/components/role-tab-bar/index"
+    "role-tab-bar": "/components/role-tab-bar/index",
+    "delivery-card": "/components/delivery-card/index",
+    "empty-state": "/components/empty-state/index"
   }
 }

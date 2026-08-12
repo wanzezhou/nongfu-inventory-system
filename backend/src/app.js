@@ -11,6 +11,11 @@ const orderRoutes = require('./routes/orderRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const supplierRoutes = require('./routes/supplierRoutes');
 const workerRoutes = require('./routes/workerRoutes');
+const authRoutes = require('./routes/authRoutes');
+const excelRoutes = require('./routes/excelRoutes');
+const miniRoutes = require('./routes/miniRoutes');
+const salesmanRoutes = require('./routes/salesmanRoutes');
+const miniAccountRoutes = require('./routes/miniAccountRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,6 +28,9 @@ app.use(express.urlencoded({ extended: true }));
 // 静态文件服务 - 商品图片
 app.use('/product_images', express.static(path.join(__dirname, '../../商品档案/商品图片')));
 
+// 静态文件服务 - 配送照片上传
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // 测试数据库连接
 testConnection();
 
@@ -34,6 +42,11 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/workers', workerRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/excel', excelRoutes);
+app.use('/mini', miniRoutes);
+app.use('/api/salesmen', salesmanRoutes);
+app.use('/api/mini-accounts', miniAccountRoutes);
 
 // 根路由
 app.get('/', (req, res) => {

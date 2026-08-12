@@ -1,0 +1,16 @@
+<view class="delivery-card" bindtap="onTap">
+  <view class="dc-head">
+    <text class="dc-no">{{order.orderId}}</text>
+    <text class="dc-fee">配送费 ¥{{order.deliveryFee || 0}}</text>
+  </view>
+  <view class="dc-customer">
+    <text class="dc-name">{{order.customerName || '-'}}</text>
+    <text class="dc-phone" wx:if="{{order.customerPhone}}">{{order.customerPhone}}</text>
+  </view>
+  <view class="dc-address">{{order.customerAddress || '暂无地址'}}</view>
+  <view class="dc-foot">
+    <text class="dc-time">{{order.createdAt || ''}}</text>
+    <text class="dc-creator" wx:if="{{order.creatorName}}">创建人：{{order.creatorName}}</text>
+    <view class="dc-accept" wx:if="{{showAccept}}" catchtap="onAccept">接单</view>
+  </view>
+</view>

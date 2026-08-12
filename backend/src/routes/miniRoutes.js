@@ -42,6 +42,7 @@ router.get('/delivery/pending', requireRole('worker', 'admin'), miniDeliveryCont
 router.get('/delivery/mine', requireRole('worker', 'admin'), miniDeliveryController.mine);
 router.post('/delivery/accept/:id', requireRole('worker'), miniDeliveryController.accept);
 router.post('/delivery/complete/:id', requireRole('worker'), miniDeliveryController.complete);
+router.post('/delivery/upload-photo', requireRole('worker', 'admin'), miniDeliveryController.upload.single('file'), miniDeliveryController.uploadPhoto);
 router.post('/delivery/assign', requireRole('admin'), miniDeliveryController.assign);
 
 // 库存查询（只读，全角色可用）

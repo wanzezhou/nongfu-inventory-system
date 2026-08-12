@@ -1,4 +1,8 @@
 {
   "navigationBarTitleText": "我的配送",
-  "usingComponents": {}
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "delivery-card": "/components/delivery-card/index",
+    "empty-state": "/components/empty-state/index"
+  }
 }
