@@ -1,6 +1,6 @@
-const request = require('../../utils/request.js');
-const auth = require('../../utils/auth.js');
-const fmt = require('../../utils/format.js');
+const request = require('../../../utils/request.js');
+const auth = require('../../../utils/auth.js');
+const fmt = require('../../../utils/format.js');
 
 const ORDER_TYPE_LABELS = {
   1: '线上平台销售', 2: '线下水站分销', 3: '线下零售', 4: '零售机供货', 5: '线下水站返货'

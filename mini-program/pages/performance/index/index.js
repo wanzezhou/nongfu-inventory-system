@@ -1,5 +1,5 @@
-const request = require('../../utils/request.js');
-const auth = require('../../utils/auth.js');
+const request = require('../../../utils/request.js');
+const auth = require('../../../utils/auth.js');
 
 Page({
   data: {

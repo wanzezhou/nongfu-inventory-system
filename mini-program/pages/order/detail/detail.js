@@ -1,5 +1,5 @@
-const request = require('../../utils/request.js');
-const auth = require('../../utils/auth.js');
+const request = require('../../../utils/request.js');
+const auth = require('../../../utils/auth.js');
 
 const DELIVERY_TYPE_LABELS = { 1: '自有员工配送', 2: '水站配送', 3: '无需配送' };
 const STATUS_MAP = {

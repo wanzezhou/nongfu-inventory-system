@@ -1,6 +1,6 @@
-const request = require('../../utils/request.js');
-const auth = require('../../utils/auth.js');
-const fmt = require('../../utils/format.js');
+const request = require('../../../utils/request.js');
+const auth = require('../../../utils/auth.js');
+const fmt = require('../../../utils/format.js');
 
 Page({
   data: {
