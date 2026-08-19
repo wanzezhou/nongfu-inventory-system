@@ -22,6 +22,30 @@
       <text class="form-label">备注</text>
       <input class="form-input" placeholder="选填" value="{{remark}}" bindinput="onRemark" />
     </view>
+
+    <view class="form-row attach-row">
+      <text class="form-label">附件</text>
+      <view class="attach-wrap">
+        <view class="attach-list">
+          <block wx:for="{{attachments}}" wx:key="uid">
+            <view class="attach-item">
+              <image class="attach-img" src="{{item.url}}" mode="aspectFill"
+                     data-index="{{index}}" bindtap="previewImage" />
+              <view class="attach-del" data-index="{{index}}" catchtap="removeAttach">×</view>
+              <view wx:if="{{item.uploading}}" class="attach-loading">
+                <view class="loading-spinner"></view>
+                <text class="loading-text">{{item.progress || 0}}%</text>
+              </view>
+            </view>
+          </block>
+          <view wx:if="{{attachments.length < 9}}" class="attach-add" bindtap="chooseImages">
+            <text class="add-plus">+</text>
+            <text class="add-text">上传凭证</text>
+          </view>
+        </view>
+        <text class="attach-hint">最多上传9张图片，支持票据、发票等凭证（单张≤10MB）</text>
+      </view>
+    </view>
   </view>
 
   <view class="submit-bar">

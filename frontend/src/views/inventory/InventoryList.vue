@@ -49,6 +49,14 @@
             <el-icon><Minus /></el-icon>
             出库
           </el-button>
+          <el-button @click="handleExport" :loading="exporting">
+            <el-icon><Download /></el-icon>
+            导出
+          </el-button>
+          <el-button @click="importDialogVisible = true">
+            <el-icon><Upload /></el-icon>
+            导入
+          </el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -81,9 +89,9 @@
         <el-table-column prop="unit" label="单位" width="80" align="center" />
         <el-table-column prop="stock" label="库存数量" width="120" align="center" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="getStockTagType(row.stock)" size="small">
-              {{ row.stock || 0 }}
-            </el-tag>
+            <span :class="getStockClass(row.stock)" class="stock-amount">
+              {{ row.stock !== null && row.stock !== undefined ? row.stock : 0 }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column prop="lastStockInTime" label="最后入库时间" width="170" />
@@ -309,7 +317,7 @@
           <el-tag type="info">{{ checkStockForm.currentStock }}</el-tag>
         </el-form-item>
         <el-form-item label="调整后库存" prop="newStock">
-          <el-input-number v-model="checkStockForm.newStock" :min="0" :precision="0" :step="10" style="width: 100%" />
+          <el-input-number v-model="checkStockForm.newStock" :precision="0" :step="10" style="width: 100%" />
         </el-form-item>
         <el-form-item label="变动说明">
           <div class="stock-diff">
@@ -337,16 +345,33 @@
         <el-button type="primary" :loading="checkStockLoading" @click="handleCheckStockSubmit">确认调整</el-button>
       </template>
     </el-dialog>
+
+    <ImportDialog v-model="importDialogVisible" module="inventory" matchFieldText="商品编码" @success="fetchData" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Plus, Minus, Edit, Picture } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Minus, Edit, Picture, Download, Upload } from '@element-plus/icons-vue'
 import { getInventoryList, stockIn, stockOut } from '@/api/inventory'
 import { getProductList, getCategoryList } from '@/api/product'
 import { getAllSuppliers } from '@/api/supplier'
+import { exportData, downloadBlob } from '@/api/excel'
+import ImportDialog from '@/components/ImportDialog.vue'
+
+const importDialogVisible = ref(false)
+const exporting = ref(false)
+
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    const response = await exportData('inventory')
+    downloadBlob(response.data, `库存数据_${Date.now()}.xlsx`)
+  } catch { } finally {
+    exporting.value = false
+  }
+}
 
 const loading = ref(false)
 const stockInLoading = ref(false)
@@ -425,10 +450,14 @@ const stockInTotal = computed(() => {
   return stockInForm.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
 })
 
-const getStockTagType = (stock) => {
-  if (stock < 100) return 'danger'
-  if (stock < 500) return 'warning'
-  return 'success'
+const getStockClass = (stock) => {
+  const s = Number(stock) || 0
+  if (s < 0) return 'stock-negative'
+  if (s === 0) return 'stock-zero'
+  if (s < 50) return 'stock-danger'
+  if (s < 200) return 'stock-warning'
+  if (s < 1000) return 'stock-normal'
+  return 'stock-good'
 }
 
 const getProductName = (productId) => {
@@ -852,5 +881,56 @@ onMounted(() => {
   font-weight: 600;
   font-size: 16px;
   margin: 0 6px;
+}
+
+/* 库存数量颜色样式 */
+.stock-amount {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 60px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.stock-negative {
+  background: linear-gradient(135deg, #fef0f0 0%, #fde2e2 100%);
+  color: #c0392b;
+  border: 1px solid #f5c6cb;
+  box-shadow: 0 1px 4px rgba(192, 57, 43, 0.12);
+}
+
+.stock-zero {
+  background: linear-gradient(135deg, #f4f4f5 0%, #e9e9eb 100%);
+  color: #909399;
+  border: 1px solid #dcdfe6;
+}
+
+.stock-danger {
+  background: linear-gradient(135deg, #fef6ec 0%, #fde8d0 100%);
+  color: #e67e22;
+  border: 1px solid #faecd8;
+  box-shadow: 0 1px 4px rgba(230, 126, 34, 0.12);
+}
+
+.stock-warning {
+  background: linear-gradient(135deg, #fdfaec 0%, #faf0c3 100%);
+  color: #d4a017;
+  border: 1px solid #faecd8;
+}
+
+.stock-normal {
+  background: linear-gradient(135deg, #f0f9eb 0%, #e1f3d8 100%);
+  color: #529b2e;
+  border: 1px solid #d7ecc4;
+}
+
+.stock-good {
+  background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
+  color: #1d6fdc;
+  border: 1px solid #c6e2ff;
+  box-shadow: 0 1px 4px rgba(29, 111, 220, 0.1);
 }
 </style>

@@ -1,5 +1,6 @@
 const request = require('../../../utils/request.js');
 const fmt = require('../../../utils/format.js');
+const config = require('../../../utils/config.js');
 
 Page({
   data: {
@@ -39,10 +40,17 @@ Page({
 
     return request.get('/mini/reimbursements', { page, pageSize: this.data.pageSize, status: 0 })
       .then((res) => {
-        const list = (res.list || []).map(it => Object.assign({}, it, {
-          amountText: '¥' + fmt.formatAmount(it.amount),
-          desc: it.description || ''
-        }));
+        const list = (res.list || []).map(it => {
+          const attaches = Array.isArray(it.attachments) ? it.attachments : [];
+          const fullUrls = attaches.map(a => this._fullUrl(a.fileUrl || a.url));
+          return Object.assign({}, it, {
+            amountText: '¥' + fmt.formatAmount(it.amount),
+            desc: it.description || '',
+            attachCount: fullUrls.length,
+            attachPreview: fullUrls.slice(0, 3),
+            attachAll: fullUrls
+          });
+        });
         const total = res.total || 0;
         const merged = reset ? list : this.data.list.concat(list);
         this.setData({
@@ -82,6 +90,22 @@ Page({
 
   onAmount(e) { this.setData({ approvedAmount: e.detail.value }); },
   onRemark(e) { this.setData({ remark: e.detail.value }); },
+
+  _fullUrl(u) {
+    if (!u) return '';
+    if (/^https?:\/\//i.test(u)) return u;
+    return config.BASE_URL + u;
+  },
+
+  previewAttach(e) {
+    const id = e.currentTarget.dataset.id;
+    const it = this.data.list.find(x => x.id === id);
+    if (!it || !it.attachAll || it.attachAll.length === 0) return;
+    wx.previewImage({
+      current: it.attachAll[0],
+      urls: it.attachAll
+    });
+  },
 
   closePanel() {
     if (this.data.submitting) return;

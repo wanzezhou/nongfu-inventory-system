@@ -27,34 +27,73 @@
           <el-icon><HomeFilled /></el-icon>
           <template #title>仪表盘</template>
         </el-menu-item>
-        <el-menu-item index="/product">
-          <el-icon><Goods /></el-icon>
-          <template #title>商品管理</template>
-        </el-menu-item>
-        <el-menu-item index="/inventory">
-          <el-icon><Box /></el-icon>
-          <template #title>库存管理</template>
-        </el-menu-item>
-        <el-menu-item index="/order">
-          <el-icon><Document /></el-icon>
-          <template #title>订单管理</template>
-        </el-menu-item>
-        <el-menu-item index="/station">
-          <el-icon><Shop /></el-icon>
-          <template #title>水站管理</template>
-        </el-menu-item>
-        <el-menu-item index="/supplier">
-          <el-icon><OfficeBuilding /></el-icon>
-          <template #title>供应商管理</template>
-        </el-menu-item>
-        <el-menu-item index="/worker">
-          <el-icon><User /></el-icon>
-          <template #title>员工管理</template>
-        </el-menu-item>
+        <el-sub-menu index="/base">
+          <template #title>
+            <el-icon><Folder /></el-icon>
+            <span>基础信息管理</span>
+          </template>
+          <el-menu-item index="/product">
+            <el-icon><Goods /></el-icon>
+            <template #title>商品管理</template>
+          </el-menu-item>
+          <el-menu-item index="/station">
+            <el-icon><Shop /></el-icon>
+            <template #title>水站管理</template>
+          </el-menu-item>
+          <el-menu-item index="/bulk-machine">
+            <el-icon><Shop /></el-icon>
+            <template #title>量贩机管理</template>
+          </el-menu-item>
+          <el-menu-item index="/retail-machine">
+            <el-icon><Shop /></el-icon>
+            <template #title>零售机管理</template>
+          </el-menu-item>
+          <el-menu-item index="/supplier">
+            <el-icon><OfficeBuilding /></el-icon>
+            <template #title>供应商管理</template>
+          </el-menu-item>
+          <el-menu-item index="/worker">
+            <el-icon><User /></el-icon>
+            <template #title>员工管理</template>
+          </el-menu-item>
+          <el-menu-item index="/salesman">
+            <el-icon><Avatar /></el-icon>
+            <template #title>业务员管理</template>
+          </el-menu-item>
+          <el-menu-item index="/mini-account">
+            <el-icon><Iphone /></el-icon>
+            <template #title>移动端账号</template>
+          </el-menu-item>
+        </el-sub-menu>
+        <el-sub-menu index="/trade">
+          <template #title>
+            <el-icon><DataAnalysis /></el-icon>
+            <span>进销存管理</span>
+          </template>
+          <el-menu-item index="/inventory">
+            <el-icon><Box /></el-icon>
+            <template #title>库存管理</template>
+          </el-menu-item>
+          <el-menu-item index="/order">
+            <el-icon><Document /></el-icon>
+            <template #title>订单管理</template>
+          </el-menu-item>
+        </el-sub-menu>
+        <el-sub-menu index="/statistics">
+          <template #title>
+            <el-icon><TrendCharts /></el-icon>
+            <span>统计管理</span>
+          </template>
+          <el-menu-item index="/statistics/product-sales">
+            <el-icon><DataLine /></el-icon>
+            <template #title>商品销售统计</template>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
       <div class="sidebar-footer" v-if="!isCollapse">
         <div class="sidebar-footer-line"></div>
-        <span class="sidebar-footer-text">NONGFU SPRING</span>
+        <span class="sidebar-footer-text">南京市晟之溪商贸有限公司</span>
+        <span class="sidebar-footer-subtext">NONGFU SPRING</span>
       </div>
     </el-aside>
 
@@ -69,15 +108,15 @@
         </div>
         <div class="header-right">
           <span class="current-date">{{ currentDate }}</span>
-          <el-dropdown>
+          <el-dropdown @command="handleCommand">
             <div class="user-info">
-              <el-avatar :size="32" class="admin-avatar">管</el-avatar>
-              <span class="username">管理员</span>
+              <el-avatar :size="32" class="admin-avatar">{{ userInitial }}</el-avatar>
+              <span class="username">{{ userDisplayName }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item>个人中心</el-dropdown-item>
-                <el-dropdown-item divided>退出登录</el-dropdown-item>
+                <el-dropdown-item command="changePassword">修改密码</el-dropdown-item>
+                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -92,19 +131,56 @@
         </router-view>
       </el-main>
     </el-container>
+
+    <!-- 修改密码弹窗 -->
+    <el-dialog v-model="passwordDialog" title="修改密码" width="400px" :close-on-click-modal="false">
+      <el-form label-width="80px">
+        <el-form-item label="旧密码">
+          <el-input v-model="passwordForm.oldPassword" type="password" show-password placeholder="请输入旧密码" />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="passwordForm.newPassword" type="password" show-password placeholder="请输入新密码" />
+        </el-form-item>
+        <el-form-item label="确认密码">
+          <el-input v-model="passwordForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordDialog = false">取消</el-button>
+        <el-button type="primary" @click="handlePasswordSubmit">确定</el-button>
+      </template>
+    </el-dialog>
   </el-container>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, reactive } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { changePassword } from '@/api/auth'
 
 const route = useRoute()
+const router = useRouter()
 const isCollapse = ref(false)
 
 const activeMenu = computed(() => route.path)
 
 const currentPageTitle = computed(() => route.meta.title || '农夫山泉进销存管理系统')
+
+// 用户信息
+const userInfo = computed(() => {
+  try {
+    return JSON.parse(localStorage.getItem('userInfo') || '{}')
+  } catch {
+    return {}
+  }
+})
+
+const userDisplayName = computed(() => userInfo.value.displayName || '用户')
+const userInitial = computed(() => {
+  const name = userDisplayName.value
+  return name ? name.charAt(0) : '?'
+})
 
 const currentDate = computed(() => {
   const now = new Date()
@@ -118,6 +194,62 @@ const currentDate = computed(() => {
 
 const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value
+}
+
+// 修改密码弹窗
+const passwordDialog = ref(false)
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+})
+
+const handleCommand = (command) => {
+  if (command === 'logout') {
+    handleLogout()
+  } else if (command === 'changePassword') {
+    passwordForm.oldPassword = ''
+    passwordForm.newPassword = ''
+    passwordForm.confirmPassword = ''
+    passwordDialog.value = true
+  }
+}
+
+const handleLogout = () => {
+  ElMessageBox.confirm('确定要退出登录吗？', '退出确认', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('userInfo')
+    ElMessage.success('已退出登录')
+    router.push('/login')
+  }).catch(() => {})
+}
+
+const handlePasswordSubmit = async () => {
+  if (!passwordForm.oldPassword || !passwordForm.newPassword) {
+    ElMessage.warning('请填写旧密码和新密码')
+    return
+  }
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  try {
+    await changePassword({
+      oldPassword: passwordForm.oldPassword,
+      newPassword: passwordForm.newPassword
+    })
+    ElMessage.success('密码修改成功，请重新登录')
+    passwordDialog.value = false
+    localStorage.removeItem('token')
+    localStorage.removeItem('userInfo')
+    router.push('/login')
+  } catch (error) {
+    // 错误已由拦截器处理
+  }
 }
 </script>
 
@@ -299,9 +431,23 @@ const toggleCollapse = () => {
 }
 
 .sidebar-footer-text {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 1.2px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.7) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.sidebar-footer-subtext {
+  display: block;
   font-size: 9px;
-  color: #3A3A4A;
-  letter-spacing: 2.5px;
+  color: rgba(199, 0, 11, 0.7);
+  letter-spacing: 2px;
   text-transform: uppercase;
   font-weight: 500;
 }
@@ -592,5 +738,60 @@ const toggleCollapse = () => {
   box-shadow: 
     0 0 10px rgba(199, 0, 11, 0.8),
     0 0 4px rgba(199, 0, 11, 1);
+}
+
+/* ===== 子菜单分组样式 ===== */
+:deep(.el-sub-menu__title) {
+  margin: 4px 10px;
+  border-radius: 10px;
+  height: 48px;
+  line-height: 48px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #8E8E9E !important;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+:deep(.el-sub-menu__title:hover) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+:deep(.el-sub-menu.is-active > .el-sub-menu__title) {
+  color: #ffffff !important;
+}
+
+:deep(.el-sub-menu .el-menu) {
+  background-color: transparent !important;
+}
+
+:deep(.el-sub-menu .el-menu .el-menu-item) {
+  margin: 2px 12px;
+  padding-left: 46px !important;
+  height: 42px;
+  line-height: 42px;
+  font-size: 13px;
+  background-color: transparent !important;
+}
+
+:deep(.el-sub-menu .el-menu .el-menu-item .el-icon) {
+  font-size: 15px;
+}
+
+:deep(.el-sub-menu .el-menu .el-menu-item.is-active) {
+  background: linear-gradient(135deg, #C7000B 0%, #9A0008 100%) !important;
+  color: #ffffff !important;
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(199, 0, 11, 0.35);
+}
+
+:deep(.el-sub-menu .el-menu .el-menu-item.is-active::before),
+:deep(.el-sub-menu .el-menu .el-menu-item.is-active::after) {
+  display: none;
+}
+
+/* 折叠状态下子菜单标题不显示文本 */
+.el-menu--collapse :deep(.el-sub-menu__title) {
+  margin: 4px 10px;
+  width: auto;
 }
 </style>

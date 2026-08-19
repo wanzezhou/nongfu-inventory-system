@@ -41,6 +41,14 @@
             <el-icon><Plus /></el-icon>
             新增水站
           </el-button>
+          <el-button @click="handleExport" :loading="exporting">
+            <el-icon><Download /></el-icon>
+            导出
+          </el-button>
+          <el-button @click="importDialogVisible = true">
+            <el-icon><Upload /></el-icon>
+            导入
+          </el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -164,19 +172,36 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <ImportDialog v-model="importDialogVisible" module="stations" matchFieldText="水站名称" @success="fetchData" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Download, Upload } from '@element-plus/icons-vue'
 import {
   getStations,
   createStation,
   updateStation,
   deleteStation
 } from '@/api/station'
+import { exportData, downloadBlob } from '@/api/excel'
+import ImportDialog from '@/components/ImportDialog.vue'
+
+const importDialogVisible = ref(false)
+const exporting = ref(false)
+
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    const response = await exportData('stations')
+    downloadBlob(response.data, `水站数据_${Date.now()}.xlsx`)
+  } catch { } finally {
+    exporting.value = false
+  }
+}
 
 const loading = ref(false)
 const submitLoading = ref(false)

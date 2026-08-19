@@ -164,7 +164,7 @@ CREATE TABLE purchase_records (
 -- ============================================================
 CREATE TABLE orders (
     order_id                VARCHAR(50)     NOT NULL COMMENT '订单ID，主键',
-    order_type              TINYINT(1)      NOT NULL COMMENT '订单类型：1-线上平台销售，2-线下水站分销，3-线下零售，4-零售机供货',
+    order_type              TINYINT(1)      NOT NULL COMMENT '订单类型：1-线上平台销售，2-线下水站分销，3-线下零售，4-量贩机供货，5-线下水站返货，6-零售机供货',
     platform_type           VARCHAR(50)     DEFAULT NULL COMMENT '平台类型（订单类型=1时填写，如美团、饿了么）',
     platform_order_no       VARCHAR(100)    DEFAULT NULL COMMENT '平台订单号（订单类型=1时填写）',
     station_id              VARCHAR(50)     DEFAULT NULL COMMENT '水站ID（订单类型=2时填写，外键关联sub_stations表）',

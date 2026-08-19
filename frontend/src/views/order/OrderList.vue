@@ -25,8 +25,9 @@
             <el-option label="线上平台销售" :value="1" />
             <el-option label="线下水站分销" :value="2" />
             <el-option label="线下零售" :value="3" />
-            <el-option label="零售机供货" :value="4" />
+            <el-option label="量贩机供货" :value="4" />
             <el-option label="线下水站返货" :value="5" />
+            <el-option label="零售机供货" :value="6" />
           </el-select>
         </el-form-item>
         <el-form-item label="下单时间">
@@ -54,6 +55,14 @@
           <el-button type="primary" @click="handleAdd">
             <el-icon><Plus /></el-icon>
             新建订单
+          </el-button>
+          <el-button @click="handleExport" :loading="exporting">
+            <el-icon><Download /></el-icon>
+            导出
+          </el-button>
+          <el-button @click="importDialogVisible = true">
+            <el-icon><Upload /></el-icon>
+            导入
           </el-button>
         </el-form-item>
       </el-form>
@@ -92,7 +101,7 @@
             <span class="money-text">¥{{ formatMoney(row.orderAmount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="deliveryFee" label="配送费" width="90" align="right">
+        <el-table-column v-if="false" prop="deliveryFee" label="配送费" width="90" align="right">
           <template #default="{ row }">
             <span>¥{{ formatMoney(row.deliveryFee) }}</span>
           </template>
@@ -150,14 +159,9 @@
       destroy-on-close
       class="create-order-dialog"
     >
-      <el-steps :active="createStep" finish-status="success" align-center class="order-steps">
-        <el-step title="基本信息" />
-        <el-step title="商品明细" />
-        <el-step title="配送信息" />
-      </el-steps>
-
-      <div class="step-content">
-        <div v-show="createStep === 0">
+      <div class="form-sections">
+        <div class="form-section">
+          <div class="section-title">基本信息</div>
           <el-form
             ref="basicFormRef"
             :model="orderForm"
@@ -165,22 +169,14 @@
             label-width="120px"
             class="step-form"
           >
-            <el-form-item label="备注">
-              <el-input
-                v-model="orderForm.remark"
-                type="textarea"
-                :rows="2"
-                placeholder="请输入备注"
-                style="width: 80%"
-              />
-            </el-form-item>
             <el-form-item label="订单类型" prop="orderType">
               <el-radio-group v-model="orderForm.orderType" @change="onOrderTypeChange">
                 <el-radio :value="1">线上平台销售</el-radio>
                 <el-radio :value="2">线下水站分销</el-radio>
                 <el-radio :value="3">线下零售</el-radio>
-                <el-radio :value="4">零售机供货</el-radio>
+                <el-radio :value="4">量贩机供货</el-radio>
                 <el-radio :value="5">线下水站返货</el-radio>
+                <el-radio :value="6">零售机供货</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item label="创建人" prop="createdById">
@@ -200,14 +196,29 @@
               </el-select>
             </el-form-item>
             <el-form-item v-if="orderForm.orderType === 1" label="平台类型" prop="platformType">
-              <el-select v-model="orderForm.platformType" placeholder="请选择平台" style="width: 50%">
+              <el-select v-model="orderForm.platformType" placeholder="请选择平台" filterable style="width: 70%">
+                <el-option label="淘宝" :value="4" />
+                <el-option label="天猫" :value="5" />
+                <el-option label="京东" :value="6" />
+                <el-option label="拼多多" :value="7" />
+                <el-option label="抖音电商" :value="8" />
+                <el-option label="快手电商" :value="9" />
+                <el-option label="小红书" :value="10" />
+                <el-option label="唯品会" :value="11" />
+                <el-option label="苏宁易购" :value="12" />
                 <el-option label="美团" :value="1" />
                 <el-option label="饿了么" :value="2" />
+                <el-option label="京东到家" :value="13" />
+                <el-option label="美团闪购" :value="14" />
+                <el-option label="盒马鲜生" :value="15" />
+                <el-option label="叮咚买菜" :value="16" />
+                <el-option label="朴朴超市" :value="17" />
+                <el-option label="多点" :value="18" />
+                <el-option label="淘鲜达" :value="19" />
+                <el-option label="山姆会员店" :value="20" />
+                <el-option label="本来生活" :value="21" />
                 <el-option label="其他" :value="3" />
               </el-select>
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 1" label="平台订单号" prop="platformOrderNo">
-              <el-input v-model="orderForm.platformOrderNo" placeholder="请输入平台订单号" style="width: 70%" />
             </el-form-item>
             <el-form-item v-if="orderForm.orderType === 2 || orderForm.orderType === 5" label="水站名称" prop="stationId">
               <el-select
@@ -241,28 +252,46 @@
                 style="width: 80%"
               />
             </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 3" label="联系人" prop="contactName">
-              <el-input v-model="orderForm.contactName" placeholder="请输入联系人" style="width: 50%" />
+            <!-- 线下零售：客户姓名/电话/地址（无联系人字段） -->
+            <el-form-item v-if="orderForm.orderType === 3" label="客户姓名" prop="customerName">
+              <el-input v-model="orderForm.customerName" placeholder="请输入客户姓名" style="width: 50%" />
             </el-form-item>
-            <el-form-item v-if="orderForm.orderType !== 2 && orderForm.orderType !== 5" :label="orderForm.orderType === 4 ? '站点名称' : '客户姓名'" prop="customerName">
-              <el-input v-model="orderForm.customerName" :placeholder="orderForm.orderType === 4 ? '请输入站点名称' : '请输入客户姓名'" style="width: 50%" />
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType !== 4 && orderForm.orderType !== 2 && orderForm.orderType !== 5" label="客户电话" prop="customerPhone">
+            <el-form-item v-if="orderForm.orderType === 3" label="客户电话" prop="customerPhone">
               <el-input v-model="orderForm.customerPhone" placeholder="请输入客户电话" style="width: 50%" />
             </el-form-item>
-            <el-form-item v-if="orderForm.orderType !== 2 && orderForm.orderType !== 5" :label="orderForm.orderType === 4 ? '站点地址' : '客户地址'" prop="customerAddress">
-              <el-input
-                v-model="orderForm.customerAddress"
-                type="textarea"
-                :rows="2"
-                :placeholder="orderForm.orderType === 4 ? '请输入站点地址' : '请输入客户地址'"
-                style="width: 80%"
-              />
+            <el-form-item v-if="orderForm.orderType === 3" label="客户地址" prop="customerAddress">
+              <el-input v-model="orderForm.customerAddress" type="textarea" :rows="2" placeholder="请输入客户地址" style="width: 80%" />
+            </el-form-item>
+
+            <!-- 线上平台销售：客户姓名/电话/地址 -->
+            <el-form-item v-if="orderForm.orderType === 1" label="客户姓名" prop="customerName">
+              <el-input v-model="orderForm.customerName" placeholder="请输入客户姓名" style="width: 50%" />
+            </el-form-item>
+            <el-form-item v-if="orderForm.orderType === 1" label="客户电话" prop="customerPhone">
+              <el-input v-model="orderForm.customerPhone" placeholder="请输入客户电话" style="width: 50%" />
+            </el-form-item>
+            <el-form-item v-if="orderForm.orderType === 1" label="客户地址" prop="customerAddress">
+              <el-input v-model="orderForm.customerAddress" type="textarea" :rows="2" placeholder="请输入客户地址" style="width: 80%" />
+            </el-form-item>
+
+            <!-- 量贩机供货(4)/零售机供货(6)：站点名称关联机台模块，站点地址自动带出 -->
+            <el-form-item v-if="orderForm.orderType === 4" label="站点名称" prop="machineStationId">
+              <el-select v-model="orderForm.machineStationId" placeholder="请选择量贩机" filterable style="width: 70%" @change="handleBulkMachineChange">
+                <el-option v-for="item in bulkMachineOptions" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="orderForm.orderType === 6" label="站点名称" prop="machineStationId">
+              <el-select v-model="orderForm.machineStationId" placeholder="请选择零售机" filterable style="width: 70%" @change="handleRetailMachineChange">
+                <el-option v-for="item in retailMachineOptions" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="orderForm.orderType === 4 || orderForm.orderType === 6" label="站点地址">
+              <el-input v-model="orderForm.customerAddress" type="textarea" :rows="2" placeholder="选择机台后自动带出" disabled style="width: 80%" />
             </el-form-item>
           </el-form>
         </div>
 
-        <div v-show="createStep === 1">
+        <div class="form-section">
           <div class="product-list-header">
             <span class="title">商品明细</span>
             <el-button type="primary" size="small" @click="addProductItem">
@@ -285,7 +314,13 @@
                     :key="item.id"
                     :label="`${item.name} (${item.code})`"
                     :value="item.id"
-                  />
+                    :disabled="item.stock <= 0"
+                    :class="{ 'option-out-of-stock': item.stock <= 0 }"
+                  >
+                    <span :style="{ color: item.stock <= 0 ? '#c0c4cc' : '' }">{{ item.name }} ({{ item.code }})</span>
+                    <span v-if="item.stock <= 0" style="color: #c0c4cc; font-size: 12px; margin-left: 8px;">无库存</span>
+                    <span v-else style="color: #67c23a; font-size: 12px; margin-left: 8px;">库存: {{ item.stock }}</span>
+                  </el-option>
                 </el-select>
               </template>
             </el-table-column>
@@ -294,7 +329,7 @@
                 <el-input-number v-model="row.quantity" :min="1" :precision="0" :step="1" style="width: 100%" @change="calculateDeliveryFee" />
               </template>
             </el-table-column>
-            <el-table-column :label="getPriceColumnLabel()" width="130">
+            <el-table-column v-if="[2, 3].includes(orderForm.orderType)" :label="getPriceColumnLabel()" width="130">
               <template #default="{ row }">
                 <el-input-number
                   v-if="orderForm.orderType === 2 || orderForm.orderType === 3"
@@ -307,7 +342,7 @@
                 <span v-else>¥{{ formatMoney(row.unitPrice) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="小计" width="120">
+            <el-table-column v-if="[2, 3].includes(orderForm.orderType)" label="小计" width="120">
               <template #default="{ row }">
                 <span class="subtotal-text">¥{{ formatMoney(calculateItemSubtotal(row)) }}</span>
               </template>
@@ -320,16 +355,17 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="order-total">
+          <div v-if="[2, 3].includes(orderForm.orderType)" class="order-total">
             合计金额：<span class="total-amount">¥{{ formatMoney(calculateTotalAmount()) }}</span>
           </div>
         </div>
 
-        <div v-show="createStep === 2">
+        <div class="form-section">
+          <div class="section-title">配送信息</div>
           <el-form
             ref="deliveryFormRef"
             :model="orderForm"
-            :rules="deliveryRules"
+            :rules="getDeliveryRules()"
             label-width="120px"
             class="step-form"
           >
@@ -347,13 +383,17 @@
                 <el-radio :value="1">自有员工配送</el-radio>
                 <el-radio :value="3">无需配送</el-radio>
               </el-radio-group>
-              <!-- 零售机供货：零售机配送（固定） -->
+              <!-- 量贩机供货：量贩机配送（固定） -->
               <el-radio-group v-else-if="orderForm.orderType === 4" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
-                <el-radio :value="2">零售机配送</el-radio>
+                <el-radio :value="2">量贩机配送</el-radio>
               </el-radio-group>
               <!-- 线下水站返货：水站配送（固定） -->
               <el-radio-group v-else-if="orderForm.orderType === 5" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
                 <el-radio :value="2">水站配送</el-radio>
+              </el-radio-group>
+              <!-- 零售机供货：零售机配送（固定） -->
+              <el-radio-group v-else-if="orderForm.orderType === 6" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
+                <el-radio :value="2">零售机配送</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item v-if="orderForm.deliveryMethod === 1 || orderForm.deliveryMethod === 2" label="配送员工" prop="deliveryStaffId">
@@ -371,9 +411,24 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="配送费" prop="deliveryFee">
+            <el-form-item v-if="false" label="配送费" prop="deliveryFee">
               <el-input-number v-model="orderForm.deliveryFee" :min="0" :precision="2" :step="1" />
               <span class="unit-label">元</span>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <div class="form-section">
+          <div class="section-title">备注</div>
+          <el-form :model="orderForm" label-width="120px" class="step-form">
+            <el-form-item label="备注">
+              <el-input
+                v-model="orderForm.remark"
+                type="textarea"
+                :rows="3"
+                placeholder="请输入备注"
+                style="width: 100%"
+              />
             </el-form-item>
           </el-form>
         </div>
@@ -381,9 +436,7 @@
 
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button v-if="createStep > 0" @click="prevStep">上一步</el-button>
-        <el-button v-if="createStep < 2" type="primary" @click="nextStep">下一步</el-button>
-        <el-button v-if="createStep === 2" type="primary" :loading="submitLoading" @click="handleSubmitOrder">
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmitOrder">
           {{ isEditMode ? '保存修改' : '提交订单' }}
         </el-button>
       </template>
@@ -424,7 +477,6 @@
 
         <el-descriptions title="配送信息" :column="2" border class="detail-section">
           <el-descriptions-item label="配送方式">{{ getDeliveryMethodText(currentOrder.deliveryMethod) }}</el-descriptions-item>
-          <el-descriptions-item label="配送费">¥{{ formatMoney(currentOrder.deliveryFee) }}</el-descriptions-item>
           <el-descriptions-item v-if="currentOrder.deliveryStaff" label="配送员工">{{ currentOrder.deliveryStaff }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="2">{{ currentOrder.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -433,10 +485,6 @@
           <div class="amount-row">
             <span>订单金额：</span>
             <span>¥{{ formatMoney(currentOrder.orderAmount) }}</span>
-          </div>
-          <div class="amount-row">
-            <span>配送费：</span>
-            <span>¥{{ formatMoney(currentOrder.deliveryFee) }}</span>
           </div>
           <div class="amount-row total">
             <span>应收总额：</span>
@@ -465,13 +513,15 @@
     </el-dialog>
 
     <OrderPrint :visible="printDialogVisible" :order="currentOrder" @update:visible="printDialogVisible = $event" />
+
+    <ImportDialog v-model="importDialogVisible" module="orders" matchFieldText="订单号" @success="fetchData" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Delete, View, Close, Edit } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Delete, View, Close, Edit, Download, Upload } from '@element-plus/icons-vue'
 import {
   getOrders,
   getOrderDetail,
@@ -480,9 +530,26 @@ import {
   hardDeleteOrder
 } from '@/api/order'
 import { getProductList } from '@/api/product'
+import { getInventoryList } from '@/api/inventory'
+import { getMachineStations } from '@/api/machineStation'
 import { getStations } from '@/api/station'
 import { getAllWorkers } from '@/api/worker'
 import OrderPrint from './OrderPrint.vue'
+import { exportData, downloadBlob } from '@/api/excel'
+import ImportDialog from '@/components/ImportDialog.vue'
+
+const exporting = ref(false)
+const importDialogVisible = ref(false)
+
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    const response = await exportData('orders')
+    downloadBlob(response.data, `订单数据_${Date.now()}.xlsx`)
+  } catch { } finally {
+    exporting.value = false
+  }
+}
 
 const loading = ref(false)
 const submitLoading = ref(false)
@@ -491,7 +558,6 @@ const detailDialogVisible = ref(false)
 const printDialogVisible = ref(false)
 const isEditMode = ref(false)
 const editingOrderId = ref(null)
-const createStep = ref(0)
 const currentOrder = ref(null)
 
 const basicFormRef = ref(null)
@@ -512,6 +578,8 @@ const pagination = reactive({
 const tableData = ref([])
 const productOptions = ref([])
 const stationOptions = ref([])
+const bulkMachineOptions = ref([])
+const retailMachineOptions = ref([])
 const staffOptions = ref([])
 
 const orderForm = reactive({
@@ -519,6 +587,7 @@ const orderForm = reactive({
   platformType: null,
   platformOrderNo: '',
   stationId: null,
+  machineStationId: null,
   contactName: '',
   customerName: '',
   customerPhone: '',
@@ -538,22 +607,40 @@ const basicRules = {
   customerAddress: [{ required: true, message: '请输入地址', trigger: 'blur' }]
 }
 
-// 动态校验：零售机供货时客户电话非必填；水站分销/返货时校验水站选择
+// 动态校验：按订单类型设置必填项
+// - 创建人：所有类型必填
+// - 线上平台销售(1)：平台类型必填、客户信息必填
+// - 线下水站分销(2)/返货(5)：水站必填（信息自动带出）
+// - 线下零售(3)：客户信息必填
+// - 量贩机供货(4)/零售机供货(6)：机台必填（站点名称/地址自动带出）
 const getBasicRules = () => {
-  const rules = { ...basicRules }
-  if (orderForm.orderType === 4) {
-    rules.customerPhone = []
+  const rules = {
+    orderType: [{ required: true, message: '请选择订单类型', trigger: 'change' }],
+    createdById: [{ required: true, message: '请选择创建人', trigger: 'change' }]
   }
-  if (orderForm.orderType === 2 || orderForm.orderType === 5) {
+  const t = Number(orderForm.orderType)
+  if (t === 1) {
+    rules.platformType = [{ required: true, message: '请选择平台类型', trigger: 'change' }]
+    rules.customerName = [{ required: true, message: '请输入客户姓名', trigger: 'blur' }]
+    rules.customerPhone = [{ required: true, message: '请输入客户电话', trigger: 'blur' }]
+    rules.customerAddress = [{ required: true, message: '请输入客户地址', trigger: 'blur' }]
+  } else if (t === 2 || t === 5) {
     rules.stationId = [{ required: true, message: '请选择水站', trigger: 'change' }]
-    rules.customerName = []
-    rules.customerPhone = []
-    rules.customerAddress = []
-  } else {
-    delete rules.stationId
-    rules.customerName = [{ required: true, message: '请输入名称', trigger: 'blur' }]
-    rules.customerPhone = orderForm.orderType === 4 ? [] : [{ required: true, message: '请输入客户电话', trigger: 'blur' }]
-    rules.customerAddress = [{ required: true, message: '请输入地址', trigger: 'blur' }]
+  } else if (t === 3) {
+    rules.customerName = [{ required: true, message: '请输入客户姓名', trigger: 'blur' }]
+    rules.customerPhone = [{ required: true, message: '请输入客户电话', trigger: 'blur' }]
+    rules.customerAddress = [{ required: true, message: '请输入客户地址', trigger: 'blur' }]
+  } else if (t === 4 || t === 6) {
+    rules.machineStationId = [{ required: true, message: '请选择机台', trigger: 'change' }]
+  }
+  return rules
+}
+
+// 动态校验：配送员工在配送方式需要员工时必填（自有员工配送/水站配送/机台配送）
+const getDeliveryRules = () => {
+  const rules = { ...deliveryRules }
+  if (orderForm.deliveryMethod === 1 || orderForm.deliveryMethod === 2) {
+    rules.deliveryStaffId = [{ required: true, message: '请选择配送员工', trigger: 'change' }]
   }
   return rules
 }
@@ -572,8 +659,9 @@ const getOrderTypeText = (type) => {
     1: '线上平台销售',
     2: '线下水站分销',
     3: '线下零售',
-    4: '零售机供货',
-    5: '线下水站返货'
+    4: '量贩机供货',
+    5: '线下水站返货',
+    6: '零售机供货'
   }
   return map[type] || '未知'
 }
@@ -584,7 +672,8 @@ const getOrderTypeTagType = (type) => {
     2: 'success',
     3: 'warning',
     4: 'info',
-    5: 'danger'
+    5: 'danger',
+    6: 'info'
   }
   return map[type] || 'info'
 }
@@ -673,10 +762,34 @@ const generateRandomDate = () => {
 
 const fetchProductOptions = async () => {
   try {
-    const res = await getProductList({ pageSize: 100 })
-    if (res.data) {
-      productOptions.value = res.data.list || res.data || []
+    const [productRes, inventoryRes] = await Promise.all([
+      getProductList({ pageSize: 100 }),
+      getInventoryList({ pageSize: 100 })
+    ])
+    let products = []
+    if (productRes.data) {
+      products = productRes.data.list || productRes.data || []
     }
+    // 构建库存映射表 product_id -> stock
+    // 库存接口 formatInventory 输出的 id 即为 product_id，字段名为 stock
+    const stockMap = {}
+    if (inventoryRes.data) {
+      const list = inventoryRes.data.list || inventoryRes.data || []
+      list.forEach(item => {
+        stockMap[item.id] = Number(item.stock) || 0
+      })
+    }
+    // 将库存量合并到每个商品上（商品 id 同为 product_id 值）
+    products.forEach(p => {
+      p.stock = stockMap[p.id] ?? 0
+    })
+    // 有库存在前，无库存在后；同库存按名称排序
+    productOptions.value = products.sort((a, b) => {
+      const aHasStock = a.stock > 0 ? 0 : 1
+      const bHasStock = b.stock > 0 ? 0 : 1
+      if (aHasStock !== bHasStock) return aHasStock - bHasStock
+      return (a.name || '').localeCompare(b.name || '', 'zh-CN')
+    })
   } catch (error) {
     console.error('获取商品列表失败:', error)
     productOptions.value = generateProductMockData()
@@ -730,6 +843,52 @@ const handleStationChange = () => {
   }
 }
 
+// 拉取量贩机/零售机列表，用于订单表单的机台关联下拉
+const fetchMachineOptions = async () => {
+  try {
+    const [bulkRes, retailRes] = await Promise.all([
+      getMachineStations({ type: 1, pageSize: 100, status: 1 }),
+      getMachineStations({ type: 2, pageSize: 100, status: 1 })
+    ])
+    const map = (res) => {
+      const list = res.data?.list || res.data || []
+      return list.map(item => ({
+        id: item.machine_id,
+        name: item.station_name,
+        address: item.address || '',
+        manager: item.manager || '',
+        managerPhone: item.manager_phone || ''
+      }))
+    }
+    bulkMachineOptions.value = map(bulkRes)
+    retailMachineOptions.value = map(retailRes)
+  } catch (error) {
+    console.error('获取机台列表失败:', error)
+    bulkMachineOptions.value = []
+    retailMachineOptions.value = []
+  }
+}
+
+// 选择量贩机/零售机后，自动带出站点名称与地址
+const handleBulkMachineChange = () => {
+  const m = bulkMachineOptions.value.find(x => x.id === orderForm.machineStationId)
+  fillMachineToOrder(m)
+}
+
+const handleRetailMachineChange = () => {
+  const m = retailMachineOptions.value.find(x => x.id === orderForm.machineStationId)
+  fillMachineToOrder(m)
+}
+
+const fillMachineToOrder = (m) => {
+  if (m) {
+    orderForm.customerName = m.name
+    orderForm.customerAddress = m.address
+    orderForm.contactName = m.manager
+    orderForm.customerPhone = m.managerPhone
+  }
+}
+
 const fetchStaffOptions = async () => {
   try {
     const res = await getAllWorkers()
@@ -769,7 +928,6 @@ const handleCurrentChange = (page) => {
 const handleAdd = () => {
   isEditMode.value = false
   editingOrderId.value = null
-  createStep.value = 0
   resetOrderForm()
   createDialogVisible.value = true
 }
@@ -780,6 +938,7 @@ const resetOrderForm = () => {
     platformType: null,
     platformOrderNo: '',
     stationId: null,
+    machineStationId: null,
     contactName: '',
     customerName: '',
     customerPhone: '',
@@ -817,12 +976,12 @@ const handleEditFromDetail = () => {
 const fillOrderForm = (order) => {
   isEditMode.value = true
   editingOrderId.value = order.id || order.orderNo
-  createStep.value = 0
   Object.assign(orderForm, {
     orderType: order.orderType,
     platformType: order.platformType,
     platformOrderNo: order.platformOrderNo || '',
     stationId: order.stationId,
+    machineStationId: order.machineStationId || null,
     contactName: order.contactName || '',
     customerName: order.customerName,
     customerPhone: order.customerPhone || '',
@@ -874,6 +1033,9 @@ const handleProductChange = (index) => {
       case 5:
         price = product.purchasePrice || 0
         break
+      case 6:
+        price = product.purchasePrice || 0
+        break
       default:
         price = product.retailPrice || 0
     }
@@ -899,6 +1061,8 @@ const getPriceColumnLabel = () => {
       return '进货价'
     case 5:
       return '进货价'
+    case 6:
+      return '进货价'
     default:
       return '单价'
   }
@@ -910,50 +1074,17 @@ const calculateItemSubtotal = (item) => {
 
 // 根据订单类型和配送方式自动计算配送费
 const calculateDeliveryFee = () => {
-  const orderType = Number(orderForm.orderType)
-  const deliveryMethod = Number(orderForm.deliveryMethod)
-
-  // 无需配送时，配送费为0
-  if (deliveryMethod === 3) {
-    orderForm.deliveryFee = 0
-    return
-  }
-
-  // 根据订单类型和配送方式确定使用哪个配送费字段
-  let feeField = ''
-  switch (orderType) {
-    case 1: // 线上平台销售 - 自有员工配送 -> 工人零售配送费
-      feeField = 'workerRetailDeliveryFee'
-      break
-    case 2: // 线下水站分销 - 水站配送 -> 工人水站配送费
-      feeField = 'workerStationDeliveryFee'
-      break
-    case 3: // 线下零售 - 自有员工配送 -> 工人零售配送费
-      feeField = 'workerRetailDeliveryFee'
-      break
-    case 4: // 零售机供货 - 零售机配送 -> 工人零售机配送费
-      feeField = 'workerVendingDeliveryFee'
-      break
-    case 5: // 线下水站返货 - 水站配送 -> 工人水站配送费
-      feeField = 'workerStationDeliveryFee'
-      break
-  }
-
-  if (!feeField) {
-    orderForm.deliveryFee = 0
-    return
-  }
-
-  const totalFee = orderForm.items.reduce((sum, item) => {
-    const fee = getProductField(item.productId, feeField)
-    return sum + fee * item.quantity
-  }, 0)
-  orderForm.deliveryFee = Math.round(totalFee * 100) / 100
+  // 配送费统一为0，不显示不填写
+  orderForm.deliveryFee = 0
 }
 
 // 订单类型变更时设置默认配送方式
 const onOrderTypeChange = () => {
   const orderType = Number(orderForm.orderType)
+  // 离开机台供货类型时清空已选机台
+  if (orderType !== 4 && orderType !== 6) {
+    orderForm.machineStationId = null
+  }
   switch (orderType) {
     case 1: // 线上平台销售 -> 自有员工配送
       orderForm.deliveryMethod = 1
@@ -964,10 +1095,13 @@ const onOrderTypeChange = () => {
     case 3: // 线下零售 -> 默认自有员工配送
       orderForm.deliveryMethod = 1
       break
-    case 4: // 零售机供货 -> 零售机配送（用2=水站配送占位）
+    case 4: // 量贩机供货 -> 量贩机配送（用2=水站配送占位）
       orderForm.deliveryMethod = 2
       break
     case 5: // 线下水站返货 -> 水站配送
+      orderForm.deliveryMethod = 2
+      break
+    case 6: // 零售机供货 -> 零售机配送（用2=水站配送占位）
       orderForm.deliveryMethod = 2
       break
   }
@@ -980,44 +1114,30 @@ const calculateTotalAmount = () => {
   }, 0)
 }
 
-const prevStep = () => {
-  if (createStep.value > 0) {
-    createStep.value--
-  }
-}
-
-const nextStep = async () => {
-  if (createStep.value === 0) {
-    try {
-      await basicFormRef.value?.validate()
-    } catch (error) {
-      return
-    }
-  }
-  if (createStep.value === 1) {
-    if (orderForm.items.length === 0) {
-      ElMessage.warning('请至少添加一个商品')
-      return
-    }
-    const hasInvalidProduct = orderForm.items.some(item => !item.productId || item.quantity <= 0)
-    if (hasInvalidProduct) {
-      ElMessage.warning('请完善所有商品信息')
-      return
-    }
-    // 进入配送信息步骤前，自动计算配送费
-    calculateDeliveryFee()
-  }
-  if (createStep.value < 2) {
-    createStep.value++
-  }
-}
-
 const handleSubmitOrder = async () => {
+  // 单页表单：提交时统一校验基本信息、商品明细、配送信息
+  try {
+    await basicFormRef.value?.validate()
+  } catch (error) {
+    ElMessage.warning('请完善基本信息')
+    return
+  }
+  if (orderForm.items.length === 0) {
+    ElMessage.warning('请至少添加一个商品')
+    return
+  }
+  const hasInvalidProduct = orderForm.items.some(item => !item.productId || item.quantity <= 0)
+  if (hasInvalidProduct) {
+    ElMessage.warning('请完善所有商品信息')
+    return
+  }
   try {
     await deliveryFormRef.value?.validate()
   } catch (error) {
+    ElMessage.warning('请完善配送信息')
     return
   }
+  calculateDeliveryFee()
 
   submitLoading.value = true
   try {
@@ -1080,6 +1200,7 @@ const handlePrint = () => {
 onMounted(() => {
   fetchProductOptions()
   fetchStationOptions()
+  fetchMachineOptions()
   fetchStaffOptions()
   fetchData()
 })
@@ -1128,13 +1249,21 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
-.order-steps {
-  margin-bottom: 30px;
-  margin-top: 10px;
+.form-sections {
+  padding: 0 4px;
 }
 
-.step-content {
-  min-height: 350px;
+.form-section {
+  margin-bottom: 12px;
+  padding: 8px 12px 12px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.create-order-dialog :deep(.el-dialog__body) {
+  max-height: 72vh;
+  overflow-y: auto;
 }
 
 .step-form {
@@ -1157,6 +1286,15 @@ onMounted(() => {
 
 .product-table {
   margin-bottom: 15px;
+}
+
+/* 商品下拉：无库存项暗淡显示 */
+.option-out-of-stock {
+  opacity: 0.5;
+}
+
+:deep(.el-select-dropdown__item.is-disabled) {
+  color: #c0c4cc;
 }
 
 .order-total {
@@ -1227,5 +1365,49 @@ onMounted(() => {
 .amount-row span:last-child {
   min-width: 100px;
   text-align: right;
+}
+
+/* ===== 移动端 / 窄屏适配 ===== */
+@media screen and (max-width: 768px) {
+  .order-list :deep(.el-dialog) {
+    width: 94vw !important;
+    max-width: 94vw !important;
+    margin-top: 4vh !important;
+    margin-bottom: 4vh !important;
+  }
+  .create-order-dialog :deep(.el-dialog__body) {
+    max-height: 82vh;
+  }
+  /* 表单标签转顶部布局，避免窄屏横向挤压 */
+  .create-order-dialog :deep(.el-form-item) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .create-order-dialog :deep(.el-form-item__label) {
+    width: auto !important;
+    text-align: left;
+    justify-content: flex-start;
+    padding: 0 0 4px 0 !important;
+    line-height: 1.4;
+  }
+  .create-order-dialog :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+    flex-wrap: wrap;
+  }
+  .create-order-dialog :deep(.el-input),
+  .create-order-dialog :deep(.el-select),
+  .create-order-dialog :deep(.el-input-number) {
+    width: 100% !important;
+  }
+  .create-order-dialog :deep(.el-radio-group) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+  .product-list-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 }
 </style>

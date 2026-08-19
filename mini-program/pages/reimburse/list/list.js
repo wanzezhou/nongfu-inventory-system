@@ -1,6 +1,7 @@
 const request = require('../../../utils/request.js');
 const auth = require('../../../utils/auth.js');
 const fmt = require('../../../utils/format.js');
+const config = require('../../../utils/config.js');
 
 Page({
   data: {
@@ -38,13 +39,20 @@ Page({
 
     return request.get('/mini/reimbursements', { page, pageSize: this.data.pageSize })
       .then((res) => {
-        const list = (res.list || []).map(it => Object.assign({}, it, {
-          statusText: this._statusText(it.status),
-          statusClass: this._statusClass(it.status),
-          amountText: '¥' + fmt.formatAmount(it.amount),
-          approvedText: it.approvedAmount !== null && it.approvedAmount !== undefined
-            ? '¥' + fmt.formatAmount(it.approvedAmount) : ''
-        }));
+        const list = (res.list || []).map(it => {
+          const attaches = Array.isArray(it.attachments) ? it.attachments : [];
+          const fullUrls = attaches.map(a => this._fullUrl(a.fileUrl || a.url));
+          return Object.assign({}, it, {
+            statusText: this._statusText(it.status),
+            statusClass: this._statusClass(it.status),
+            amountText: '¥' + fmt.formatAmount(it.amount),
+            approvedText: it.approvedAmount !== null && it.approvedAmount !== undefined
+              ? '¥' + fmt.formatAmount(it.approvedAmount) : '',
+            attachCount: fullUrls.length,
+            attachPreview: fullUrls.slice(0, 3),
+            attachAll: fullUrls
+          });
+        });
         const total = res.total || 0;
         const merged = reset ? list : this.data.list.concat(list);
         this.setData({
@@ -68,6 +76,22 @@ Page({
     if (s === 2) return 'tag-success';
     if (s === 3) return 'tag-danger';
     return 'tag-warning';
+  },
+
+  _fullUrl(u) {
+    if (!u) return '';
+    if (/^https?:\/\//i.test(u)) return u;
+    return config.BASE_URL + u;
+  },
+
+  previewAttach(e) {
+    const id = e.currentTarget.dataset.id;
+    const it = this.data.list.find(x => x.id === id);
+    if (!it || !it.attachAll || it.attachAll.length === 0) return;
+    wx.previewImage({
+      current: it.attachAll[0],
+      urls: it.attachAll
+    });
   },
 
   goCreate() {

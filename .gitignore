@@ -14,6 +14,16 @@ backend/.env
 # IDE
 .vscode/
 .idea/
+.trae/
+
+# WorkBuddy session/tool data
+.workbuddy/
+
+# Runtime uploads
+backend/uploads/
+
+# Agent working artifacts
+overview.md
 
 # OS
 .DS_Store

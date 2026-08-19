@@ -92,6 +92,40 @@
   color: #B8B8C4;
 }
 
+/* 附件展示 */
+.r-attach {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  padding: 14rpx 16rpx;
+  margin-top: 10rpx;
+  background: #FAFAFC;
+  border-radius: 16rpx;
+}
+.ra-icon { font-size: 26rpx; }
+.ra-count {
+  font-size: 24rpx;
+  color: #5A5A6E;
+  margin-right: 8rpx;
+}
+.ra-thumb {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 10rpx;
+  background: #eee;
+}
+.ra-more {
+  width: 80rpx;
+  height: 80rpx;
+  line-height: 80rpx;
+  text-align: center;
+  background: #EFEFF4;
+  color: #8E8E9E;
+  border-radius: 10rpx;
+  font-size: 22rpx;
+}
+
 .list-tip {
   text-align: center;
   padding: 24rpx;

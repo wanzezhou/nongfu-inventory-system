@@ -57,7 +57,9 @@ router.post('/deposits', miniDepositController.create);
 
 // 报销
 router.get('/reimbursements', miniReimburseController.list);
+router.get('/reimbursements/:id', miniReimburseController.detail);
 router.post('/reimbursements', miniReimburseController.create);
 router.put('/reimbursements/:id/approve', requireRole('admin'), miniReimburseController.approve);
+router.post('/reimbursements/upload-attachment', miniReimburseController.upload.single('file'), miniReimburseController.uploadAttachment);
 
 module.exports = router;

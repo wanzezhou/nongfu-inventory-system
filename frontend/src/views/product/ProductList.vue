@@ -56,6 +56,14 @@
             <el-icon><Plus /></el-icon>
             新增商品
           </el-button>
+          <el-button @click="handleExport" :loading="exporting">
+            <el-icon><Download /></el-icon>
+            导出
+          </el-button>
+          <el-button @click="importDialogVisible = true">
+            <el-icon><Upload /></el-icon>
+            导入
+          </el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -280,13 +288,15 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <ImportDialog v-model="importDialogVisible" module="products" matchFieldText="商品编码" @success="fetchData" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete, Picture } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Picture, Download, Upload } from '@element-plus/icons-vue'
 import {
   getProductList,
   addProduct,
@@ -294,10 +304,24 @@ import {
   deleteProduct,
   getCategoryList
 } from '@/api/product'
+import { exportData, downloadBlob } from '@/api/excel'
+import ImportDialog from '@/components/ImportDialog.vue'
 
 const loading = ref(false)
 const submitLoading = ref(false)
 const statusLoading = ref({})
+const importDialogVisible = ref(false)
+const exporting = ref(false)
+
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    const response = await exportData('products')
+    downloadBlob(response.data, `商品数据_${Date.now()}.xlsx`)
+  } catch { } finally {
+    exporting.value = false
+  }
+}
 const dialogVisible = ref(false)
 const dialogTitle = ref('')
 const activeTab = ref('basic')

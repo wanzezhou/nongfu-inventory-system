@@ -39,6 +39,7 @@ function formatOrder(order) {
     platformType: order.platform_type,
     platformOrderNo: order.platform_order_no,
     stationId: order.station_id,
+    machineStationId: order.machine_station_id || null,
     customerName: order.customer_name,
     customerPhone: order.customer_phone,
     customerAddress: order.customer_address,
@@ -48,6 +49,7 @@ function formatOrder(order) {
     totalAmount: Number(order.total_receivable) || 0,
     deliveryMethod: order.delivery_type,
     deliveryStaffId: order.worker_id,
+    deliveryStaff: order.delivery_staff_name || null,
     paymentStatus: order.payment_status,
     paidAmount: Number(order.paid_amount) || 0,
     orderStatus: order.order_status,
@@ -133,10 +135,11 @@ async function getOrderById(req, res) {
   try {
     const { id } = req.params;
 
-    // 查询订单基本信息（LEFT JOIN workers 获取创建人姓名）
-    const orderSql = `SELECT o.*, w.worker_name AS creator_name
+    // 查询订单基本信息（LEFT JOIN workers 获取创建人姓名和配送员工姓名）
+    const orderSql = `SELECT o.*, w.worker_name AS creator_name, dw.worker_name AS delivery_staff_name
       FROM orders o
       LEFT JOIN workers w ON o.created_by = w.worker_id
+      LEFT JOIN workers dw ON o.worker_id = dw.worker_id
       WHERE o.order_id = ?`;
     const [orderRows] = await pool.execute(orderSql, [id]);
 
@@ -198,11 +201,11 @@ async function createOrder(req, res) {
   try {
     const {
       // 蛇形命名
-      order_type, platform_type, platform_order_no, station_id,
+      order_type, platform_type, platform_order_no, station_id, machine_station_id,
       customer_name, customer_phone, customer_address, contact_name,
       delivery_type, worker_id, remark, items, created_by,
       // 驼峰命名
-      orderType, platformType, platformOrderNo, stationId,
+      orderType, platformType, platformOrderNo, stationId, machineStationId,
       customerName, customerPhone, customerAddress, contactName,
       deliveryMethod, deliveryStaffId, createdById
     } = req.body;
@@ -212,6 +215,7 @@ async function createOrder(req, res) {
     const actualPlatformType = platform_type !== undefined ? platform_type : platformType;
     const actualPlatformOrderNo = platform_order_no !== undefined ? platform_order_no : platformOrderNo;
     const actualStationId = (station_id !== undefined ? station_id : stationId) || null;
+    const actualMachineStationId = (machine_station_id !== undefined ? machine_station_id : machineStationId) || null;
     const actualCustomerName = customer_name !== undefined ? customer_name : customerName;
     const actualCustomerPhone = customer_phone !== undefined ? customer_phone : customerPhone;
     const actualCustomerAddress = customer_address !== undefined ? customer_address : customerAddress;
@@ -225,14 +229,14 @@ async function createOrder(req, res) {
 
     const actualItems = items || [];
 
-    // 校验必填字段（零售机供货时客户电话非必填）
-    const needPhone = Number(actualOrderType) !== 4;
+    // 校验必填字段（量贩机供货/零售机供货时客户电话非必填）
+    const needPhone = ![4, 6].includes(Number(actualOrderType));
     if (!actualOrderType || !actualCustomerName || (needPhone && !actualCustomerPhone) || !actualDeliveryType || !actualItems || actualItems.length === 0) {
       return error(res, '订单类型、客户姓名、配送方式和商品明细不能为空', 400);
     }
 
     // 校验订单类型
-    const validOrderTypes = [1, 2, 3, 4, 5];
+    const validOrderTypes = [1, 2, 3, 4, 5, 6];
     if (!validOrderTypes.includes(Number(actualOrderType))) {
       return error(res, '订单类型无效', 400);
     }
@@ -243,16 +247,18 @@ async function createOrder(req, res) {
       return error(res, '配送方式无效', 400);
     }
 
-    // 水站订单必须有水站ID
-    if (Number(actualOrderType) === 2 && !actualStationId) {
+    // 水站订单（分销/返货）必须有水站ID
+    if ((Number(actualOrderType) === 2 || Number(actualOrderType) === 5) && !actualStationId) {
       return error(res, '水站订单必须选择水站', 400);
     }
-    
-    // 返货订单无需配送
-    const isReturnOrder = Number(actualOrderType) === 5;
-    if (isReturnOrder && Number(actualDeliveryType) !== 3) {
-      return error(res, '返货订单配送方式应为"无需配送"', 400);
+
+    // 机台供货订单（量贩机供货/零售机供货）必须关联机台
+    if ((Number(actualOrderType) === 4 || Number(actualOrderType) === 6) && !actualMachineStationId) {
+      return error(res, '机台供货订单必须选择机台', 400);
     }
+
+    // 返货订单：使用水站配送，无需额外校验
+    const isReturnOrder = Number(actualOrderType) === 5;
 
     // 开始事务
     await connection.beginTransaction();
@@ -314,7 +320,11 @@ async function createOrder(req, res) {
           unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price;
           deliveryFeePerUnit = Number(actualDeliveryType) === 3 ? 0 : product.worker_retail_delivery_fee;
           break;
-        case 4: // 零售机供货：进货价 + 工人零售机配送费
+        case 4: // 量贩机供货：进货价 + 工人零售机配送费
+          unitPrice = product.purchase_price;
+          deliveryFeePerUnit = product.worker_machine_delivery_fee;
+          break;
+        case 6: // 零售机供货：与量贩机供货一致（进货价 + 工人零售机配送费）
           unitPrice = product.purchase_price;
           deliveryFeePerUnit = product.worker_machine_delivery_fee;
           break;
@@ -351,11 +361,11 @@ async function createOrder(req, res) {
 
     // 插入订单表
     const insertOrderSql = `INSERT INTO orders (
-      order_id, order_type, platform_type, platform_order_no, station_id,
+      order_id, order_type, platform_type, platform_order_no, station_id, machine_station_id,
       customer_name, customer_phone, customer_address, contact_name, order_amount,
       delivery_fee, total_receivable, delivery_type, worker_id,
       payment_status, paid_amount, order_status, created_by, remark, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const orderValues = [
       orderId,
@@ -363,6 +373,7 @@ async function createOrder(req, res) {
       actualPlatformType || null,
       actualPlatformOrderNo || null,
       actualStationId || null,
+      actualMachineStationId || null,
       actualCustomerName,
       actualCustomerPhone || null,
       actualCustomerAddress || null,
@@ -433,11 +444,7 @@ async function createOrder(req, res) {
           [newQuantity, now, now, item.product_id]
         );
       } else {
-        // 销售：扣减库存
-        if (currentQuantity < item.quantity) {
-          await connection.rollback();
-          return error(res, `库存不足，商品: ${item.product_id}，当前库存: ${currentQuantity}`, 400);
-        }
+        // 销售：扣减库存（允许负数）
         newQuantity = currentQuantity - item.quantity;
         await connection.execute(
           'UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?',
@@ -763,10 +770,10 @@ async function updateOrder(req, res) {
   try {
     const { id } = req.params;
     const {
-      order_type, platform_type, platform_order_no, station_id,
+      order_type, platform_type, platform_order_no, station_id, machine_station_id,
       customer_name, customer_phone, customer_address, contact_name,
       delivery_type, worker_id, remark, items, created_by,
-      orderType, platformType, platformOrderNo, stationId,
+      orderType, platformType, platformOrderNo, stationId, machineStationId,
       customerName, customerPhone, customerAddress, contactName,
       deliveryMethod, deliveryStaffId, createdById
     } = req.body;
@@ -776,6 +783,7 @@ async function updateOrder(req, res) {
     const actualPlatformType = platform_type !== undefined ? platform_type : platformType;
     const actualPlatformOrderNo = platform_order_no !== undefined ? platform_order_no : platformOrderNo;
     const actualStationId = (station_id !== undefined ? station_id : stationId) || null;
+    const actualMachineStationId = (machine_station_id !== undefined ? machine_station_id : machineStationId) || null;
     const actualCustomerName = customer_name !== undefined ? customer_name : customerName;
     const actualCustomerPhone = customer_phone !== undefined ? customer_phone : customerPhone;
     const actualCustomerAddress = customer_address !== undefined ? customer_address : customerAddress;
@@ -787,7 +795,7 @@ async function updateOrder(req, res) {
 
     // 校验订单类型
     if (actualOrderType !== undefined && actualOrderType !== null) {
-      const validOrderTypes = [1, 2, 3, 4, 5];
+      const validOrderTypes = [1, 2, 3, 4, 5, 6];
       if (!validOrderTypes.includes(Number(actualOrderType))) {
         await connection.rollback();
         return error(res, '订单类型无效', 400);
@@ -863,8 +871,9 @@ async function updateOrder(req, res) {
         case 2: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price;
           if (Number(actualDeliveryType) === 2) deliveryFeePerUnit = product.distribution_delivery_fee;
           else if (Number(actualDeliveryType) === 1) deliveryFeePerUnit = product.worker_wholesale_delivery_fee; break;
-        case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; deliveryFeePerUnit = product.worker_retail_delivery_fee; break;
-        case 4: unitPrice = product.machine_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
+        case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; deliveryFeePerUnit = Number(actualDeliveryType) === 3 ? 0 : product.worker_retail_delivery_fee; break;
+        case 4: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
+        case 6: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
         case 5: unitPrice = product.purchase_price; deliveryFeePerUnit = 0; break;
       }
 
@@ -878,8 +887,8 @@ async function updateOrder(req, res) {
     const total_receivable = order_amount + delivery_fee;
 
     // 更新订单主表
-    await connection.execute(`UPDATE orders SET order_type=?, platform_type=?, platform_order_no=?, station_id=?, customer_name=?, customer_phone=?, customer_address=?, contact_name=?, order_amount=?, delivery_fee=?, total_receivable=?, delivery_type=?, worker_id=?, created_by=?, remark=?, updated_at=? WHERE order_id=?`,
-      [Number(actualOrderType), actualPlatformType || null, actualPlatformOrderNo || null, actualStationId, actualCustomerName, actualCustomerPhone || null, actualCustomerAddress || null, actualContactName || null, order_amount, delivery_fee, total_receivable, Number(actualDeliveryType), actualWorkerId, actualCreatedById, remark || null, new Date(), id]);
+    await connection.execute(`UPDATE orders SET order_type=?, platform_type=?, platform_order_no=?, station_id=?, machine_station_id=?, customer_name=?, customer_phone=?, customer_address=?, contact_name=?, order_amount=?, delivery_fee=?, total_receivable=?, delivery_type=?, worker_id=?, created_by=?, remark=?, updated_at=? WHERE order_id=?`,
+      [Number(actualOrderType), actualPlatformType || null, actualPlatformOrderNo || null, actualStationId, actualMachineStationId || null, actualCustomerName, actualCustomerPhone || null, actualCustomerAddress || null, actualContactName || null, order_amount, delivery_fee, total_receivable, Number(actualDeliveryType), actualWorkerId, actualCreatedById, remark || null, new Date(), id]);
 
     // 删除旧明细
     await connection.execute('DELETE FROM order_items WHERE order_id = ?', [id]);
@@ -897,8 +906,7 @@ async function updateOrder(req, res) {
         // 返货：增加库存
         await connection.execute('UPDATE inventory SET quantity = ?, last_in_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity + item.quantity, new Date(), new Date(), item.product_id]);
       } else {
-        // 销售：扣减库存
-        if (invRows[0].quantity < item.quantity) { await connection.rollback(); return error(res, `库存不足: ${item.product_id}`, 400); }
+        // 销售：扣减库存（允许负数）
         await connection.execute('UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity - item.quantity, new Date(), new Date(), item.product_id]);
       }
     }
@@ -998,14 +1006,24 @@ async function createMiniOrder(req, res) {
     }
     // 获取订单类型，默认为线下零售(3)
     const actualOrderType = (order_type !== undefined ? order_type : (orderType !== undefined ? orderType : 3));
-    const validOrderTypes = [1, 2, 3, 4, 5];
+    const validOrderTypes = [1, 2, 3, 4, 5, 6];
     if (!validOrderTypes.includes(Number(actualOrderType))) {
       return error(res, '订单类型无效', 400);
     }
 
-    // 返货订单无需配送
+    // 返货订单：使用水站配送，配送费统一为0
     const isReturnOrder = Number(actualOrderType) === 5;
-    const actualDeliveryType = isReturnOrder ? 3 : 1;
+    // 根据订单类型设置默认配送方式
+    let actualDeliveryType;
+    switch (Number(actualOrderType)) {
+      case 1: actualDeliveryType = 1; break;  // 线上平台销售：自有员工配送
+      case 2: actualDeliveryType = 2; break;  // 线下水站分销：水站配送
+      case 3: actualDeliveryType = 1; break;  // 线下零售：自有员工配送
+      case 4: actualDeliveryType = 2; break;  // 量贩机供货：量贩机配送（用2表示）
+      case 6: actualDeliveryType = 2; break;  // 零售机供货：零售机配送（用2表示）
+      case 5: actualDeliveryType = 2; break;  // 线下水站返货：水站配送
+      default: actualDeliveryType = 1;
+    }
 
     await connection.beginTransaction();
 
@@ -1043,7 +1061,11 @@ async function createMiniOrder(req, res) {
           unitPrice = item.unitPrice !== undefined ? Number(item.unitPrice) : (Number(product.retail_price) || 0);
           deliveryFeePerUnit = Number(product.worker_retail_delivery_fee) || 0;
           break;
-        case 4: // 零售机供货：进货价 + 工人零售机配送费
+        case 4: // 量贩机供货：进货价 + 工人机台配送费
+          unitPrice = Number(product.purchase_price) || 0;
+          deliveryFeePerUnit = Number(product.worker_machine_delivery_fee) || 0;
+          break;
+        case 6: // 零售机供货：与量贩机供货一致（进货价 + 工人机台配送费）
           unitPrice = Number(product.purchase_price) || 0;
           deliveryFeePerUnit = Number(product.worker_machine_delivery_fee) || 0;
           break;
@@ -1122,8 +1144,7 @@ async function createMiniOrder(req, res) {
         // 返货：增加库存
         await connection.execute('UPDATE inventory SET quantity = ?, last_in_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity + item.quantity, now, now, item.product_id]);
       } else {
-        // 销售：扣减库存
-        if (invRows[0].quantity < item.quantity) { await connection.rollback(); return error(res, `库存不足: ${item.product_id}`, 400); }
+        // 销售：扣减库存（允许负数）
         await connection.execute('UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity - item.quantity, now, now, item.product_id]);
       }
     }

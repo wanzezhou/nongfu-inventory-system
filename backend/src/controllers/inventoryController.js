@@ -290,9 +290,9 @@ async function stockOut(req, res) {
       return error(res, '该商品库存不存在', 404);
     }
 
-    // 检查库存是否充足
+    // 检查库存是否充足（盘库减少type=3时允许负数）
     const currentQuantity = inventoryRows[0].quantity;
-    if (currentQuantity < qty) {
+    if (Number(out_type) !== 3 && currentQuantity < qty) {
       await connection.rollback();
       return error(res, '库存不足，当前库存: ' + currentQuantity, 400);
     }

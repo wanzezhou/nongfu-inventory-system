@@ -16,6 +16,8 @@ const excelRoutes = require('./routes/excelRoutes');
 const miniRoutes = require('./routes/miniRoutes');
 const salesmanRoutes = require('./routes/salesmanRoutes');
 const miniAccountRoutes = require('./routes/miniAccountRoutes');
+const statisticsRoutes = require('./routes/statisticsRoutes');
+const machineStationRoutes = require('./routes/machineStationRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +49,8 @@ app.use('/api/excel', excelRoutes);
 app.use('/mini', miniRoutes);
 app.use('/api/salesmen', salesmanRoutes);
 app.use('/api/mini-accounts', miniAccountRoutes);
+app.use('/api/statistics', statisticsRoutes);
+app.use('/api/machine-stations', machineStationRoutes);
 
 // 根路由
 app.get('/', (req, res) => {

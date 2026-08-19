@@ -95,8 +95,17 @@
   height: 96rpx;
   line-height: 96rpx;
   padding: 0;
+  background: linear-gradient(135deg, #C7000B 0%, #E63946 100%) !important;
+  color: #FFFFFF !important;
+  border-radius: 48rpx !important;
+  font-size: 30rpx !important;
+  font-weight: 600 !important;
+  letter-spacing: 2rpx !important;
+  border: none !important;
+  box-shadow: 0 8rpx 24rpx rgba(199, 0, 11, 0.28);
 }
-.login-btn[disabled] { opacity: 0.6; }
+.login-btn::after { border: none !important; }
+.login-btn[disabled] { opacity: 0.6 !important; }
 
 .admin-hint {
   margin-top: 100rpx;

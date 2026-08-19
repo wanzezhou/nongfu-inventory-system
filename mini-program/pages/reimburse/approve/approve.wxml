@@ -10,6 +10,13 @@
       <text class="a-amount price">{{item.amountText}}</text>
     </view>
     <view class="a-desc" wx:if="{{item.desc}}">{{item.desc}}</view>
+    <view class="a-attach" wx:if="{{item.attachCount > 0}}" data-id="{{item.id}}" bindtap="previewAttach">
+      <text class="aa-icon">📎</text>
+      <text class="aa-count">{{item.attachCount}} 张附件</text>
+      <image wx:for="{{item.attachPreview}}" wx:for-item="img" wx:key="*this"
+             class="aa-thumb" src="{{img}}" mode="aspectFill" />
+      <text class="aa-more" wx:if="{{item.attachCount > 3}}">+{{item.attachCount - 3}}</text>
+    </view>
     <view class="a-time">{{item.createdAt || ''}}</view>
     <view class="a-actions">
       <view class="a-btn reject" data-id="{{item.id}}" bindtap="onReject">拒绝</view>
