@@ -14,19 +14,23 @@ SET @idx1 = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 SET @s = IF(@idx1>0, 'ALTER TABLE orders DROP INDEX idx_order_status', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
--- 2) 删除 order_status 列
+-- 2) 保留历史已取消订单：order_status=3 -> canceled_at（仅当 order_status 列尚存时执行）
 SET @c1 = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA='nongfu_inventory' AND TABLE_NAME='orders' AND COLUMN_NAME='order_status');
+SET @s = IF(@c1>0, 'UPDATE orders SET canceled_at = updated_at WHERE order_status = 3', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- 3) 删除 order_status 列
 SET @s = IF(@c1>0, 'ALTER TABLE orders DROP COLUMN order_status', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
--- 3) 新增 canceled_at 列（替代 order_status=3）
+-- 4) 新增 canceled_at 列（替代 order_status=3）
 SET @c2 = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA='nongfu_inventory' AND TABLE_NAME='orders' AND COLUMN_NAME='canceled_at');
 SET @s = IF(@c2=0, 'ALTER TABLE orders ADD COLUMN canceled_at DATETIME DEFAULT NULL COMMENT ''取消时间；非空表示该订单已取消（替代原 order_status=3）'' AFTER created_by', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
--- 4) 新增 canceled_at 索引
+-- 5) 新增 canceled_at 索引
 SET @idx2 = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
     WHERE TABLE_SCHEMA='nongfu_inventory' AND TABLE_NAME='orders' AND INDEX_NAME='idx_canceled_at');
 SET @s = IF(@idx2=0, 'ALTER TABLE orders ADD KEY idx_canceled_at (canceled_at)', 'SELECT 1');
