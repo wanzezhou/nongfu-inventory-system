@@ -52,7 +52,6 @@ function formatOrder(order) {
     deliveryStaff: order.delivery_staff_name || null,
     paymentStatus: order.payment_status,
     paidAmount: Number(order.paid_amount) || 0,
-    orderStatus: order.order_status,
     createdById: order.created_by || null,
     createdByName: order.creator_name || null,
     remark: order.remark,
@@ -64,11 +63,10 @@ function formatOrder(order) {
 // 获取订单列表
 async function getOrderList(req, res) {
   try {
-    const { keyword, order_type, order_status, orderType, orderStatus, startDate, endDate, page = 1, pageSize = 10 } = req.query;
+    const { keyword, order_type, orderType, startDate, endDate, page = 1, pageSize = 10 } = req.query;
 
     // 兼容驼峰和蛇形命名
     const actualOrderType = order_type !== undefined ? order_type : orderType;
-    const actualOrderStatus = order_status !== undefined ? order_status : orderStatus;
 
     // 构建查询条件
     let whereClause = 'WHERE 1=1';
@@ -84,12 +82,6 @@ async function getOrderList(req, res) {
     if (actualOrderType !== undefined && actualOrderType !== '' && actualOrderType !== null) {
       whereClause += ' AND order_type = ?';
       params.push(Number(actualOrderType));
-    }
-
-    // 订单状态筛选
-    if (actualOrderStatus !== undefined && actualOrderStatus !== '' && actualOrderStatus !== null) {
-      whereClause += ' AND order_status = ?';
-      params.push(Number(actualOrderStatus));
     }
 
     // 开始日期筛选
@@ -117,7 +109,7 @@ async function getOrderList(req, res) {
     const listSql = `SELECT o.*, w.worker_name AS creator_name
       FROM orders o
       LEFT JOIN workers w ON o.created_by = w.worker_id
-      ${whereClause.replace(/\border_id\b/g, 'o.order_id').replace(/\bcustomer_name\b/g, 'o.customer_name').replace(/\border_type\b/g, 'o.order_type').replace(/\border_status\b/g, 'o.order_status').replace(/\bcreated_at\b/g, 'o.created_at')}
+      ${whereClause.replace(/\border_id\b/g, 'o.order_id').replace(/\bcustomer_name\b/g, 'o.customer_name').replace(/\border_type\b/g, 'o.order_type').replace(/\bcreated_at\b/g, 'o.created_at')}
       ORDER BY o.created_at DESC LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`;
     const [list] = await pool.execute(listSql, params);
 
@@ -364,8 +356,8 @@ async function createOrder(req, res) {
       order_id, order_type, platform_type, platform_order_no, station_id, machine_station_id,
       customer_name, customer_phone, customer_address, contact_name, order_amount,
       delivery_fee, total_receivable, delivery_type, worker_id,
-      payment_status, paid_amount, order_status, created_by, remark, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      payment_status, paid_amount, created_by, remark, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const orderValues = [
       orderId,
@@ -385,7 +377,6 @@ async function createOrder(req, res) {
       actualWorkerId,
       0, // payment_status: 0未付
       0, // paid_amount
-      0, // order_status: 0待处理
       actualCreatedById,
       remark || null,
       now,
@@ -496,92 +487,7 @@ async function createOrder(req, res) {
   }
 }
 
-// 更新订单状态
-async function updateOrderStatus(req, res) {
-  const connection = await pool.getConnection();
-  try {
-    const { id } = req.params;
-    const { order_status } = req.body;
-
-    if (order_status === undefined || order_status === null) {
-      return error(res, '订单状态不能为空', 400);
-    }
-
-    const validStatuses = [0, 1, 2, 3];
-    if (!validStatuses.includes(Number(order_status))) {
-      return error(res, '订单状态无效', 400);
-    }
-
-    // 开始事务
-    await connection.beginTransaction();
-
-    // 查询订单信息
-    const [orderRows] = await connection.execute(
-      'SELECT * FROM orders WHERE order_id = ? FOR UPDATE',
-      [id]
-    );
-
-    if (orderRows.length === 0) {
-      await connection.rollback();
-      return error(res, '订单不存在', 404);
-    }
-
-    const order = orderRows[0];
-
-    // 如果订单变为已完成且是水站订单，根据付款状态更新欠款
-    if (Number(order_status) === 2 && Number(order.order_type) === 2 && order.station_id) {
-      // 查询水站信息
-      const [stationRows] = await connection.execute(
-        'SELECT station_id, current_debt FROM sub_stations WHERE station_id = ? FOR UPDATE',
-        [order.station_id]
-      );
-
-      if (stationRows.length > 0) {
-        let debtChange = 0;
-        if (Number(order.payment_status) === 0) {
-          // 未付款，欠款增加
-          debtChange = order.order_amount;
-        } else if (Number(order.payment_status) === 1) {
-          // 已付款，欠款不变
-          debtChange = 0;
-        } else if (Number(order.payment_status) === 2) {
-          // 部分付款，欠款增加未付部分
-          debtChange = order.order_amount - order.paid_amount;
-        }
-
-        if (debtChange !== 0) {
-          const newDebt = Number(stationRows[0].current_debt) + debtChange;
-          await connection.execute(
-            'UPDATE sub_stations SET current_debt = ?, updated_at = ? WHERE station_id = ?',
-            [newDebt, new Date(), order.station_id]
-          );
-        }
-      }
-    }
-
-    // 更新订单状态
-    const updateSql = 'UPDATE orders SET order_status = ?, updated_at = ? WHERE order_id = ?';
-    await connection.execute(updateSql, [order_status, new Date(), id]);
-
-    // 提交事务
-    await connection.commit();
-
-    // 查询更新后的订单
-    const [result] = await pool.execute('SELECT * FROM orders WHERE order_id = ?', [id]);
-
-    return success(res, result[0], '订单状态更新成功');
-  } catch (err) {
-    // 回滚事务
-    await connection.rollback();
-    console.error('更新订单状态失败:', err);
-    return error(res, '更新订单状态失败: ' + err.message);
-  } finally {
-    // 释放连接
-    connection.release();
-  }
-}
-
-// 取消订单（软删除，order_status设为3）
+// 取消订单（设置 canceled_at 标志）
 async function deleteOrder(req, res) {
   const connection = await pool.getConnection();
   try {
@@ -603,7 +509,7 @@ async function deleteOrder(req, res) {
 
     const order = orderRows[0];
 
-    if (Number(order.order_status) === 3) {
+    if (order.canceled_at) {
       await connection.rollback();
       return error(res, '订单已取消', 400);
     }
@@ -656,8 +562,8 @@ async function deleteOrder(req, res) {
     }
 
     // 更新订单状态为已取消
-    const updateSql = 'UPDATE orders SET order_status = 3, updated_at = ? WHERE order_id = ?';
-    await connection.execute(updateSql, [new Date(), id]);
+    const updateSql = 'UPDATE orders SET canceled_at = ?, updated_at = ? WHERE order_id = ?';
+    await connection.execute(updateSql, [new Date(), new Date(), id]);
 
     // 提交事务
     await connection.commit();
@@ -813,12 +719,6 @@ async function updateOrder(req, res) {
       return error(res, '订单不存在', 404);
     }
 
-    // 只有待处理状态的订单可以修改
-    if (Number(orderRows[0].order_status) !== 0) {
-      await connection.rollback();
-      return error(res, '只有待处理状态的订单可以修改', 400);
-    }
-
     const oldOrderType = Number(orderRows[0].order_type);
     const oldIsReturn = oldOrderType === 5;
 
@@ -930,287 +830,11 @@ async function updateOrder(req, res) {
   }
 }
 
-// 小程序获取商品列表
-async function getProductsForMini(req, res) {
-  try {
-    const [rows] = await pool.execute(`
-      SELECT 
-        p.product_id as id,
-        p.product_name as name,
-        p.specification as spec,
-        p.unit,
-        p.image_url,
-        p.purchase_price as purchasePrice,
-        p.wholesale_price as wholesalePrice,
-        p.retail_price as retailPrice,
-        p.machine_price as machinePrice,
-        p.total_delivery_fee as totalDeliveryFee,
-        p.distribution_delivery_fee as distributionDeliveryFee,
-        p.worker_retail_delivery_fee as workerRetailDeliveryFee,
-        p.worker_wholesale_delivery_fee as workerWholesaleDeliveryFee,
-        p.worker_machine_delivery_fee as workerMachineDeliveryFee,
-        COALESCE(i.quantity, 0) as stock
-      FROM products p
-      LEFT JOIN inventory i ON p.product_id = i.product_id
-      ORDER BY p.created_at DESC
-    `);
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const products = rows.map(p => ({
-      id: p.id,
-      name: p.name,
-      spec: p.spec,
-      unit: p.unit,
-      image: p.image_url ? (p.image_url.startsWith('http') ? p.image_url : `${baseUrl}${p.image_url}`) : '',
-      purchasePrice: Number(p.purchasePrice) || 0,
-      wholesalePrice: Number(p.wholesalePrice) || 0,
-      retailPrice: Number(p.retailPrice) || 0,
-      machinePrice: Number(p.machinePrice) || 0,
-      totalDeliveryFee: Number(p.totalDeliveryFee) || 0,
-      distributionDeliveryFee: Number(p.distributionDeliveryFee) || 0,
-      workerRetailDeliveryFee: Number(p.workerRetailDeliveryFee) || 0,
-      workerWholesaleDeliveryFee: Number(p.workerWholesaleDeliveryFee) || 0,
-      workerMachineDeliveryFee: Number(p.workerMachineDeliveryFee) || 0,
-      stock: Number(p.stock) || 0
-    }));
-    return success(res, products);
-  } catch (err) {
-    console.error('获取商品列表失败:', err);
-    return error(res, '获取商品列表失败: ' + err.message);
-  }
-}
-
-// 小程序创建订单（简化接口）
-async function createMiniOrder(req, res) {
-  const connection = await pool.getConnection();
-  try {
-    const { customerName, customerPhone, customerAddress, items, remark, createdBy, created_by, orderType, order_type, stationId, station_id } = req.body;
-
-    if (!customerName || !customerPhone || !items || items.length === 0) {
-      return error(res, '客户姓名、联系电话和商品明细不能为空', 400);
-    }
-
-    // 兼容蛇形与驼峰命名
-    const actualCreatedBy = (created_by !== undefined ? created_by : createdBy) || null;
-    const actualStationId = (station_id !== undefined ? station_id : stationId) || null;
-
-    // 如果有水站ID，获取水站信息
-    let stationContactName = null;
-    if (actualStationId) {
-      const [stationRows] = await connection.execute(
-        'SELECT contact_name FROM sub_stations WHERE station_id = ?',
-        [actualStationId]
-      );
-      if (stationRows.length > 0) {
-        stationContactName = stationRows[0].contact_name;
-      }
-    }
-    // 获取订单类型，默认为线下零售(3)
-    const actualOrderType = (order_type !== undefined ? order_type : (orderType !== undefined ? orderType : 3));
-    const validOrderTypes = [1, 2, 3, 4, 5, 6];
-    if (!validOrderTypes.includes(Number(actualOrderType))) {
-      return error(res, '订单类型无效', 400);
-    }
-
-    // 返货订单：使用水站配送，配送费统一为0
-    const isReturnOrder = Number(actualOrderType) === 5;
-    // 根据订单类型设置默认配送方式
-    let actualDeliveryType;
-    switch (Number(actualOrderType)) {
-      case 1: actualDeliveryType = 1; break;  // 线上平台销售：自有员工配送
-      case 2: actualDeliveryType = 2; break;  // 线下水站分销：水站配送
-      case 3: actualDeliveryType = 1; break;  // 线下零售：自有员工配送
-      case 4: actualDeliveryType = 2; break;  // 量贩机供货：量贩机配送（用2表示）
-      case 6: actualDeliveryType = 2; break;  // 零售机供货：零售机配送（用2表示）
-      case 5: actualDeliveryType = 2; break;  // 线下水站返货：水站配送
-      default: actualDeliveryType = 1;
-    }
-
-    await connection.beginTransaction();
-
-    const productIds = items.map(item => item.productId || item.product_id);
-    const placeholders = productIds.map(() => '?').join(',');
-    const [productRows] = await connection.execute(`SELECT * FROM products WHERE product_id IN (${placeholders})`, productIds);
-    const productMap = {};
-    for (const p of productRows) productMap[p.product_id] = p;
-
-    let order_amount = 0;
-    let delivery_fee = 0;
-    const orderItems = [];
-
-    for (const item of items) {
-      const pid = item.productId || item.product_id;
-      const product = productMap[pid];
-      if (!product) { await connection.rollback(); return error(res, `商品不存在: ${pid}`, 400); }
-      const quantity = Number(item.quantity);
-      if (!quantity || quantity <= 0) { await connection.rollback(); return error(res, '商品数量必须大于0', 400); }
-
-      // 根据订单类型计算单价和配送费
-      let unitPrice = 0;
-      let deliveryFeePerUnit = 0;
-
-      switch (Number(actualOrderType)) {
-        case 1: // 线上平台销售：进货价 + 工人零售配送费
-          unitPrice = Number(product.purchase_price) || 0;
-          deliveryFeePerUnit = Number(product.worker_retail_delivery_fee) || 0;
-          break;
-        case 2: // 水站分销：分销价 + 工人水站配送费
-          unitPrice = item.unitPrice !== undefined ? Number(item.unitPrice) : (Number(product.wholesale_price) || 0);
-          deliveryFeePerUnit = Number(product.worker_wholesale_delivery_fee) || 0;
-          break;
-        case 3: // 线下零售：零售价 + 工人零售配送费
-          unitPrice = item.unitPrice !== undefined ? Number(item.unitPrice) : (Number(product.retail_price) || 0);
-          deliveryFeePerUnit = Number(product.worker_retail_delivery_fee) || 0;
-          break;
-        case 4: // 量贩机供货：进货价 + 工人机台配送费
-          unitPrice = Number(product.purchase_price) || 0;
-          deliveryFeePerUnit = Number(product.worker_machine_delivery_fee) || 0;
-          break;
-        case 6: // 零售机供货：与量贩机供货一致（进货价 + 工人机台配送费）
-          unitPrice = Number(product.purchase_price) || 0;
-          deliveryFeePerUnit = Number(product.worker_machine_delivery_fee) || 0;
-          break;
-        case 5: // 线下水站返货：进货价 + 工人水站配送费
-          unitPrice = Number(product.purchase_price) || 0;
-          deliveryFeePerUnit = Number(product.worker_wholesale_delivery_fee) || 0;
-          break;
-      }
-
-      const subtotal = unitPrice * quantity;
-      order_amount += subtotal;
-      delivery_fee += deliveryFeePerUnit * quantity;
-
-      orderItems.push({
-        product_id: pid,
-        quantity: quantity,
-        unit_price: unitPrice,
-        purchase_price: product.purchase_price,
-        wholesale_price: product.wholesale_price,
-        retail_price: product.retail_price,
-        machine_price: product.machine_price,
-        total_delivery_fee: product.total_delivery_fee,
-        distribution_delivery_fee: product.distribution_delivery_fee,
-        worker_retail_delivery_fee: product.worker_retail_delivery_fee,
-        worker_wholesale_delivery_fee: product.worker_wholesale_delivery_fee,
-        worker_machine_delivery_fee: product.worker_machine_delivery_fee,
-        subtotal: subtotal
-      });
-    }
-
-    const total_receivable = order_amount + delivery_fee;
-    const now = new Date();
-    const orderId = await generateOrderId(connection);
-
-    const insertOrderSql = `INSERT INTO orders (
-      order_id, order_type, platform_type, platform_order_no, station_id,
-      customer_name, customer_phone, customer_address, contact_name, order_amount,
-      delivery_fee, total_receivable, delivery_type, worker_id,
-      payment_status, paid_amount, order_status, created_by, remark, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
-    const orderValues = [
-      orderId,
-      Number(actualOrderType),
-      null,
-      null,
-      actualStationId,
-      customerName,
-      customerPhone || null,
-      customerAddress || null,
-      stationContactName,
-      order_amount,
-      delivery_fee,
-      total_receivable,
-      Number(actualDeliveryType),
-      null,
-      0,
-      0,
-      0,
-      actualCreatedBy,
-      remark || null,
-      now,
-      now
-    ];
-
-    await connection.execute(insertOrderSql, orderValues);
-
-    for (const item of orderItems) {
-      await connection.execute(`INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [orderId, item.product_id, item.quantity, item.unit_price, item.purchase_price, item.wholesale_price, item.retail_price, item.machine_price, item.total_delivery_fee, item.distribution_delivery_fee, item.worker_retail_delivery_fee, item.worker_wholesale_delivery_fee, item.worker_machine_delivery_fee, item.subtotal]);
-
-      const [invRows] = await connection.execute('SELECT quantity FROM inventory WHERE product_id = ? FOR UPDATE', [item.product_id]);
-      if (invRows.length === 0) { await connection.rollback(); return error(res, `商品库存不存在: ${item.product_id}`, 400); }
-      
-      if (isReturnOrder) {
-        // 返货：增加库存
-        await connection.execute('UPDATE inventory SET quantity = ?, last_in_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity + item.quantity, now, now, item.product_id]);
-      } else {
-        // 销售：扣减库存（允许负数）
-        await connection.execute('UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity - item.quantity, now, now, item.product_id]);
-      }
-    }
-
-    await connection.commit();
-    return success(res, { orderId, orderNo: orderId, totalAmount: total_receivable }, '订单创建成功');
-  } catch (err) {
-    await connection.rollback();
-    console.error('小程序创建订单失败:', err);
-    return error(res, '创建订单失败: ' + err.message);
-  } finally {
-    connection.release();
-  }
-}
-
-// 小程序获取员工列表（用于选择创建人）
-async function getWorkersForMini(req, res) {
-  try {
-    const [rows] = await pool.execute(
-      `SELECT worker_id AS id, worker_name AS name, phone, vehicle_type AS vehicleType
-       FROM workers WHERE status = 1 ORDER BY worker_name ASC`
-    );
-    const workers = rows.map(w => ({
-      id: w.id,
-      name: w.name,
-      phone: w.phone,
-      vehicleType: w.vehicleType
-    }));
-    return success(res, workers);
-  } catch (err) {
-    console.error('获取员工列表失败:', err);
-    return error(res, '获取员工列表失败: ' + err.message);
-  }
-}
-
-// 小程序获取水站列表（用于选择水站）
-async function getStationsForMini(req, res) {
-  try {
-    const [rows] = await pool.execute(
-      `SELECT station_id AS id, station_name AS name, contact_name AS contact, phone, address
-       FROM sub_stations WHERE status = 1 ORDER BY station_name ASC`
-    );
-    const stations = rows.map(s => ({
-      id: s.id,
-      name: s.name,
-      contact: s.contact || '',
-      phone: s.phone || '',
-      address: s.address || ''
-    }));
-    return success(res, stations);
-  } catch (err) {
-    console.error('获取水站列表失败:', err);
-    return error(res, '获取水站列表失败: ' + err.message);
-  }
-}
-
 module.exports = {
   getOrderList,
   getOrderById,
   hardDeleteOrder,
   createOrder,
-  createMiniOrder,
-  getProductsForMini,
-  getWorkersForMini,
-  getStationsForMini,
   updateOrder,
-  updateOrderStatus,
   deleteOrder
 };

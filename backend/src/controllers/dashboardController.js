@@ -12,11 +12,11 @@ async function getSummary(req, res) {
     `);
     const totalInventoryValue = inventoryRows[0].totalInventoryValue;
 
-    // monthSales：本月已完成订单的order_amount总和
+    // monthSales：本月全部订单（排除已取消）的 order_amount 总和
     const [salesRows] = await pool.execute(`
       SELECT COALESCE(SUM(order_amount), 0) as monthSales
       FROM orders
-      WHERE order_status = 2
+      WHERE canceled_at IS NULL
       AND YEAR(created_at) = YEAR(CURRENT_DATE)
       AND MONTH(created_at) = MONTH(CURRENT_DATE)
     `);
@@ -30,11 +30,13 @@ async function getSummary(req, res) {
     `);
     const stationDebt = debtRows[0].stationDebt;
 
-    // pendingOrders：订单状态为0的数量
+    // pendingOrders（待配送数）：自有员工配送(delivery_type=1)且未分配配送员(worker_id IS NULL)且未取消
     const [pendingRows] = await pool.execute(`
       SELECT COUNT(*) as pendingOrders
       FROM orders
-      WHERE order_status = 0
+      WHERE delivery_type = 1
+      AND worker_id IS NULL
+      AND canceled_at IS NULL
     `);
     const pendingOrders = pendingRows[0].pendingOrders;
 
@@ -66,13 +68,13 @@ async function getTrend(req, res) {
       });
     }
 
-    // 查询近7天已完成订单的每日销售总额
+    // 查询近7天订单（排除已取消）的每日销售总额
     const [trendRows] = await pool.execute(`
-      SELECT 
+      SELECT
         DATE(created_at) as date,
         SUM(order_amount) as amount
       FROM orders
-      WHERE order_status = 2
+      WHERE canceled_at IS NULL
       AND created_at >= DATE_SUB(CURRENT_DATE, INTERVAL 6 DAY)
       AND created_at < DATE_ADD(CURRENT_DATE, INTERVAL 1 DAY)
       GROUP BY DATE(created_at)

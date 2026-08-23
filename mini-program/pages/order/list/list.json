@@ -1,8 +1,0 @@
-{
-  "navigationBarTitleText": "订单列表",
-  "enablePullDownRefresh": true,
-  "usingComponents": {
-    "role-tab-bar": "/components/role-tab-bar/index",
-    "order-card": "/components/order-card/index"
-  }
-}

@@ -1,6 +1,0 @@
-{
-  "navigationBarTitleText": "我的",
-  "usingComponents": {
-    "role-tab-bar": "/components/role-tab-bar/index"
-  }
-}

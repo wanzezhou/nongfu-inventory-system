@@ -79,12 +79,6 @@ const routes = [
         meta: { title: '业务员管理', icon: 'Avatar', requiresAuth: true }
       },
       {
-        path: 'mini-account',
-        name: 'MiniAccount',
-        component: () => import('@/views/mini-account/MiniAccountList.vue'),
-        meta: { title: '移动端账号', icon: 'Iphone', requiresAuth: true }
-      },
-      {
         path: 'statistics/product-sales',
         name: 'ProductSales',
         component: () => import('@/views/statistics/ProductSales.vue'),

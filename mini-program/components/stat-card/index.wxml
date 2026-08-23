@@ -1,9 +1,0 @@
-<view class="stat-card {{type}}">
-  <view class="stat-label">{{label}}</view>
-  <view class="stat-value">
-    <text wx:if="{{prefix}}">{{prefix}}</text>
-    <text>{{value}}</text>
-    <text wx:if="{{suffix}}" class="suffix">{{suffix}}</text>
-  </view>
-  <view wx:if="{{trend}}" class="stat-trend">{{trend}}</view>
-</view>

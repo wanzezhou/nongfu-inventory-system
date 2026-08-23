@@ -31,14 +31,6 @@ export function updateOrder(id, data) {
   })
 }
 
-export function updateOrderStatus(id, order_status) {
-  return request({
-    url: `/orders/${id}/status`,
-    method: 'put',
-    data: { order_status }
-  })
-}
-
 export function cancelOrder(id) {
   return request({
     url: `/orders/${id}`,

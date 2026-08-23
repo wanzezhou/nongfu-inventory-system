@@ -217,16 +217,16 @@ SELECT
     SUM(delivery_fee) AS total_delivery_fee,
     SUM(total_receivable) AS total_receivable
 FROM orders
-WHERE order_status != 3
+WHERE canceled_at IS NULL
 GROUP BY order_type
 ORDER BY order_type;
 ```
 
-统计待处理订单数量：
+统计待配送订单数量（自有员工配送且未分配配送员、未取消）：
 ```sql
 SELECT COUNT(*) AS pending_count
 FROM orders
-WHERE order_status = 0;
+WHERE delivery_type = 1 AND worker_id IS NULL AND canceled_at IS NULL;
 ```
 
 ### 6.4 待结算资金查询
@@ -394,7 +394,7 @@ mysql -u root nongfu_inventory < backup.sql
 | `delivery_type` | TINYINT(1) | 配送方式：1-自有员工配送，2-水站配送，3-无需配送 |
 | `worker_id` | VARCHAR(50) | 配送员工ID |
 | `payment_status` | TINYINT(1) | 付款状态：0-未付款，1-已付款，2-部分付款 |
-| `order_status` | TINYINT(1) | 订单状态：0-待处理，1-已发货，2-已完成，3-已取消 |
+| `canceled_at` | DATETIME | 取消时间；非空表示该订单已取消（替代原 order_status=3） |
 
 ---
 

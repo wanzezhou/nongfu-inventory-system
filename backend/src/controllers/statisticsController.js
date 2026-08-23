@@ -19,14 +19,6 @@ const DELIVERY_TYPES = {
   3: '无需配送'
 };
 
-// 订单状态映射
-const ORDER_STATUSES = {
-  0: '待处理',
-  1: '已发货',
-  2: '已完成',
-  3: '已取消'
-};
-
 // 多选参数解析：兼容数组、逗号分隔字符串、单个值
 function toArray(v) {
   if (v === undefined || v === null || v === '') return [];
@@ -88,7 +80,6 @@ function buildProductSalesQuery(query) {
   const orderTypes = toArray(query.orderTypes).map(Number).filter(n => !isNaN(n));
   const categories = toArray(query.categories);
   const deliveryTypes = toArray(query.deliveryTypes).map(Number).filter(n => !isNaN(n));
-  const orderStatuses = toArray(query.orderStatuses).map(Number).filter(n => !isNaN(n));
   const createdBys = toArray(query.createdBys);
   const workerIds = toArray(query.workerIds);
   const stationIds = toArray(query.stationIds);
@@ -98,7 +89,6 @@ function buildProductSalesQuery(query) {
     orderTypes.push(Number(query.orderType));
   }
   if (categories.length === 0 && query.category) categories.push(query.category);
-  const includeCanceled = query.includeCanceled;
 
   const { start, end } = resolveDateRange(range, startDate, endDate);
 
@@ -124,13 +114,8 @@ function buildProductSalesQuery(query) {
     whereParts.push('o.order_type IN (1,2,3,4,6)');
   }
 
-  // 订单状态多选（默认排除已取消）
-  if (orderStatuses.length > 0) {
-    whereParts.push(`o.order_status IN (${orderStatuses.map(() => '?').join(',')})`);
-    params.push(...orderStatuses);
-  } else if (includeCanceled !== '1') {
-    whereParts.push('o.order_status <> 3');
-  }
+  // 默认排除已取消订单（canceled_at 非空），保持统计口径一致
+  whereParts.push('o.canceled_at IS NULL');
 
   // 配送方式多选
   if (deliveryTypes.length > 0) {

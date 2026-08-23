@@ -730,7 +730,6 @@ const generateMockData = () => {
       orderAmount: orderAmount,
       deliveryFee: deliveryFee,
       totalAmount: orderAmount + deliveryFee,
-      orderStatus: (i % 4) + 1,
       createTime: generateRandomDate(),
       deliveryMethod: (i % 3) + 1,
       deliveryStaff: '张配送',

@@ -1,7 +1,0 @@
-{
-  "navigationBarTitleText": "桶押金",
-  "enablePullDownRefresh": true,
-  "usingComponents": {
-    "empty-state": "/components/empty-state/index"
-  }
-}

@@ -60,10 +60,6 @@
             <el-icon><Avatar /></el-icon>
             <template #title>业务员管理</template>
           </el-menu-item>
-          <el-menu-item index="/mini-account">
-            <el-icon><Iphone /></el-icon>
-            <template #title>移动端账号</template>
-          </el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="/trade">
           <template #title>

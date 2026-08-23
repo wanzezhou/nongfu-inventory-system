@@ -47,11 +47,11 @@ INSERT INTO purchase_records (purchase_id, product_id, quantity, unit_price, tot
 -- ============================================================
 -- 6. 订单主表 - 4种类型各1笔
 -- ============================================================
-INSERT INTO orders (order_id, order_type, platform_type, platform_order_no, station_id, customer_name, customer_phone, customer_address, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, order_status, remark) VALUES
-('ORD001', 1, '美团', 'MT202607090001', NULL, '陈先生', '13700137001', '南京市建邺区奥体中心1号', 18.00, 2.00, 20.00, 1, 'W001', 1, 20.00, 2, '线上平台销售订单'),
-('ORD002', 2, NULL, NULL, 'S001', NULL, NULL, NULL, 88.00, 6.00, 94.00, 2, NULL, 0, 0.00, 1, '线下水站分销订单'),
-('ORD003', 3, NULL, NULL, NULL, '周女士', '13700137002', '南京市雨花台区软件大道8号', 56.00, 2.00, 58.00, 1, 'W001', 1, 58.00, 2, '线下零售订单'),
-('ORD004', 4, NULL, NULL, NULL, '自动售货机-A01', NULL, '南京市江宁区大学城', 48.00, 2.60, 50.60, 1, 'W002', 1, 50.60, 2, '零售机供货订单');
+INSERT INTO orders (order_id, order_type, platform_type, platform_order_no, station_id, customer_name, customer_phone, customer_address, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, remark) VALUES
+('ORD001', 1, '美团', 'MT202607090001', NULL, '陈先生', '13700137001', '南京市建邺区奥体中心1号', 18.00, 2.00, 20.00, 1, 'W001', 1, 20.00, '线上平台销售订单'),
+('ORD002', 2, NULL, NULL, 'S001', NULL, NULL, NULL, 88.00, 6.00, 94.00, 2, NULL, 0, 0.00, '线下水站分销订单'),
+('ORD003', 3, NULL, NULL, NULL, '周女士', '13700137002', '南京市雨花台区软件大道8号', 56.00, 2.00, 58.00, 1, 'W001', 1, 58.00, '线下零售订单'),
+('ORD004', 4, NULL, NULL, NULL, '自动售货机-A01', NULL, '南京市江宁区大学城', 48.00, 2.60, 50.60, 1, 'W002', 1, 50.60, '零售机供货订单');
 
 -- ============================================================
 -- 7. 订单商品明细表 - 对应4个订单的商品明细

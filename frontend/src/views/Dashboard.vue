@@ -83,9 +83,9 @@ const statCards = computed(() => [
     icon: Wallet
   },
   {
-    label: '待处理订单数',
+    label: '待配送订单数',
     value: summaryData.value.pendingOrders,
-    desc: '需要及时处理',
+    desc: '自有员工配送且未分配配送员',
     cls: 'card-red',
     icon: Clock
   }

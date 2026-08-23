@@ -38,11 +38,6 @@
             <el-option v-for="(label, val) in deliveryTypes" :key="val" :label="label" :value="Number(val)" />
           </el-select>
         </el-form-item>
-        <el-form-item label="订单状态">
-          <el-select v-model="queryForm.orderStatuses" placeholder="全部状态" clearable multiple collapse-tags collapse-tags-tooltip style="width: 160px">
-            <el-option v-for="(label, val) in orderStatuses" :key="val" :label="label" :value="Number(val)" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="创建人">
           <el-select v-model="queryForm.createdBys" placeholder="全部创建人" clearable multiple collapse-tags collapse-tags-tooltip filterable style="width: 160px">
             <el-option v-for="item in workerOptions" :key="item.id" :label="item.name" :value="item.id" />
@@ -214,20 +209,11 @@ const deliveryTypes = {
   3: '无需配送'
 }
 
-// 订单状态映射
-const orderStatuses = {
-  0: '待处理',
-  1: '已发货',
-  2: '已完成',
-  3: '已取消'
-}
-
 const queryForm = ref({
   range: 'month',
   orderTypes: [],
   categories: [],
   deliveryTypes: [],
-  orderStatuses: [],
   createdBys: [],
   workerIds: [],
   stationIds: [],
@@ -295,7 +281,6 @@ const handleReset = () => {
     orderTypes: [],
     categories: [],
     deliveryTypes: [],
-    orderStatuses: [],
     createdBys: [],
     workerIds: [],
     stationIds: [],
@@ -329,7 +314,6 @@ const buildParams = () => {
   if (queryForm.value.orderTypes.length) params.orderTypes = queryForm.value.orderTypes.join(',')
   if (queryForm.value.categories.length) params.categories = queryForm.value.categories.join(',')
   if (queryForm.value.deliveryTypes.length) params.deliveryTypes = queryForm.value.deliveryTypes.join(',')
-  if (queryForm.value.orderStatuses.length) params.orderStatuses = queryForm.value.orderStatuses.join(',')
   if (queryForm.value.createdBys.length) params.createdBys = queryForm.value.createdBys.join(',')
   if (queryForm.value.workerIds.length) params.workerIds = queryForm.value.workerIds.join(',')
   if (queryForm.value.stationIds.length) params.stationIds = queryForm.value.stationIds.join(',')

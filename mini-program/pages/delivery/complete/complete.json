@@ -1,6 +1,0 @@
-{
-  "navigationBarTitleText": "完成配送",
-  "usingComponents": {
-    "upload-photo": "/components/upload-photo/index"
-  }
-}

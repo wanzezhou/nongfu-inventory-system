@@ -11,7 +11,7 @@ SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = 'nongfu_inventory' AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'created_by');
 
 SET @sql = IF(@col_exists = 0,
-    'ALTER TABLE orders ADD COLUMN created_by VARCHAR(50) DEFAULT NULL COMMENT ''创建人ID，外键关联workers表'' AFTER order_status',
+    'ALTER TABLE orders ADD COLUMN created_by VARCHAR(50) DEFAULT NULL COMMENT ''创建人ID，外键关联workers表'' AFTER paid_amount',
     'SELECT ''created_by 字段已存在'' AS message');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
