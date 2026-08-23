@@ -436,9 +436,23 @@
 
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmitOrder">
+        <el-dropdown
+          split-button
+          type="primary"
+          :button-props="{ loading: submitLoading }"
+          :disabled="submitLoading"
+          @click="handleSubmitOrder(false)"
+          @command="(cmd) => handleSubmitOrder(cmd === 'print')"
+        >
           {{ isEditMode ? '保存修改' : '提交订单' }}
-        </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="print">
+                {{ isEditMode ? '保存并打印' : '提交并打印' }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </template>
     </el-dialog>
 
@@ -1113,7 +1127,7 @@ const calculateTotalAmount = () => {
   }, 0)
 }
 
-const handleSubmitOrder = async () => {
+const handleSubmitOrder = async (print = false) => {
   // 单页表单：提交时统一校验基本信息、商品明细、配送信息
   try {
     await basicFormRef.value?.validate()
@@ -1145,15 +1159,29 @@ const handleSubmitOrder = async () => {
       orderAmount: calculateTotalAmount(),
       totalAmount: calculateTotalAmount() + orderForm.deliveryFee
     }
+    let savedId = null
     if (isEditMode.value) {
-      await updateOrder(editingOrderId.value, orderData)
+      savedId = editingOrderId.value
+      await updateOrder(savedId, orderData)
       ElMessage.success('订单修改成功')
     } else {
-      await createOrder(orderData)
+      const res = await createOrder(orderData)
+      savedId = res.data?.id ?? res.data?.orderNo
       ElMessage.success('订单创建成功')
     }
     createDialogVisible.value = false
     fetchData()
+    // 提交并打印：拉取完整订单详情（含商品名称/规格/单位）后打开打印预览
+    if (print && savedId) {
+      try {
+        const detailRes = await getOrderDetail(savedId)
+        currentOrder.value = detailRes.data
+        printDialogVisible.value = true
+      } catch (err) {
+        console.error('获取订单详情用于打印失败:', err)
+        ElMessage.warning('订单已保存，但获取打印数据失败，请到详情页重新打印')
+      }
+    }
   } catch (error) {
     console.error(isEditMode.value ? '修改订单失败:' : '创建订单失败:', error)
     ElMessage.error(error.response?.data?.message || (isEditMode.value ? '订单修改失败' : '订单创建失败'))
@@ -1406,6 +1434,13 @@ onMounted(() => {
   }
   .product-list-header {
     flex-wrap: wrap;
+    gap: 8px;
+  }
+  /* 对话框底部按钮在窄屏允许换行，避免分割按钮被挤压 */
+  .create-order-dialog :deep(.el-dialog__footer) {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
   }
 }
