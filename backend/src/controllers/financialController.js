@@ -261,24 +261,37 @@ async function getMachineSales(req, res) {
   }
 }
 
-// 录入机台销量
+// 录入机台销量（支持批量 items，兼容单条）
 async function createMachineSale(req, res) {
+  let connection;
   try {
-    const { machineId, productId, quantity, salePrice, saleDate, remark } = req.body || {};
+    const { machineId, saleDate, remark } = req.body || {};
+    const items = req.body && Array.isArray(req.body.items) ? req.body.items : null;
 
-    if (!machineId || !productId) {
-      return error(res, '机台与商品必填', 400);
-    }
-    const qty = Number(quantity);
-    if (isNaN(qty) || qty <= 0) {
-      return error(res, '销量必须为正数', 400);
-    }
-    const price = Number(salePrice);
-    if (isNaN(price) || price < 0) {
-      return error(res, '售价必须大于等于0', 400);
+    if (!machineId) {
+      return error(res, '机台必填', 400);
     }
     if (!saleDate) {
       return error(res, '销售日期必填', 400);
+    }
+
+    // 兼容单条：{ productId, quantity, salePrice }
+    const list = items && items.length > 0
+      ? items
+      : [{ productId: req.body.productId, quantity: req.body.quantity, salePrice: req.body.salePrice }];
+
+    if (list.length === 0) {
+      return error(res, '至少需要一条商品明细', 400);
+    }
+
+    const cleanItems = list.map((it) => ({
+      productId: it.productId || it.product_id,
+      quantity: Number(it.quantity),
+      salePrice: Number(it.salePrice !== undefined ? it.salePrice : it.sale_price)
+    }));
+    const invalid = cleanItems.some((it) => !it.productId || isNaN(it.quantity) || it.quantity <= 0 || isNaN(it.salePrice) || it.salePrice < 0);
+    if (invalid) {
+      return error(res, '每条明细需填写商品、销量（>0）、售价（≥0）', 400);
     }
 
     // 校验机台存在并取机台类型
@@ -287,18 +300,29 @@ async function createMachineSale(req, res) {
       return error(res, '机台不存在', 404);
     }
     const machineType = Number(machines[0].machine_type) || 1;
+    const creator = (req.user && (req.user.username || req.user.id)) || null;
 
-    const saleId = `MS${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
-    await pool.execute(
-      `INSERT INTO machine_sales (sale_id, machine_id, machine_type, product_id, quantity, sale_price, sale_date, remark, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [saleId, machineId, machineType, productId, qty, price, saleDate, remark || null, (req.user && (req.user.username || req.user.id)) || null]
-    );
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const saleIds = [];
+    for (const it of cleanItems) {
+      const saleId = `MS${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
+      await connection.execute(
+        `INSERT INTO machine_sales (sale_id, machine_id, machine_type, product_id, quantity, sale_price, sale_date, remark, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [saleId, machineId, machineType, it.productId, it.quantity, it.salePrice, saleDate, remark || null, creator]
+      );
+      saleIds.push(saleId);
+    }
+    await connection.commit();
 
-    return success(res, { saleId, machineType }, '机台销量录入成功');
+    return success(res, { saleIds, machineType, count: saleIds.length }, `机台销量录入成功（${saleIds.length} 条）`);
   } catch (e) {
+    if (connection) await connection.rollback().catch(() => {});
     console.error('createMachineSale error:', e);
     return error(res, '机台销量录入失败', 500);
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -317,32 +341,60 @@ async function deleteMachineSale(req, res) {
   }
 }
 
-// 一键导出（两个 sheet：订单营收明细 + 机台销量明细）
+// 一键导出（按当前页面类型 orderType 过滤：1/2/3/5 导出该类型订单；4/6 导出该机台类型销量+供货订单）
 async function exportFinance(req, res) {
   try {
-    const { range = 'month', startDate, endDate } = req.query;
+    const { range = 'month', startDate, endDate, orderType } = req.query;
     const { start, end } = resolveDateRange(range, startDate, endDate);
     const expr = revenueExpr();
+    const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
+    const isOrderType = wantType !== null && [1, 2, 3, 5].includes(wantType);
+    const isMachineType = wantType === 4 || wantType === 6;
 
+    // 订单 sheet：指定订单类型时只导该类型；机台类型(4/6)时导供货订单；无类型时导 1/2/3/5 全部
+    let orderWhere, orderParams;
+    if (isOrderType) {
+      orderWhere = `o.order_type = ? AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
+      orderParams = [wantType, start, end];
+    } else if (isMachineType) {
+      orderWhere = `o.order_type = ? AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
+      orderParams = [wantType, start, end];
+    } else {
+      orderWhere = `o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
+      orderParams = [start, end];
+    }
     const [orderRows] = await pool.execute(
       `SELECT o.order_id, o.order_type, o.customer_name, o.customer_phone, o.payment_status,
               o.created_at, SUM(oi.quantity) AS total_qty, ROUND(SUM(${expr}), 2) AS revenue
        FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
-       WHERE o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?
+       WHERE ${orderWhere}
        GROUP BY o.order_id, o.order_type, o.customer_name, o.customer_phone, o.payment_status, o.created_at
        ORDER BY o.created_at DESC`,
-      [start, end]
+      orderParams
     );
 
+    // 机台销量 sheet：机台类型(4/6)时只导该类型；订单类型时跳过；无类型时导全部
+    let machineWhere, machineParams;
+    if (isMachineType) {
+      const mt = wantType === 4 ? 1 : 2;
+      machineWhere = `s.sale_date BETWEEN ? AND ? AND s.machine_type = ?`;
+      machineParams = [start, end, mt];
+    } else if (isOrderType) {
+      machineWhere = `1=0`;
+      machineParams = [];
+    } else {
+      machineWhere = `s.sale_date BETWEEN ? AND ?`;
+      machineParams = [start, end];
+    }
     const [machineRows] = await pool.execute(
       `SELECT s.sale_date, s.machine_type, s.quantity, s.sale_price, s.remark,
               m.station_name, p.product_name, p.specification, p.unit
        FROM machine_sales s
        LEFT JOIN machine_stations m ON s.machine_id = m.machine_id
        LEFT JOIN products p ON s.product_id = p.product_id
-       WHERE s.sale_date BETWEEN ? AND ?
+       WHERE ${machineWhere}
        ORDER BY s.sale_date DESC, s.created_at DESC`,
-      [start, end]
+      machineParams
     );
 
     const orderSheet = orderRows.map((r) => ({
@@ -369,12 +421,20 @@ async function exportFinance(req, res) {
     }));
 
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orderSheet), '订单营收明细');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(machineSheet), '机台销量明细');
+    // 订单类型页面：只导订单；机台类型页面：机台销量 + 供货订单；无类型：订单 + 机台全部
+    if (!isMachineType) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orderSheet), isOrderType ? `订单明细(${ORDER_TYPES[wantType]})` : '订单营收明细');
+    }
+    if (!isOrderType) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(machineSheet), isMachineType ? `机台销量明细(${ORDER_TYPES[wantType]})` : '机台销量明细');
+    }
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
+    const typeTag = wantType ? ORDER_TYPES[wantType] : '全部';
+    const fileName = `营收_${typeTag}_${start}_${end}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=finance_${start}_${end}.xlsx`);
+    // 中文文件名需按 RFC 5987 编码，否则 Node 报 ERR_INVALID_CHAR
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     return res.send(buffer);
   } catch (e) {
     console.error('exportFinance error:', e);

@@ -102,13 +102,13 @@
             <el-icon><ShoppingCart /></el-icon>
             <template #title>线下零售</template>
           </el-menu-item>
-          <el-menu-item index="/finance/bulk-machine">
-            <el-icon><Wallet /></el-icon>
-            <template #title>量贩机</template>
-          </el-menu-item>
           <el-menu-item index="/finance/return">
             <el-icon><Coin /></el-icon>
             <template #title>线下水站返货</template>
+          </el-menu-item>
+          <el-menu-item index="/finance/bulk-machine">
+            <el-icon><Wallet /></el-icon>
+            <template #title>量贩机</template>
           </el-menu-item>
           <el-menu-item index="/finance/retail-machine">
             <el-icon><Van /></el-icon>

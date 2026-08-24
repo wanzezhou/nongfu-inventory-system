@@ -45,14 +45,6 @@
         <div class="card-value">¥{{ fmtMoney(card.revenue) }}</div>
         <div class="card-desc">{{ card.desc }}</div>
       </div>
-      <div class="summary-card card-total">
-        <div class="card-label">
-          <el-icon><Histogram /></el-icon>
-          <span>总营收</span>
-        </div>
-        <div class="card-value">¥{{ fmtMoney(summary.overall.totalRevenue) }}</div>
-        <div class="card-desc">统计期内全部营收</div>
-      </div>
     </div>
 
     <!-- 明细 -->
@@ -71,6 +63,13 @@
               </template>
             </el-table-column>
             <el-table-column prop="createTime" label="下单时间" width="165" />
+            <el-table-column label="操作" width="80" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="handleViewOrder(row)">
+                  <el-icon><View /></el-icon>详情
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <div class="pager">
             <el-pagination
@@ -143,6 +142,13 @@
               </template>
             </el-table-column>
             <el-table-column prop="createTime" label="下单时间" width="165" />
+            <el-table-column label="操作" width="80" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="handleViewOrder(row)">
+                  <el-icon><View /></el-icon>详情
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <div class="pager">
             <el-pagination
@@ -158,10 +164,10 @@
       </el-tabs>
     </el-card>
 
-    <!-- 机台销量录入弹窗 -->
+    <!-- 机台销量录入弹窗（批量） -->
     <el-dialog v-model="createVisible" title="录入机台销量" :width="dialogWidth" class="create-sale-dialog" @closed="resetSaleForm">
-      <el-form ref="saleFormRef" :model="saleForm" :rules="saleRules" label-width="90px">
-        <el-form-item label="机台类型" prop="machineType">
+      <el-form ref="saleFormRef" :model="saleForm" label-width="90px">
+        <el-form-item label="机台类型">
           <el-radio-group v-model="saleForm.machineType" disabled>
             <el-radio :value="1">量贩机</el-radio>
             <el-radio :value="2">零售机</el-radio>
@@ -176,20 +182,26 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="商品" prop="productId">
-          <el-select v-model="saleForm.productId" filterable placeholder="请选择商品" style="width: 100%" @change="onProductChange">
-            <el-option v-for="p in productOptions" :key="p.id" :label="`${p.name}（${p.spec || ''}）`" :value="p.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="售价" prop="salePrice">
-          <el-input-number v-model="saleForm.salePrice" :min="0" :precision="2" :step="0.5" style="width: 100%" />
-          <span class="unit-label">元（按商品档案机台价带出，可修改）</span>
-        </el-form-item>
-        <el-form-item label="销量" prop="quantity">
-          <el-input-number v-model="saleForm.quantity" :min="1" :precision="0" :step="1" style="width: 100%" />
-        </el-form-item>
         <el-form-item label="销售日期" prop="saleDate">
           <el-date-picker v-model="saleForm.saleDate" type="date" value-format="YYYY-MM-DD" placeholder="选择销售日期" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="商品明细">
+          <div class="sale-items">
+            <div v-for="(item, idx) in saleForm.items" :key="idx" class="sale-item-row">
+              <el-select v-model="item.productId" filterable placeholder="商品" style="width: 42%" @change="(pid) => onProductChange(item, pid)">
+                <el-option v-for="p in productOptions" :key="p.id" :label="`${p.name}（${p.spec || ''}）`" :value="p.id" />
+              </el-select>
+              <el-input-number v-model="item.salePrice" :min="0" :precision="2" :step="0.5" :controls="false" placeholder="售价" style="width: 24%" />
+              <el-input-number v-model="item.quantity" :min="1" :precision="0" :step="1" :controls="false" placeholder="销量" style="width: 20%" />
+              <el-button link type="danger" :disabled="saleForm.items.length === 1" @click="removeSaleItem(idx)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+            <el-button type="primary" plain size="small" @click="addSaleItem">
+              <el-icon><Plus /></el-icon>添加商品
+            </el-button>
+          </div>
+          <span class="unit-label">每行：商品 / 售价（带出可改）/ 销量；可一次录入多个商品</span>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input v-model="saleForm.remark" type="textarea" :rows="2" placeholder="选填" />
@@ -200,6 +212,53 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 订单详情弹窗 -->
+    <el-dialog v-model="detailVisible" title="订单详情" width="720px" :close-on-click-modal="false">
+      <div v-if="currentOrder" class="order-detail">
+        <el-descriptions title="基本信息" :column="2" border class="detail-section">
+          <el-descriptions-item label="订单号">{{ currentOrder.orderNo }}</el-descriptions-item>
+          <el-descriptions-item label="订单类型">{{ currentOrder.typeName }}</el-descriptions-item>
+          <el-descriptions-item label="下单时间">{{ currentOrder.createTime }}</el-descriptions-item>
+          <el-descriptions-item label="客户/水站">{{ currentOrder.customerName }}</el-descriptions-item>
+          <el-descriptions-item label="联系电话">{{ currentOrder.customerPhone }}</el-descriptions-item>
+          <el-descriptions-item label="配送地址">{{ currentOrder.customerAddress }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="detail-section">
+          <div class="section-title">商品明细</div>
+          <el-table :data="currentOrder.items" border size="small">
+            <el-table-column prop="productName" label="商品名称" min-width="150" />
+            <el-table-column prop="spec" label="规格" width="100" />
+            <el-table-column prop="quantity" label="数量" width="80" align="center" />
+            <el-table-column prop="unitPrice" label="单价" width="100" align="right">
+              <template #default="{ row }">¥{{ fmtMoney(row.unitPrice) }}</template>
+            </el-table-column>
+            <el-table-column prop="subtotal" label="小计" width="100" align="right">
+              <template #default="{ row }">¥{{ fmtMoney(row.subtotal) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <div class="amount-summary">
+          <div class="amount-row">
+            <span>订单金额：</span>
+            <span>¥{{ fmtMoney(currentOrder.orderAmount) }}</span>
+          </div>
+          <div class="amount-row">
+            <span>配送费：</span>
+            <span>¥{{ fmtMoney(currentOrder.deliveryFee) }}</span>
+          </div>
+          <div class="amount-row total">
+            <span>应收总额：</span>
+            <span>¥{{ fmtMoney(currentOrder.totalAmount) }}</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -207,12 +266,13 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Search, Refresh, Download, Plus, Delete,
+  Search, Refresh, Download, Plus, Delete, View,
   Van, Goods, ShoppingCart, Coin, Wallet, Money, Histogram
 } from '@element-plus/icons-vue'
 import { getFinanceSummary, getFinanceOrders, getMachineSales, createMachineSale, deleteMachineSale, exportFinance } from '@/api/finance'
 import { getProductList } from '@/api/product'
 import { getMachineStations } from '@/api/machineStation'
+import { getOrderDetail } from '@/api/order'
 import { downloadBlob } from '@/api/excel'
 
 // 当前营收类型（路由 props 传入：1-线上平台销售 2-线下水站分销 3-线下零售 4-量贩机 5-线下水站返货 6-零售机）
@@ -251,20 +311,14 @@ const productOptions = ref([])
 const saleForm = reactive({
   machineType: 1,
   machineId: '',
-  productId: '',
-  salePrice: 0,
-  quantity: 1,
   saleDate: '',
-  remark: ''
+  remark: '',
+  items: [{ productId: '', salePrice: 0, quantity: 1 }]
 })
-const saleRules = {
-  machineType: [{ required: true, message: '请选择机台类型', trigger: 'change' }],
-  machineId: [{ required: true, message: '请选择机台', trigger: 'change' }],
-  productId: [{ required: true, message: '请选择商品', trigger: 'change' }],
-  salePrice: [{ required: true, message: '请输入售价', trigger: 'blur' }],
-  quantity: [{ required: true, message: '请输入销量', trigger: 'blur' }],
-  saleDate: [{ required: true, message: '请选择销售日期', trigger: 'change' }]
-}
+
+// 订单详情弹窗
+const detailVisible = ref(false)
+const currentOrder = ref(null)
 
 // 指标卡定义（与后端口径一致）
 const ORDER_TYPE_NAME = {
@@ -364,8 +418,8 @@ const handleReset = () => {
 const handleExport = async () => {
   exporting.value = true
   try {
-    const res = await exportFinance(buildParams())
-    downloadBlob(res.data, `营收统计_${Date.now()}.xlsx`)
+    const res = await exportFinance({ ...buildParams(), orderType: props.orderType })
+    downloadBlob(res.data, `${currentTypeName.value}_营收_${Date.now()}.xlsx`)
     ElMessage.success('导出成功')
   } catch (error) {
     console.error('导出失败:', error)
@@ -396,9 +450,17 @@ const loadProducts = async () => {
   }
 }
 
-const onProductChange = (pid) => {
+const onProductChange = (item, pid) => {
   const p = productOptions.value.find((x) => String(x.id) === String(pid))
-  saleForm.salePrice = p ? Number(p.vendingPrice || p.machinePrice || 0) : 0
+  item.salePrice = p ? Number(p.vendingPrice || p.machinePrice || 0) : 0
+}
+
+const addSaleItem = () => {
+  saleForm.items.push({ productId: '', salePrice: 0, quantity: 1 })
+}
+
+const removeSaleItem = (idx) => {
+  if (saleForm.items.length > 1) saleForm.items.splice(idx, 1)
 }
 
 const openCreate = () => {
@@ -412,28 +474,39 @@ const openCreate = () => {
 const resetSaleForm = () => {
   saleForm.machineType = saleMachineType.value
   saleForm.machineId = ''
-  saleForm.productId = ''
-  saleForm.salePrice = 0
-  saleForm.quantity = 1
   saleForm.saleDate = ''
   saleForm.remark = ''
-  saleFormRef.value?.clearValidate()
+  saleForm.items = [{ productId: '', salePrice: 0, quantity: 1 }]
 }
 
 const handleSave = async () => {
-  const valid = await saleFormRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (!saleForm.machineId) {
+    ElMessage.warning('请选择机台')
+    return
+  }
+  if (!saleForm.saleDate) {
+    ElMessage.warning('请选择销售日期')
+    return
+  }
+  const items = saleForm.items.filter((x) => x.productId && x.quantity > 0)
+  if (items.length === 0) {
+    ElMessage.warning('请至少填写一条商品明细')
+    return
+  }
+  const invalid = items.some((x) => !x.productId || x.quantity <= 0 || isNaN(Number(x.salePrice)))
+  if (invalid) {
+    ElMessage.warning('请完善每条商品明细（商品/售价/销量）')
+    return
+  }
   saving.value = true
   try {
     await createMachineSale({
       machineId: saleForm.machineId,
-      productId: saleForm.productId,
-      quantity: saleForm.quantity,
-      salePrice: saleForm.salePrice,
       saleDate: saleForm.saleDate,
-      remark: saleForm.remark
+      remark: saleForm.remark,
+      items: items.map((x) => ({ productId: x.productId, quantity: x.quantity, salePrice: x.salePrice }))
     })
-    ElMessage.success('录入成功')
+    ElMessage.success(`录入成功（${items.length} 条）`)
     createVisible.value = false
     fetchSummary()
     fetchMachine()
@@ -442,6 +515,30 @@ const handleSave = async () => {
     ElMessage.error(error.response?.data?.message || '录入失败')
   } finally {
     saving.value = false
+  }
+}
+
+// 查看订单详情
+const handleViewOrder = async (row) => {
+  try {
+    const res = await getOrderDetail(row.orderId || row.orderNo)
+    const d = res.data
+    currentOrder.value = {
+      orderNo: d.orderNo || d.id,
+      typeName: d.orderTypeName || ORDER_TYPE_NAME[d.orderType] || `类型${d.orderType}`,
+      customerName: d.customerName,
+      customerPhone: d.customerPhone,
+      customerAddress: d.customerAddress,
+      createTime: d.createTime,
+      items: d.items || [],
+      orderAmount: d.orderAmount,
+      deliveryFee: d.deliveryFee,
+      totalAmount: d.totalAmount
+    }
+    detailVisible.value = true
+  } catch (error) {
+    console.error('获取订单详情失败:', error)
+    ElMessage.error('获取订单详情失败')
   }
 }
 
@@ -582,6 +679,66 @@ onMounted(() => {
   float: right;
   color: #8492a6;
   font-size: 12px;
+}
+
+.sale-items {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sale-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.order-detail {
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+.detail-section {
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.amount-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  padding: 8px 12px;
+  background: #f7f8fa;
+  border-radius: 6px;
+}
+
+.amount-row {
+  font-size: 13px;
+  color: #606266;
+}
+
+.amount-row.total {
+  font-size: 15px;
+  font-weight: 700;
+  color: #e64340;
+}
+
+@media screen and (max-width: 768px) {
+  .sale-item-row {
+    flex-wrap: wrap;
+  }
+
+  .sale-item-row .el-select,
+  .sale-item-row .el-input-number {
+    width: 100% !important;
+  }
 }
 
 @media screen and (max-width: 768px) {
