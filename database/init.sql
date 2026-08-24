@@ -303,6 +303,23 @@ CREATE TABLE machine_sales (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='机台销量记录表（量贩机/零售机营收，手动录入）';
 
 -- ============================================================
+-- 成本统计模块：固定支出表（2026-08-24）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS fixed_expenses (
+    expense_id      VARCHAR(50)     NOT NULL COMMENT '支出ID，主键',
+    expense_type    VARCHAR(50)     NOT NULL COMMENT '支出类型（房租/水电/物业/人工工资/物流运输/设备维护/其他，可自定义）',
+    amount          DECIMAL(12,2)   NOT NULL DEFAULT 0 COMMENT '金额（元）',
+    expense_date    DATE            NOT NULL COMMENT '发生日期',
+    remark          VARCHAR(500)    DEFAULT NULL COMMENT '备注',
+    created_by      VARCHAR(50)     DEFAULT NULL COMMENT '录入人',
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (expense_id),
+    KEY idx_type (expense_type),
+    KEY idx_date (expense_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='固定支出记录表（房租/水电等仓库支出，手动录入）';
+
+-- ============================================================
 -- 脚本执行完毕
 -- ============================================================
-SELECT '数据库初始化完成！共创建11张表。' AS message;
+SELECT '数据库初始化完成！共创建12张表。' AS message;
