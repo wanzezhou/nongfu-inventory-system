@@ -114,7 +114,7 @@ INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_pr
 
 -- ⑧ 线下水站返货（type=5）2026-08-06：D×12（unit=进货价19，配送=0）
 INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
-('SZX202608060008', 5, 'ST003', '鼓楼水站', '13900000003', '南京市鼓楼区中山北路', '郑老板', 228.00, 0.00, 228.00, 3, NULL, 1, 228.00, 'W005', '2026-08-06 10:15:00', '2026-08-06 10:15:00');
+('SZX202608060008', 5, 'ST003', '鼓楼水站', '13900000003', '南京市鼓楼区中山北路', '郑老板', 228.00, 60.00, 288.00, 1, NULL, 1, 288.00, 'W005', '2026-08-06 10:15:00', '2026-08-06 10:15:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
 ('SZX202608060008', 'Pmrf3fgq30J6ZV3', 12, 19.00, 19.00, 21.00, 26.00, 0.00, 8.00, 5.00, 4.00, 0.90, 0.00, 228.00);
 
@@ -144,7 +144,7 @@ INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_pr
 
 -- ⑬ 线下水站返货（type=5）2026-07-12（历史月）：A×12
 INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
-('SZX202607120013', 5, 'ST005', '建邺水站', '13900000005', '南京市建邺区兴隆大街', '褚老板', 180.00, 0.00, 180.00, 3, NULL, 1, 180.00, 'W005', '2026-07-12 09:50:00', '2026-07-12 09:50:00');
+('SZX202607120013', 5, 'ST005', '建邺水站', '13900000005', '南京市建邺区兴隆大街', '褚老板', 180.00, 30.00, 210.00, 1, NULL, 1, 210.00, 'W005', '2026-07-12 09:50:00', '2026-07-12 09:50:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
 ('SZX202607120013', 'Pmrf3fgpqDNVO8Q', 12, 15.00, 15.00, 18.00, 24.00, 0.00, 4.00, 2.50, 2.00, 0.45, 0.00, 180.00);
 
