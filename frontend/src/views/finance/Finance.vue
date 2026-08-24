@@ -263,7 +263,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Download, Plus, Delete, View,
@@ -558,6 +558,16 @@ const handleDelete = (row) => {
 }
 
 onMounted(() => {
+  fetchSummary()
+  fetchOrders()
+  fetchMachine()
+})
+
+// 6 个子路由复用同一组件：切换二级菜单时 props.orderType 变化，需重新拉取对应类型数据
+watch(() => props.orderType, () => {
+  orderQuery.page = 1
+  machineQuery.page = 1
+  activeTab.value = isMachineType.value ? 'machine' : 'orders'
   fetchSummary()
   fetchOrders()
   fetchMachine()
