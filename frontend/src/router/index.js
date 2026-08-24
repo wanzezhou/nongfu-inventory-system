@@ -83,6 +83,12 @@ const routes = [
         name: 'ProductSales',
         component: () => import('@/views/statistics/ProductSales.vue'),
         meta: { title: '商品销售统计', icon: 'TrendCharts', requiresAuth: true }
+      },
+      {
+        path: 'finance',
+        name: 'Finance',
+        component: () => import('@/views/finance/Finance.vue'),
+        meta: { title: '营收统计', icon: 'Money', requiresAuth: true }
       }
     ]
   }

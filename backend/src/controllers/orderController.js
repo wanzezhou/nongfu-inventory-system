@@ -329,6 +329,17 @@ async function createOrder(req, res) {
       const subtotal = unitPrice * quantity;
       const itemDeliveryFee = deliveryFeePerUnit * quantity;
 
+      // 快照价：水站分销(2)/线下零售(3) 的单价由前端手动填写，快照需用手填值，
+      // 否则财务统计（按 wholesale_price / retail_price）取到的是商品档案值而非成交值
+      const snapshotWholesale =
+        Number(actualOrderType) === 2 && itemUnitPrice !== null && !isNaN(itemUnitPrice) && itemUnitPrice >= 0
+          ? itemUnitPrice
+          : product.wholesale_price;
+      const snapshotRetail =
+        Number(actualOrderType) === 3 && itemUnitPrice !== null && !isNaN(itemUnitPrice) && itemUnitPrice >= 0
+          ? itemUnitPrice
+          : product.retail_price;
+
       order_amount += subtotal;
       delivery_fee += itemDeliveryFee;
 
@@ -337,8 +348,8 @@ async function createOrder(req, res) {
         quantity: quantity,
         unit_price: unitPrice,
         purchase_price: product.purchase_price,
-        wholesale_price: product.wholesale_price,
-        retail_price: product.retail_price,
+        wholesale_price: snapshotWholesale,
+        retail_price: snapshotRetail,
         machine_price: product.machine_price,
         total_delivery_fee: product.total_delivery_fee,
         distribution_delivery_fee: product.distribution_delivery_fee,
@@ -781,7 +792,17 @@ async function updateOrder(req, res) {
       order_amount += subtotal;
       delivery_fee += deliveryFeePerUnit * quantity;
 
-      orderItems.push({ product_id: pid, quantity, unit_price: unitPrice, purchase_price: product.purchase_price, wholesale_price: product.wholesale_price, retail_price: product.retail_price, machine_price: product.machine_price, total_delivery_fee: product.total_delivery_fee, distribution_delivery_fee: product.distribution_delivery_fee, worker_retail_delivery_fee: product.worker_retail_delivery_fee, worker_wholesale_delivery_fee: product.worker_wholesale_delivery_fee, worker_machine_delivery_fee: product.worker_machine_delivery_fee, subtotal });
+      // 快照价：水站分销(2)/线下零售(3) 的单价由前端手动填写，快照需用手填值
+      const snapshotWholesale =
+        Number(actualOrderType) === 2 && itemUnitPrice !== null && !isNaN(itemUnitPrice) && itemUnitPrice >= 0
+          ? itemUnitPrice
+          : product.wholesale_price;
+      const snapshotRetail =
+        Number(actualOrderType) === 3 && itemUnitPrice !== null && !isNaN(itemUnitPrice) && itemUnitPrice >= 0
+          ? itemUnitPrice
+          : product.retail_price;
+
+      orderItems.push({ product_id: pid, quantity, unit_price: unitPrice, purchase_price: product.purchase_price, wholesale_price: snapshotWholesale, retail_price: snapshotRetail, machine_price: product.machine_price, total_delivery_fee: product.total_delivery_fee, distribution_delivery_fee: product.distribution_delivery_fee, worker_retail_delivery_fee: product.worker_retail_delivery_fee, worker_wholesale_delivery_fee: product.worker_wholesale_delivery_fee, worker_machine_delivery_fee: product.worker_machine_delivery_fee, subtotal });
     }
 
     const total_receivable = order_amount + delivery_fee;

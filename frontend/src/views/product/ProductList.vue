@@ -103,6 +103,11 @@
             <span class="price-text">¥{{ Number(row.wholesalePrice || 0).toFixed(2) }}</span>
           </template>
         </el-table-column>
+        <el-table-column prop="retailPrice" label="零售价" width="100">
+          <template #default="{ row }">
+            <span class="price-text">¥{{ Number(row.retailPrice || 0).toFixed(2) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="totalDeliveryFee" label="总包配送费" width="110">
           <template #default="{ row }">
             <span class="fee-text">¥{{ Number(row.totalDeliveryFee || 0).toFixed(2) }}</span>
@@ -249,6 +254,10 @@
               <el-input-number v-model="productForm.wholesalePrice" :min="0" :precision="2" :step="0.5" />
               <span class="unit-label">元</span>
             </el-form-item>
+            <el-form-item label="零售价" prop="retailPrice">
+              <el-input-number v-model="productForm.retailPrice" :min="0" :precision="2" :step="0.5" />
+              <span class="unit-label">元</span>
+            </el-form-item>
           </el-form>
         </el-tab-pane>
 
@@ -357,6 +366,7 @@ const productForm = reactive({
   status: 1,
   purchasePrice: 0,
   wholesalePrice: 0,
+  retailPrice: 0,
   vendingPrice: 0,
   totalDeliveryFee: 0,
   distributionDeliveryFee: 0,
@@ -414,6 +424,7 @@ const generateMockData = () => {
       unit: '瓶',
       purchasePrice: (Math.random() * 10 + 1).toFixed(2) * 1,
       wholesalePrice: (Math.random() * 15 + 2).toFixed(2) * 1,
+      retailPrice: (Math.random() * 20 + 3).toFixed(2) * 1,
       stock: Math.floor(Math.random() * 1000),
       status: i % 5 === 0 ? 0 : 1,
       categoryId: (i % 3) + 1
@@ -485,6 +496,7 @@ const handleEdit = (row) => {
     status: row.status,
     purchasePrice: row.purchasePrice || 0,
     wholesalePrice: row.wholesalePrice || 0,
+    retailPrice: row.retailPrice || 0,
     vendingPrice: row.vendingPrice || 0,
     totalDeliveryFee: row.totalDeliveryFee || 0,
     distributionDeliveryFee: row.distributionDeliveryFee || 0,
@@ -547,6 +559,7 @@ const resetForm = () => {
     status: 1,
     purchasePrice: 0,
     wholesalePrice: 0,
+    retailPrice: 0,
     vendingPrice: 0,
     totalDeliveryFee: 0,
     distributionDeliveryFee: 0,
