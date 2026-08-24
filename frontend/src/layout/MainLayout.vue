@@ -85,16 +85,6 @@
             <template #title>商品销售统计</template>
           </el-menu-item>
         </el-sub-menu>
-        <el-sub-menu index="/finance">
-          <template #title>
-            <el-icon><Money /></el-icon>
-            <span>财务管理</span>
-          </template>
-          <el-menu-item index="/finance">
-            <el-icon><Wallet /></el-icon>
-            <template #title>财务明细统计</template>
-          </el-menu-item>
-        </el-sub-menu>
       </el-menu>
       <div class="sidebar-footer" v-if="!isCollapse">
         <div class="sidebar-footer-line"></div>
