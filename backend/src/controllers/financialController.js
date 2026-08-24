@@ -63,10 +63,12 @@ function revenueExpr() {
       WHEN 2 THEN oi.wholesale_price * oi.quantity
       WHEN 3 THEN oi.retail_price * oi.quantity
       WHEN 5 THEN (oi.purchase_price + oi.total_delivery_fee) * oi.quantity
+      WHEN 4 THEN oi.purchase_price * oi.quantity
+      WHEN 6 THEN oi.purchase_price * oi.quantity
       ELSE 0 END)`;
 }
 
-// 订单类营收明细列表（分页）
+// 订单类营收明细列表（分页；支持按订单类型 1-6 过滤，4/6 为量贩机/零售机供货订单）
 async function getFinanceOrders(req, res) {
   try {
     const { range = 'month', startDate, endDate, orderType, page = 1, pageSize = 10 } = req.query;
@@ -75,12 +77,14 @@ async function getFinanceOrders(req, res) {
     const size = Math.min(100, Math.max(1, parseInt(pageSize) || 10));
     const offset = (p - 1) * size;
 
-    let where = `WHERE o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
+    const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
+    let where;
     const params = [start, end];
-    // 按营收类型过滤（前端二级菜单传入）
-    if (orderType !== undefined && orderType !== '' && [1, 2, 3, 5].includes(Number(orderType))) {
-      where += ` AND o.order_type = ?`;
-      params.push(Number(orderType));
+    if (wantType && [1, 2, 3, 4, 5, 6].includes(wantType)) {
+      where = `WHERE o.order_type = ? AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
+      params.unshift(wantType);
+    } else {
+      where = `WHERE o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
     }
     const expr = revenueExpr();
 

@@ -84,7 +84,7 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane v-else label="机台销量明细" name="machine">
+        <el-tab-pane v-if="isMachineType" label="机台销量明细" name="machine">
           <div class="tab-toolbar">
             <span class="tab-hint">量贩机/零售机销量在各自系统中显示，此处为手动录入（营收 = 机台售价 × 销量）</span>
             <el-button type="primary" @click="openCreate">
@@ -123,6 +123,35 @@
               :page-size="machineQuery.pageSize"
               :current-page="machineQuery.page"
               @current-change="(p) => { machineQuery.page = p; fetchMachine() }"
+            />
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane v-if="isMachineType" label="对应订单明细" name="orderRef">
+          <div class="tab-toolbar">
+            <span class="tab-hint">与{{ currentTypeName }}对应的供货订单（配货给机台，供对应核对；营收仍按机台销量统计）</span>
+          </div>
+          <el-table :data="orderRows" v-loading="loading" border stripe size="small">
+            <el-table-column prop="orderNo" label="订单号" min-width="170" show-overflow-tooltip />
+            <el-table-column prop="typeName" label="订单类型" width="130" />
+            <el-table-column prop="customerName" label="客户" min-width="110" show-overflow-tooltip />
+            <el-table-column prop="customerPhone" label="电话" width="120" />
+            <el-table-column prop="totalQty" label="数量" width="80" align="right" />
+            <el-table-column prop="revenue" label="供货金额" width="110" align="right">
+              <template #default="{ row }">
+                <span class="revenue-text">¥{{ fmtMoney(row.revenue) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="createTime" label="下单时间" width="165" />
+          </el-table>
+          <div class="pager">
+            <el-pagination
+              background
+              layout="total, prev, pager, next"
+              :total="orderTotal"
+              :page-size="orderQuery.pageSize"
+              :current-page="orderQuery.page"
+              @current-change="(p) => { orderQuery.page = p; fetchOrders() }"
             />
           </div>
         </el-tab-pane>
