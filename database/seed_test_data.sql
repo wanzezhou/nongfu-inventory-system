@@ -72,80 +72,80 @@ INSERT INTO salesmen (salesman_id, salesman_name, phone, commission_rate, status
 INSERT INTO orders (order_id, order_type, platform_type, platform_order_no, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202608200001', 1, '美团', 'MT20260820001', '张伟', '13911110001', '南京市秦淮区瑞金路12号', NULL, 150.00, 20.00, 170.00, 1, 'W001', 1, 170.00, 'W005', '2026-08-20 10:30:00', '2026-08-20 10:30:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608200001', 'Pmrf3fgpqDNVO8Q', 10, 15.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 1.00, 150.00);
+('SZX202608200001', 'Pmrf3fgpqDNVO8Q', 10, 15.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 0.00, 150.00);
 
 -- ② 线上平台销售（type=1）2026-08-18：B×6（unit=进货价19）
 INSERT INTO orders (order_id, order_type, platform_type, platform_order_no, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202608180002', 1, '京东', 'JD20260818002', '李娜', '13911110002', '南京市建邺区江东中路98号', NULL, 114.00, 24.00, 138.00, 1, 'W002', 1, 138.00, 'W005', '2026-08-18 14:20:00', '2026-08-18 14:20:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608180002', 'Pmrf3fgq6AASZ1I', 6, 19.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 1.20, 114.00);
+('SZX202608180002', 'Pmrf3fgq6AASZ1I', 6, 19.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 0.00, 114.00);
 
 -- ③ 线下水站分销（type=2）2026-08-16：B×20（unit=批发价21，配送=工批0.9）
 INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202608160003', 2, 'ST001', '江宁水站', '13900000001', '南京市江宁区东山街道', '周老板', 420.00, 18.00, 438.00, 1, 'W001', 0, 0.00, 'W005', '2026-08-16 09:10:00', '2026-08-16 09:10:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608160003', 'Pmrf3fgq6AASZ1I', 20, 21.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 1.20, 420.00);
+('SZX202608160003', 'Pmrf3fgq6AASZ1I', 20, 21.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 0.00, 420.00);
 
 -- ④ 线下水站分销（type=2）2026-08-14：A×30 + C×10
 INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202608140004', 2, 'ST002', '秦淮水站', '13900000002', '南京市秦淮区大光路', '吴老板', 760.00, 22.50, 782.50, 1, 'W003', 1, 782.50, 'W005', '2026-08-14 11:00:00', '2026-08-14 11:00:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608140004', 'Pmrf3fgpqDNVO8Q', 30, 18.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 1.00, 540.00),
-('SZX202608140004', 'Pmrf3fgqtHVAMLA', 10, 22.00, 21.00, 22.00, 28.00, 24.00, 8.00, 5.00, 4.00, 0.90, 1.20, 220.00);
+('SZX202608140004', 'Pmrf3fgpqDNVO8Q', 30, 18.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 0.00, 540.00),
+('SZX202608140004', 'Pmrf3fgqtHVAMLA', 10, 22.00, 21.00, 22.00, 28.00, 24.00, 8.00, 5.00, 4.00, 0.90, 0.00, 220.00);
 
 -- ⑤ 线下零售（type=3）2026-08-12：C×5（无需配送，unit=零售28）
 INSERT INTO orders (order_id, order_type, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202608120005', 3, '王强', '13911110003', '南京市鼓楼区湖南路88号', '王强', 140.00, 0.00, 140.00, 3, NULL, 1, 140.00, 'W005', '2026-08-12 15:45:00', '2026-08-12 15:45:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608120005', 'Pmrf3fgqtHVAMLA', 5, 28.00, 21.00, 22.00, 28.00, 24.00, 8.00, 5.00, 4.00, 0.90, 1.20, 140.00);
+('SZX202608120005', 'Pmrf3fgqtHVAMLA', 5, 28.00, 21.00, 22.00, 28.00, 24.00, 8.00, 5.00, 4.00, 0.90, 0.00, 140.00);
 
 -- ⑥ 线下零售（type=3）2026-08-10：D×8 + E×6（自有员工配送）
 INSERT INTO orders (order_id, order_type, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202608100006', 3, '赵芳', '13911110004', '南京市玄武区北京东路55号', '赵芳', 364.00, 56.00, 420.00, 1, 'W004', 0, 100.00, 'W005', '2026-08-10 16:30:00', '2026-08-10 16:30:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608100006', 'Pmrf3fgq30J6ZV3', 8, 26.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 1.20, 208.00),
-('SZX202608100006', 'Pmrf3fgqq1UZJ5U', 6, 26.00, 20.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 1.20, 156.00);
+('SZX202608100006', 'Pmrf3fgq30J6ZV3', 8, 26.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 0.00, 208.00),
+('SZX202608100006', 'Pmrf3fgqq1UZJ5U', 6, 26.00, 20.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 0.00, 156.00);
 
 -- ⑦ 量贩机供货（type=4）2026-08-08：A×40（unit=进货价15，配送=工机1）
 INSERT INTO orders (order_id, order_type, machine_station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
-('SZX202608080007', 4, 'M001', '量贩机-万达广场店', '13700000001', '南京市建邺区万达广场1F', '张店长', 600.00, 40.00, 640.00, 2, 'W001', 1, 640.00, 'W005', '2026-08-08 09:00:00', '2026-08-08 09:00:00');
+('SZX202608080007', 4, 'M001', '量贩机-万达广场店', '13700000001', '南京市建邺区万达广场1F', '张店长', 600.00, 0.00, 600.00, 2, 'W001', 1, 600.00, 'W005', '2026-08-08 09:00:00', '2026-08-08 09:00:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608080007', 'Pmrf3fgpqDNVO8Q', 40, 15.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 1.00, 600.00);
+('SZX202608080007', 'Pmrf3fgpqDNVO8Q', 40, 15.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 0.00, 600.00);
 
 -- ⑧ 线下水站返货（type=5）2026-08-06：D×12（unit=进货价19，配送=0）
 INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202608060008', 5, 'ST003', '鼓楼水站', '13900000003', '南京市鼓楼区中山北路', '郑老板', 228.00, 0.00, 228.00, 3, NULL, 1, 228.00, 'W005', '2026-08-06 10:15:00', '2026-08-06 10:15:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608060008', 'Pmrf3fgq30J6ZV3', 12, 19.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 1.20, 228.00);
+('SZX202608060008', 'Pmrf3fgq30J6ZV3', 12, 19.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 0.00, 228.00);
 
 -- ⑨ 零售机供货（type=6）2026-08-04：C×20（unit=进货价21，配送=工机1.2）
 INSERT INTO orders (order_id, order_type, machine_station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
-('SZX202608040009', 6, 'R001', '零售机-地铁大行宫站', '13700000003', '南京市玄武区地铁2号线大行宫站内', '王站长', 420.00, 24.00, 444.00, 2, 'W002', 1, 444.00, 'W005', '2026-08-04 08:40:00', '2026-08-04 08:40:00');
+('SZX202608040009', 6, 'R001', '零售机-地铁大行宫站', '13700000003', '南京市玄武区地铁2号线大行宫站内', '王站长', 420.00, 0.00, 420.00, 2, 'W002', 1, 420.00, 'W005', '2026-08-04 08:40:00', '2026-08-04 08:40:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608040009', 'Pmrf3fgqtHVAMLA', 20, 21.00, 21.00, 22.00, 28.00, 24.00, 8.00, 5.00, 4.00, 0.90, 1.20, 420.00);
+('SZX202608040009', 'Pmrf3fgqtHVAMLA', 20, 21.00, 21.00, 22.00, 28.00, 24.00, 8.00, 5.00, 4.00, 0.90, 0.00, 420.00);
 
 -- ⑩ 线上平台销售（type=1）2026-07-25（历史月）：B×8
 INSERT INTO orders (order_id, order_type, platform_type, platform_order_no, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202607250010', 1, '美团', 'MT20260725010', '孙悦', '13911110005', '南京市雨花台区软件大道18号', NULL, 152.00, 32.00, 184.00, 1, 'W003', 1, 184.00, 'W005', '2026-07-25 12:00:00', '2026-07-25 12:00:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202607250010', 'Pmrf3fgq6AASZ1I', 8, 19.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 1.20, 152.00);
+('SZX202607250010', 'Pmrf3fgq6AASZ1I', 8, 19.00, 19.00, 21.00, 26.00, 22.00, 8.00, 5.00, 4.00, 0.90, 0.00, 152.00);
 
 -- ⑪ 线下水站分销（type=2）2026-07-20（历史月）：A×15
 INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202607200011', 2, 'ST004', '玄武水站', '13900000004', '南京市玄武区锁金村', '冯老板', 270.00, 6.75, 276.75, 1, 'W004', 0, 0.00, 'W005', '2026-07-20 13:30:00', '2026-07-20 13:30:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202607200011', 'Pmrf3fgpqDNVO8Q', 15, 18.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 1.00, 270.00);
+('SZX202607200011', 'Pmrf3fgpqDNVO8Q', 15, 18.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 0.00, 270.00);
 
 -- ⑫ 线下零售（type=3）2026-07-18（历史月）：A×3（无需配送）
 INSERT INTO orders (order_id, order_type, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202607180012', 3, '周涛', '13911110006', '南京市栖霞区文枢东路1号', '周涛', 72.00, 0.00, 72.00, 3, NULL, 1, 72.00, 'W005', '2026-07-18 17:20:00', '2026-07-18 17:20:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202607180012', 'Pmrf3fgpqDNVO8Q', 3, 24.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 1.00, 72.00);
+('SZX202607180012', 'Pmrf3fgpqDNVO8Q', 3, 24.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 0.00, 72.00);
 
 -- ⑬ 线下水站返货（type=5）2026-07-12（历史月）：A×12
 INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202607120013', 5, 'ST005', '建邺水站', '13900000005', '南京市建邺区兴隆大街', '褚老板', 180.00, 0.00, 180.00, 3, NULL, 1, 180.00, 'W005', '2026-07-12 09:50:00', '2026-07-12 09:50:00');
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202607120013', 'Pmrf3fgpqDNVO8Q', 12, 15.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 1.00, 180.00);
+('SZX202607120013', 'Pmrf3fgpqDNVO8Q', 12, 15.00, 15.00, 18.00, 24.00, 20.00, 4.00, 2.50, 2.00, 0.45, 0.00, 180.00);
 
 SELECT '测试数据已重建（商品/库存未动）：基础信息 6 模块 + 订单 13 笔（覆盖 6 种订单类型）' AS message;
