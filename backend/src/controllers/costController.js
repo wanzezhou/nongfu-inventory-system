@@ -61,13 +61,14 @@ async function getCostSummary(req, res) {
 
     // 每类型一个查询成本高，改用 CASE 表达式一次查出各类型进货价/配送费/成本
     const deliveryExpr = `
-      CASE o.order_type
-        WHEN 1 THEN oi.worker_retail_delivery_fee
-        WHEN 2 THEN oi.worker_wholesale_delivery_fee
-        WHEN 3 THEN oi.worker_retail_delivery_fee
-        WHEN 4 THEN oi.worker_machine_delivery_fee
-        WHEN 5 THEN oi.distribution_delivery_fee
-        WHEN 6 THEN oi.worker_machine_delivery_fee
+      CASE
+        WHEN o.delivery_type = 3 THEN 0
+        WHEN o.order_type = 1 THEN oi.worker_retail_delivery_fee
+        WHEN o.order_type = 2 THEN oi.worker_wholesale_delivery_fee
+        WHEN o.order_type = 3 THEN oi.worker_retail_delivery_fee
+        WHEN o.order_type = 4 THEN oi.worker_machine_delivery_fee
+        WHEN o.order_type = 5 THEN oi.distribution_delivery_fee
+        WHEN o.order_type = 6 THEN oi.worker_machine_delivery_fee
         ELSE 0 END`;
 
     const parts = ['o.canceled_at IS NULL'];
@@ -136,13 +137,14 @@ async function getCostOrders(req, res) {
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
 
     const deliveryExpr = `
-      CASE o.order_type
-        WHEN 1 THEN oi.worker_retail_delivery_fee
-        WHEN 2 THEN oi.worker_wholesale_delivery_fee
-        WHEN 3 THEN oi.worker_retail_delivery_fee
-        WHEN 4 THEN oi.worker_machine_delivery_fee
-        WHEN 5 THEN oi.distribution_delivery_fee
-        WHEN 6 THEN oi.worker_machine_delivery_fee
+      CASE
+        WHEN o.delivery_type = 3 THEN 0
+        WHEN o.order_type = 1 THEN oi.worker_retail_delivery_fee
+        WHEN o.order_type = 2 THEN oi.worker_wholesale_delivery_fee
+        WHEN o.order_type = 3 THEN oi.worker_retail_delivery_fee
+        WHEN o.order_type = 4 THEN oi.worker_machine_delivery_fee
+        WHEN o.order_type = 5 THEN oi.distribution_delivery_fee
+        WHEN o.order_type = 6 THEN oi.worker_machine_delivery_fee
         ELSE 0 END`;
 
     const parts = ['o.canceled_at IS NULL'];
@@ -210,13 +212,14 @@ async function exportCost(req, res) {
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
 
     const deliveryExpr = `
-      CASE o.order_type
-        WHEN 1 THEN oi.worker_retail_delivery_fee
-        WHEN 2 THEN oi.worker_wholesale_delivery_fee
-        WHEN 3 THEN oi.worker_retail_delivery_fee
-        WHEN 4 THEN oi.worker_machine_delivery_fee
-        WHEN 5 THEN oi.distribution_delivery_fee
-        WHEN 6 THEN oi.worker_machine_delivery_fee
+      CASE
+        WHEN o.delivery_type = 3 THEN 0
+        WHEN o.order_type = 1 THEN oi.worker_retail_delivery_fee
+        WHEN o.order_type = 2 THEN oi.worker_wholesale_delivery_fee
+        WHEN o.order_type = 3 THEN oi.worker_retail_delivery_fee
+        WHEN o.order_type = 4 THEN oi.worker_machine_delivery_fee
+        WHEN o.order_type = 5 THEN oi.distribution_delivery_fee
+        WHEN o.order_type = 6 THEN oi.worker_machine_delivery_fee
         ELSE 0 END`;
 
     const parts = ['o.canceled_at IS NULL'];
