@@ -50,7 +50,7 @@
           <el-icon><Histogram /></el-icon>
           <span>总营收</span>
         </div>
-        <div class="card-value">¥{{ fmtMoney(overall.totalRevenue) }}</div>
+        <div class="card-value">¥{{ fmtMoney(summary.overall.totalRevenue) }}</div>
         <div class="card-desc">统计期内全部营收</div>
       </div>
     </div>
@@ -178,7 +178,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Download, Plus, Delete,
-  Van, Goods, ShoppingCart, Coin, Wallet, Histogram
+  Van, Goods, ShoppingCart, Coin, Wallet, Money, Histogram
 } from '@element-plus/icons-vue'
 import { getFinanceSummary, getFinanceOrders, getMachineSales, createMachineSale, deleteMachineSale, exportFinance } from '@/api/finance'
 import { getProductList } from '@/api/product'
