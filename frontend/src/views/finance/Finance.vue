@@ -4,6 +4,7 @@
     <el-card class="filter-card" shadow="never">
       <div class="filter-bar">
         <el-radio-group v-model="query.range" @change="handleSearch">
+          <el-radio-button value="all">全部</el-radio-button>
           <el-radio-button value="day">今日</el-radio-button>
           <el-radio-button value="week">本周</el-radio-button>
           <el-radio-button value="month">本月</el-radio-button>
@@ -31,7 +32,7 @@
         </el-button>
       </div>
       <div class="filter-hint">
-        当前统计类型：<b>{{ currentTypeName }}</b> —— {{ currentTypeDesc }}。均不含已取消订单。
+        当前统计类型：<b>{{ currentTypeName }}</b> —— {{ currentTypeDesc }}。统计范围：<b>{{ rangeText }}</b>（与订单管理对比时请保持一致口径）。均不含已取消订单。
       </div>
     </el-card>
 
@@ -292,8 +293,18 @@ const saleMachineType = computed(() => (props.orderType === 6 ? 2 : 1))
 const currentTypeName = computed(() => ORDER_TYPE_NAME[props.orderType] || `类型${props.orderType}`)
 const currentTypeDesc = computed(() => CARD_META[props.orderType]?.desc || '')
 
-const query = reactive({ range: 'month', startDate: '', endDate: '' })
+const query = reactive({ range: 'all', startDate: '', endDate: '' })
 const customRange = ref([])
+
+// 当前统计范围文案（默认"全部"与订单管理默认口径一致）
+const rangeText = computed(() => {
+  if (query.range === 'all') return '全部时间'
+  if (query.range === 'custom' && customRange.value && customRange.value.length === 2) {
+    return `${customRange.value[0]} ~ ${customRange.value[1]}`
+  }
+  const map = { day: '今日', week: '本周', month: '本月', year: '今年' }
+  return map[query.range] || ''
+})
 
 const summary = reactive({ list: [], overall: { totalRevenue: 0 } })
 const orderRows = ref([])
@@ -410,7 +421,7 @@ const handleSearch = () => {
 }
 
 const handleReset = () => {
-  query.range = 'month'
+  query.range = 'all'
   customRange.value = []
   handleSearch()
 }

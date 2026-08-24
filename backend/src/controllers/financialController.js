@@ -39,6 +39,9 @@ function resolveDateRange(range, startDate, endDate) {
   const today = fmt(now);
 
   switch (range) {
+    case 'all':
+      // 全部时间（无时间过滤）
+      return { start: null, end: null };
     case 'day':
       return { start: today, end: today };
     case 'week': {
@@ -78,14 +81,20 @@ async function getFinanceOrders(req, res) {
     const offset = (p - 1) * size;
 
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
-    let where;
-    const params = [start, end];
+    // 动态构建 WHERE（支持 range=all 无时间过滤）
+    const parts = ['o.canceled_at IS NULL'];
+    const params = [];
     if (wantType && [1, 2, 3, 4, 5, 6].includes(wantType)) {
-      where = `WHERE o.order_type = ? AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
-      params.unshift(wantType);
+      parts.push('o.order_type = ?');
+      params.push(wantType);
     } else {
-      where = `WHERE o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
+      parts.push('o.order_type IN (1,2,3,5)');
     }
+    if (start && end) {
+      parts.push('DATE(o.created_at) BETWEEN ? AND ?');
+      params.push(start, end);
+    }
+    const where = 'WHERE ' + parts.join(' AND ');
     const expr = revenueExpr();
 
     const [countRows] = await pool.execute(
@@ -136,31 +145,45 @@ async function getFinanceSummary(req, res) {
     const isOrderType = wantType !== null && [1, 2, 3, 5].includes(wantType);
     const isMachineType = wantType === 4 || wantType === 6;
 
-    // 订单类：按订单类型分组（机台类型 4/6 时跳过订单）
-    const orderWhere = isOrderType
-      ? `o.order_type = ? AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`
-      : (isMachineType
-          ? `1=0`
-          : `o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`);
-    const orderParams = isOrderType ? [wantType, start, end] : [start, end];
+    // 订单类：按订单类型分组（机台类型 4/6 时跳过订单；range=all 无时间过滤）
+    const orderParts = isMachineType ? [] : ['o.canceled_at IS NULL'];
+    const orderParams = [];
+    if (isOrderType) {
+      orderParts.push('o.order_type = ?');
+      orderParams.push(wantType);
+    } else if (!isMachineType) {
+      orderParts.push('o.order_type IN (1,2,3,5)');
+    }
+    if (start && end) {
+      orderParts.push('DATE(o.created_at) BETWEEN ? AND ?');
+      orderParams.push(start, end);
+    }
+    const orderWhere = isMachineType ? '1=0' : 'WHERE ' + orderParts.join(' AND ');
     const [orderRows] = await pool.execute(
       `SELECT o.order_type, ROUND(SUM(${expr}), 2) AS revenue
        FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
-       WHERE ${orderWhere}
+       ${orderWhere}
        GROUP BY o.order_type`,
       orderParams
     );
 
     // 机台类：按机台类型分组（1-量贩机 -> 订单类型4，2-零售机 -> 订单类型6；订单类型 1/2/3/5 时跳过）
     const wantMachineType = wantType === 4 ? 1 : (wantType === 6 ? 2 : null);
-    const machineWhere = wantMachineType
-      ? `sale_date BETWEEN ? AND ? AND machine_type = ?`
-      : (isOrderType ? `1=0` : `sale_date BETWEEN ? AND ?`);
-    const machineParams = wantMachineType ? [start, end, wantMachineType] : [start, end];
+    const machineParts = [];
+    const machineParams = [];
+    if (wantMachineType) {
+      machineParts.push('machine_type = ?');
+      machineParams.push(wantMachineType);
+    }
+    if (start && end) {
+      machineParts.push('sale_date BETWEEN ? AND ?');
+      machineParams.push(start, end);
+    }
+    const machineWhere = isOrderType ? '1=0' : (machineParts.length ? 'WHERE ' + machineParts.join(' AND ') : '');
     const [machineRows] = await pool.execute(
       `SELECT machine_type, ROUND(SUM(sale_price * quantity), 2) AS revenue, SUM(quantity) AS total_qty
        FROM machine_sales
-       WHERE ${machineWhere}
+       ${machineWhere}
        GROUP BY machine_type`,
       machineParams
     );
@@ -208,15 +231,20 @@ async function getMachineSales(req, res) {
     const size = Math.min(100, Math.max(1, parseInt(pageSize) || 10));
     const offset = (p - 1) * size;
 
-    let where = `s.sale_date BETWEEN ? AND ?`;
-    const params = [start, end];
+    const parts = [];
+    const params = [];
+    if (start && end) {
+      parts.push('s.sale_date BETWEEN ? AND ?');
+      params.push(start, end);
+    }
     if (machineType !== undefined && machineType !== '') {
-      where += ` AND s.machine_type = ?`;
+      parts.push('s.machine_type = ?');
       params.push(Number(machineType));
     }
+    const where = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
 
     const [countRows] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM machine_sales s WHERE ${where}`,
+      `SELECT COUNT(*) AS total FROM machine_sales s ${where}`,
       params
     );
 
@@ -228,7 +256,7 @@ async function getMachineSales(req, res) {
        FROM machine_sales s
        LEFT JOIN machine_stations m ON s.machine_id = m.machine_id
        LEFT JOIN products p ON s.product_id = p.product_id
-       WHERE ${where}
+       ${where}
        ORDER BY s.sale_date DESC, s.created_at DESC
        LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`,
       params
@@ -351,48 +379,51 @@ async function exportFinance(req, res) {
     const isOrderType = wantType !== null && [1, 2, 3, 5].includes(wantType);
     const isMachineType = wantType === 4 || wantType === 6;
 
-    // 订单 sheet：指定订单类型时只导该类型；机台类型(4/6)时导供货订单；无类型时导 1/2/3/5 全部
-    let orderWhere, orderParams;
-    if (isOrderType) {
-      orderWhere = `o.order_type = ? AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
-      orderParams = [wantType, start, end];
-    } else if (isMachineType) {
-      orderWhere = `o.order_type = ? AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
-      orderParams = [wantType, start, end];
+    // 订单 sheet：指定订单类型时只导该类型；机台类型(4/6)时导供货订单；无类型时导 1/2/3/5 全部；range=all 无时间过滤
+    const oParts = ['o.canceled_at IS NULL'];
+    const orderParams = [];
+    if (isOrderType || isMachineType) {
+      oParts.push('o.order_type = ?');
+      orderParams.push(wantType);
     } else {
-      orderWhere = `o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
-      orderParams = [start, end];
+      oParts.push('o.order_type IN (1,2,3,5)');
     }
+    if (start && end) {
+      oParts.push('DATE(o.created_at) BETWEEN ? AND ?');
+      orderParams.push(start, end);
+    }
+    const orderWhere = 'WHERE ' + oParts.join(' AND ');
     const [orderRows] = await pool.execute(
       `SELECT o.order_id, o.order_type, o.customer_name, o.customer_phone, o.payment_status,
               o.created_at, SUM(oi.quantity) AS total_qty, ROUND(SUM(${expr}), 2) AS revenue
        FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
-       WHERE ${orderWhere}
+       ${orderWhere}
        GROUP BY o.order_id, o.order_type, o.customer_name, o.customer_phone, o.payment_status, o.created_at
        ORDER BY o.created_at DESC`,
       orderParams
     );
 
-    // 机台销量 sheet：机台类型(4/6)时只导该类型；订单类型时跳过；无类型时导全部
-    let machineWhere, machineParams;
+    // 机台销量 sheet：机台类型(4/6)时只导该类型；订单类型时跳过；无类型时导全部；range=all 无时间过滤
+    const mParts = [];
+    const machineParams = [];
     if (isMachineType) {
-      const mt = wantType === 4 ? 1 : 2;
-      machineWhere = `s.sale_date BETWEEN ? AND ? AND s.machine_type = ?`;
-      machineParams = [start, end, mt];
+      mParts.push('s.machine_type = ?');
+      machineParams.push(wantType === 4 ? 1 : 2);
     } else if (isOrderType) {
-      machineWhere = `1=0`;
-      machineParams = [];
-    } else {
-      machineWhere = `s.sale_date BETWEEN ? AND ?`;
-      machineParams = [start, end];
+      mParts.push('1=0');
     }
+    if (start && end) {
+      mParts.push('s.sale_date BETWEEN ? AND ?');
+      machineParams.push(start, end);
+    }
+    const machineWhere = mParts.length ? 'WHERE ' + mParts.join(' AND ') : '';
     const [machineRows] = await pool.execute(
       `SELECT s.sale_date, s.machine_type, s.quantity, s.sale_price, s.remark,
               m.station_name, p.product_name, p.specification, p.unit
        FROM machine_sales s
        LEFT JOIN machine_stations m ON s.machine_id = m.machine_id
        LEFT JOIN products p ON s.product_id = p.product_id
-       WHERE ${machineWhere}
+       ${machineWhere}
        ORDER BY s.sale_date DESC, s.created_at DESC`,
       machineParams
     );
