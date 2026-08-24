@@ -158,7 +158,7 @@ async function getFinanceSummary(req, res) {
       orderParts.push('DATE(o.created_at) BETWEEN ? AND ?');
       orderParams.push(start, end);
     }
-    const orderWhere = isMachineType ? '1=0' : 'WHERE ' + orderParts.join(' AND ');
+    const orderWhere = isMachineType ? 'WHERE 1=0' : 'WHERE ' + orderParts.join(' AND ');
     const [orderRows] = await pool.execute(
       `SELECT o.order_type, ROUND(SUM(${expr}), 2) AS revenue
        FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
@@ -179,7 +179,7 @@ async function getFinanceSummary(req, res) {
       machineParts.push('sale_date BETWEEN ? AND ?');
       machineParams.push(start, end);
     }
-    const machineWhere = isOrderType ? '1=0' : (machineParts.length ? 'WHERE ' + machineParts.join(' AND ') : '');
+    const machineWhere = isOrderType ? 'WHERE 1=0' : (machineParts.length ? 'WHERE ' + machineParts.join(' AND ') : '');
     const [machineRows] = await pool.execute(
       `SELECT machine_type, ROUND(SUM(sale_price * quantity), 2) AS revenue, SUM(quantity) AS total_qty
        FROM machine_sales
