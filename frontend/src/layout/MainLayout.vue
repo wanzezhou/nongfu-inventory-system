@@ -88,11 +88,31 @@
         <el-sub-menu index="/finance">
           <template #title>
             <el-icon><Money /></el-icon>
-            <span>财务管理</span>
+            <span>营收统计</span>
           </template>
-          <el-menu-item index="/finance">
+          <el-menu-item index="/finance/platform">
+            <el-icon><Van /></el-icon>
+            <template #title>线上平台销售</template>
+          </el-menu-item>
+          <el-menu-item index="/finance/distribution">
+            <el-icon><Goods /></el-icon>
+            <template #title>线下水站分销</template>
+          </el-menu-item>
+          <el-menu-item index="/finance/retail">
+            <el-icon><ShoppingCart /></el-icon>
+            <template #title>线下零售</template>
+          </el-menu-item>
+          <el-menu-item index="/finance/bulk-machine">
             <el-icon><Wallet /></el-icon>
-            <template #title>营收统计</template>
+            <template #title>量贩机</template>
+          </el-menu-item>
+          <el-menu-item index="/finance/return">
+            <el-icon><Coin /></el-icon>
+            <template #title>线下水站返货</template>
+          </el-menu-item>
+          <el-menu-item index="/finance/retail-machine">
+            <el-icon><Van /></el-icon>
+            <template #title>零售机</template>
           </el-menu-item>
         </el-sub-menu>
       </el-menu>

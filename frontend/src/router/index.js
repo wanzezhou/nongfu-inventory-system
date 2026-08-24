@@ -86,9 +86,49 @@ const routes = [
       },
       {
         path: 'finance',
-        name: 'Finance',
+        redirect: '/finance/platform'
+      },
+      {
+        path: 'finance/platform',
+        name: 'FinancePlatform',
         component: () => import('@/views/finance/Finance.vue'),
-        meta: { title: '营收统计', icon: 'Money', requiresAuth: true }
+        props: { orderType: 1 },
+        meta: { title: '线上平台销售营收', icon: 'Van', requiresAuth: true }
+      },
+      {
+        path: 'finance/distribution',
+        name: 'FinanceDistribution',
+        component: () => import('@/views/finance/Finance.vue'),
+        props: { orderType: 2 },
+        meta: { title: '线下水站分销营收', icon: 'Goods', requiresAuth: true }
+      },
+      {
+        path: 'finance/retail',
+        name: 'FinanceRetail',
+        component: () => import('@/views/finance/Finance.vue'),
+        props: { orderType: 3 },
+        meta: { title: '线下零售营收', icon: 'ShoppingCart', requiresAuth: true }
+      },
+      {
+        path: 'finance/bulk-machine',
+        name: 'FinanceBulkMachine',
+        component: () => import('@/views/finance/Finance.vue'),
+        props: { orderType: 4 },
+        meta: { title: '量贩机营收', icon: 'Wallet', requiresAuth: true }
+      },
+      {
+        path: 'finance/return',
+        name: 'FinanceReturn',
+        component: () => import('@/views/finance/Finance.vue'),
+        props: { orderType: 5 },
+        meta: { title: '线下水站返货营收', icon: 'Coin', requiresAuth: true }
+      },
+      {
+        path: 'finance/retail-machine',
+        name: 'FinanceRetailMachine',
+        component: () => import('@/views/finance/Finance.vue'),
+        props: { orderType: 6 },
+        meta: { title: '零售机营收', icon: 'Van', requiresAuth: true }
       }
     ]
   }

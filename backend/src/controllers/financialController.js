@@ -69,14 +69,19 @@ function revenueExpr() {
 // 订单类营收明细列表（分页）
 async function getFinanceOrders(req, res) {
   try {
-    const { range = 'month', startDate, endDate, page = 1, pageSize = 10 } = req.query;
+    const { range = 'month', startDate, endDate, orderType, page = 1, pageSize = 10 } = req.query;
     const { start, end } = resolveDateRange(range, startDate, endDate);
     const p = Math.max(1, parseInt(page) || 1);
     const size = Math.min(100, Math.max(1, parseInt(pageSize) || 10));
     const offset = (p - 1) * size;
 
-    const where = `WHERE o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
+    let where = `WHERE o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`;
     const params = [start, end];
+    // 按营收类型过滤（前端二级菜单传入）
+    if (orderType !== undefined && orderType !== '' && [1, 2, 3, 5].includes(Number(orderType))) {
+      where += ` AND o.order_type = ?`;
+      params.push(Number(orderType));
+    }
     const expr = revenueExpr();
 
     const [countRows] = await pool.execute(
@@ -117,29 +122,43 @@ async function getFinanceOrders(req, res) {
   }
 }
 
-// 营收汇总：订单类 1/2/3/5 + 机台类 4/6，共 6 类指标 + 合计
+// 营收汇总：订单类 1/2/3/5 + 机台类 4/6；可选 orderType 只聚合该类型（前端二级菜单）
 async function getFinanceSummary(req, res) {
   try {
-    const { range = 'month', startDate, endDate } = req.query;
+    const { range = 'month', startDate, endDate, orderType } = req.query;
     const { start, end } = resolveDateRange(range, startDate, endDate);
     const expr = revenueExpr();
+    const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
+    const isOrderType = wantType !== null && [1, 2, 3, 5].includes(wantType);
+    const isMachineType = wantType === 4 || wantType === 6;
 
-    // 订单类：按订单类型分组
+    // 订单类：按订单类型分组（机台类型 4/6 时跳过订单）
+    const orderWhere = isOrderType
+      ? `o.order_type = ? AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`
+      : (isMachineType
+          ? `1=0`
+          : `o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?`);
+    const orderParams = isOrderType ? [wantType, start, end] : [start, end];
     const [orderRows] = await pool.execute(
       `SELECT o.order_type, ROUND(SUM(${expr}), 2) AS revenue
        FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
-       WHERE o.order_type IN (1,2,3,5) AND o.canceled_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?
+       WHERE ${orderWhere}
        GROUP BY o.order_type`,
-      [start, end]
+      orderParams
     );
 
-    // 机台类：按机台类型分组（1-量贩机 -> 订单类型4，2-零售机 -> 订单类型6）
+    // 机台类：按机台类型分组（1-量贩机 -> 订单类型4，2-零售机 -> 订单类型6；订单类型 1/2/3/5 时跳过）
+    const wantMachineType = wantType === 4 ? 1 : (wantType === 6 ? 2 : null);
+    const machineWhere = wantMachineType
+      ? `sale_date BETWEEN ? AND ? AND machine_type = ?`
+      : (isOrderType ? `1=0` : `sale_date BETWEEN ? AND ?`);
+    const machineParams = wantMachineType ? [start, end, wantMachineType] : [start, end];
     const [machineRows] = await pool.execute(
       `SELECT machine_type, ROUND(SUM(sale_price * quantity), 2) AS revenue, SUM(quantity) AS total_qty
        FROM machine_sales
-       WHERE sale_date BETWEEN ? AND ?
+       WHERE ${machineWhere}
        GROUP BY machine_type`,
-      [start, end]
+      machineParams
     );
 
     const revenueMap = {

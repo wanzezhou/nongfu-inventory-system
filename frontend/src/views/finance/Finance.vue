@@ -31,7 +31,7 @@
         </el-button>
       </div>
       <div class="filter-hint">
-        口径：线上平台销售/线下水站返货 = 进货价 + 总包配送费；线下水站分销 = 分销价；线下零售 = 零售价（下单手动填写）；量贩机/零售机 = 机台售价 × 销量（手动录入）。均不含已取消订单。
+        当前统计类型：<b>{{ currentTypeName }}</b> —— {{ currentTypeDesc }}。均不含已取消订单。
       </div>
     </el-card>
 
@@ -58,7 +58,7 @@
     <!-- 明细 -->
     <el-card class="detail-card" shadow="never">
       <el-tabs v-model="activeTab">
-        <el-tab-pane label="订单营收明细" name="orders">
+        <el-tab-pane v-if="!isMachineType" label="订单营收明细" name="orders">
           <el-table :data="orderRows" v-loading="loading" border stripe size="small">
             <el-table-column prop="orderNo" label="订单号" min-width="170" show-overflow-tooltip />
             <el-table-column prop="typeName" label="订单类型" width="130" />
@@ -84,7 +84,7 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="机台销量明细" name="machine">
+        <el-tab-pane v-else label="机台销量明细" name="machine">
           <div class="tab-toolbar">
             <span class="tab-hint">量贩机/零售机销量在各自系统中显示，此处为手动录入（营收 = 机台售价 × 销量）</span>
             <el-button type="primary" @click="openCreate">
@@ -133,10 +133,11 @@
     <el-dialog v-model="createVisible" title="录入机台销量" :width="dialogWidth" class="create-sale-dialog" @closed="resetSaleForm">
       <el-form ref="saleFormRef" :model="saleForm" :rules="saleRules" label-width="90px">
         <el-form-item label="机台类型" prop="machineType">
-          <el-radio-group v-model="saleForm.machineType" @change="onMachineTypeChange">
+          <el-radio-group v-model="saleForm.machineType" disabled>
             <el-radio :value="1">量贩机</el-radio>
             <el-radio :value="2">零售机</el-radio>
           </el-radio-group>
+          <span class="unit-label">{{ currentTypeName }}（固定）</span>
         </el-form-item>
         <el-form-item label="机台" prop="machineId">
           <el-select v-model="saleForm.machineId" filterable placeholder="请选择机台" style="width: 100%">
@@ -185,10 +186,22 @@ import { getProductList } from '@/api/product'
 import { getMachineStations } from '@/api/machineStation'
 import { downloadBlob } from '@/api/excel'
 
+// 当前营收类型（路由 props 传入：1-线上平台销售 2-线下水站分销 3-线下零售 4-量贩机 5-线下水站返货 6-零售机）
+const props = defineProps({
+  orderType: { type: Number, required: true }
+})
+
 const loading = ref(false)
 const machineLoading = ref(false)
 const exporting = ref(false)
-const activeTab = ref('orders')
+
+// 机台类型页面（4-量贩机/6-零售机）默认机台销量 Tab
+const isMachineType = computed(() => props.orderType === 4 || props.orderType === 6)
+const activeTab = ref(isMachineType.value ? 'machine' : 'orders')
+// 机台销量录入弹窗的机台类型：4-量贩机(1)，6-零售机(2)
+const saleMachineType = computed(() => (props.orderType === 6 ? 2 : 1))
+const currentTypeName = computed(() => ORDER_TYPE_NAME[props.orderType] || `类型${props.orderType}`)
+const currentTypeDesc = computed(() => CARD_META[props.orderType]?.desc || '')
 
 const query = reactive({ range: 'month', startDate: '', endDate: '' })
 const customRange = ref([])
@@ -215,7 +228,6 @@ const saleForm = reactive({
   saleDate: '',
   remark: ''
 })
-
 const saleRules = {
   machineType: [{ required: true, message: '请选择机台类型', trigger: 'change' }],
   machineId: [{ required: true, message: '请选择机台', trigger: 'change' }],
@@ -226,6 +238,14 @@ const saleRules = {
 }
 
 // 指标卡定义（与后端口径一致）
+const ORDER_TYPE_NAME = {
+  1: '线上平台销售',
+  2: '线下水站分销',
+  3: '线下零售',
+  4: '量贩机',
+  5: '线下水站返货',
+  6: '零售机'
+}
 const CARD_META = {
   1: { icon: Van, cls: 'card-red', desc: '进货价 + 总包配送费' },
   2: { icon: Goods, cls: 'card-blue', desc: '分销价 × 数量' },
@@ -235,12 +255,12 @@ const CARD_META = {
   6: { icon: Van, cls: 'card-teal', desc: '机台售价 × 销量（手动录入）' }
 }
 
-const summaryCards = computed(() =>
-  summary.list.map((item) => {
-    const meta = CARD_META[item.orderType] || { icon: Money, cls: 'card-gray', desc: '' }
-    return { ...item, icon: meta.icon, cls: meta.cls, desc: meta.desc }
-  })
-)
+const summaryCards = computed(() => {
+  const item = summary.list.find((x) => x.orderType === props.orderType)
+  if (!item) return []
+  const meta = CARD_META[item.orderType] || { icon: Money, cls: 'card-gray', desc: '' }
+  return [{ ...item, icon: meta.icon, cls: meta.cls, desc: meta.desc }]
+})
 
 const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '520px'))
 
@@ -255,7 +275,7 @@ const buildParams = () => {
 
 const fetchSummary = async () => {
   try {
-    const res = await getFinanceSummary(buildParams())
+    const res = await getFinanceSummary({ ...buildParams(), orderType: props.orderType })
     if (res.data) {
       summary.list = res.data.list || []
       summary.overall = res.data.overall || { totalRevenue: 0 }
@@ -269,7 +289,7 @@ const fetchSummary = async () => {
 const fetchOrders = async () => {
   loading.value = true
   try {
-    const res = await getFinanceOrders({ ...buildParams(), page: orderQuery.page, pageSize: orderQuery.pageSize })
+    const res = await getFinanceOrders({ ...buildParams(), orderType: props.orderType, page: orderQuery.page, pageSize: orderQuery.pageSize })
     if (res.data) {
       orderRows.value = res.data.list || []
       orderTotal.value = res.data.total || 0
@@ -285,7 +305,7 @@ const fetchOrders = async () => {
 const fetchMachine = async () => {
   machineLoading.value = true
   try {
-    const res = await getMachineSales({ ...buildParams(), page: machineQuery.page, pageSize: machineQuery.pageSize })
+    const res = await getMachineSales({ ...buildParams(), machineType: saleMachineType.value, page: machineQuery.page, pageSize: machineQuery.pageSize })
     if (res.data) {
       machineRows.value = res.data.list || []
       machineTotal.value = res.data.total || 0
@@ -347,17 +367,13 @@ const loadProducts = async () => {
   }
 }
 
-const onMachineTypeChange = () => {
-  saleForm.machineId = ''
-  loadMachines()
-}
-
 const onProductChange = (pid) => {
   const p = productOptions.value.find((x) => String(x.id) === String(pid))
   saleForm.salePrice = p ? Number(p.vendingPrice || p.machinePrice || 0) : 0
 }
 
 const openCreate = () => {
+  saleForm.machineType = saleMachineType.value
   createVisible.value = true
   loadMachines()
   if (productOptions.value.length === 0) loadProducts()
@@ -365,7 +381,7 @@ const openCreate = () => {
 }
 
 const resetSaleForm = () => {
-  saleForm.machineType = 1
+  saleForm.machineType = saleMachineType.value
   saleForm.machineId = ''
   saleForm.productId = ''
   saleForm.salePrice = 0
