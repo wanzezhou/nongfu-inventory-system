@@ -11,5 +11,6 @@ router.post('/:id/cancel', auth, waterTicketController.cancelTicket);          /
 router.get('/issuances', auth, waterTicketController.getIssuanceList);         // 发行记录（返货清单，分页）
 router.put('/issuances/:id', auth, waterTicketController.updateIssuance);       // 编辑发行记录（管理员）
 router.post('/adjust-balance', auth, waterTicketController.adjustBalance);      // 水站账户调整（管理员）
+router.post('/adjust-delivery-fee', auth, waterTicketController.adjustDeliveryFee); // 分销配送费余额调整（管理员）
 
 module.exports = router;

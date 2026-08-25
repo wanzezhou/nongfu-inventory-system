@@ -8,3 +8,4 @@ export const cancelTicket = (id) => request.post(`/water-tickets/${id}/cancel`) 
 export const getIssuanceList = (params) => request.get('/water-tickets/issuances', { params })     // 发行记录
 export const updateIssuance = (id, data) => request.put(`/water-tickets/issuances/${id}`, data)    // 编辑发行记录（管理员）
 export const adjustBalance = (data) => request.post('/water-tickets/adjust-balance', data)          // 水站账户调整（管理员）
+export const adjustDeliveryFee = (data) => request.post('/water-tickets/adjust-delivery-fee', data)  // 分销配送费余额调整（管理员）

@@ -144,9 +144,10 @@ SELECT '测试数据已重建（商品/库存未动）：基础信息 6 模块 +
 -- 水票演示数据（水站返货管理，2026-08-25 追加）
 -- 模拟每月返货清单：水站 ST001 商品A×5 配送费25；ST002 商品B×3 配送费18
 -- ============================================================
-INSERT INTO water_ticket_issuance (issuance_id, station_id, product_id, quantity, distribution_delivery_fee, month, remark, created_by) VALUES
-('WTI20260825000001', 'ST001', 'Pmrf3fgpqDNVO8Q', 5, 25.00, '2026-08', '8月返货清单', 'seed'),
-('WTI20260825000002', 'ST002', 'Pmrf3fgq6AASZ1I', 3, 18.00, '2026-08', '8月返货清单', 'seed');
+INSERT INTO water_ticket_issuance (issuance_id, batch_id, station_id, product_id, quantity, distribution_delivery_fee, month, remark, created_by, created_at) VALUES
+('WTI20260825000001', 'WTB20260825000001', 'ST001', 'Pmrf3fgpqDNVO8Q', 5, 25.00, '2026-08', '8月返货清单', 'seed', '2026-08-25 10:00:00'),
+('WTI20260825000002', 'WTB20260825000001', 'ST001', 'Pmrf3fgteHHV9KX', 2, 14.00, '2026-08', '8月返货清单', 'seed', '2026-08-25 10:00:00'),
+('WTI20260825000003', 'WTB20260825000002', 'ST002', 'Pmrf3fgq6AASZ1I', 3, 18.00, '2026-08', '8月返货清单', 'seed', '2026-08-25 11:00:00');
 
 INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by) VALUES
 ('WT20260825000001', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
@@ -154,8 +155,10 @@ INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, iss
 ('WT20260825000003', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
 ('WT20260825000004', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
 ('WT20260825000005', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
-('WT20260825000006', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000002', NOW(), 'seed'),
-('WT20260825000007', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000002', NOW(), 'seed'),
-('WT20260825000008', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000002', NOW(), 'seed');
+('WT20260825000006', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000003', NOW(), 'seed'),
+('WT20260825000007', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000003', NOW(), 'seed'),
+('WT20260825000008', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000003', NOW(), 'seed'),
+('WT20260825000009', 'Pmrf3fgteHHV9KX', 'ST001', 1, '2026-08', 'WTI20260825000002', NOW(), 'seed'),
+('WT20260825000010', 'Pmrf3fgteHHV9KX', 'ST001', 1, '2026-08', 'WTI20260825000002', NOW(), 'seed');
 
-SELECT '测试数据已重建（商品/库存未动）：基础信息 + 订单 11 笔（5 种订单类型）+ 水票演示数据（ST001×5、ST002×3）' AS message;
+SELECT '测试数据已重建（商品/库存未动）：基础信息 + 订单 11 笔（5 种订单类型）+ 水票演示数据（ST001 批1: 380mL×5+19L桶×2、ST002 批2: 380mL24入×3）' AS message;

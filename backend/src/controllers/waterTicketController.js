@@ -40,6 +40,8 @@ async function issueTickets(req, res) {
     }
 
     const now = new Date();
+    // 同一次录入 = 一个批次（批次号用于列表按批次合并展示）
+    const batchId = `WTB${Date.now()}${Math.floor(Math.random() * 90 + 10)}`;
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
@@ -48,9 +50,9 @@ async function issueTickets(req, res) {
     for (const it of cleanItems) {
       const issuanceId = `WTI${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
       await connection.execute(
-        `INSERT INTO water_ticket_issuance (issuance_id, station_id, product_id, quantity, distribution_delivery_fee, month, remark, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [issuanceId, actualStationId, it.productId, it.quantity, it.distributionDeliveryFee, actualMonth, remark || null, operator]
+        `INSERT INTO water_ticket_issuance (issuance_id, batch_id, station_id, product_id, quantity, distribution_delivery_fee, month, remark, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [issuanceId, batchId, actualStationId, it.productId, it.quantity, it.distributionDeliveryFee, actualMonth, remark || null, operator]
       );
       issuanceIds.push(issuanceId);
 
@@ -70,7 +72,7 @@ async function issueTickets(req, res) {
     }
 
     await connection.commit();
-    return success(res, { issuanceIds, totalTickets }, `发行成功（${totalTickets} 张水票）`);
+    return success(res, { issuanceIds, batchId, totalTickets }, `发行成功（${totalTickets} 张水票）`);
   } catch (e) {
     if (connection) await connection.rollback().catch(() => {});
     console.error('issueTickets error:', e);
@@ -114,6 +116,12 @@ async function getTicketInventory(req, res) {
       available: Number(r.available) || 0,
       deliveryFeeTotal: Number(r.delivery_fee_total) || 0
     }));
+    // 水站级分销配送费总计（合并单元格求和用）
+    const stationFeeMap = {};
+    list.forEach((x) => {
+      stationFeeMap[x.stationId] = Math.round(((stationFeeMap[x.stationId] || 0) + x.deliveryFeeTotal) * 100) / 100;
+    });
+    list.forEach((x) => { x.stationDeliveryFee = stationFeeMap[x.stationId] || 0; });
     return success(res, { list });
   } catch (e) {
     console.error('getTicketInventory error:', e);
@@ -186,7 +194,7 @@ async function cancelTicket(req, res) {
   }
 }
 
-// 发行记录列表（返货清单，含返货配送费；分页）
+// 发行记录列表（按批次分组：同一次录入的多条记录合并展示，按录入时间倒序）
 async function getIssuanceList(req, res) {
   try {
     const { stationId, station_id, month, page = 1, pageSize = 10 } = req.query;
@@ -199,31 +207,61 @@ async function getIssuanceList(req, res) {
     if (month) { where.push('i.month = ?'); params.push(month); }
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
-    const [countRows] = await pool.execute(`SELECT COUNT(*) AS total FROM water_ticket_issuance i ${whereSql}`, params);
-    const [rows] = await pool.execute(
-      `SELECT i.issuance_id, i.station_id, s.station_name, i.product_id, p.product_name, p.specification,
-              i.quantity, i.distribution_delivery_fee, i.month, i.remark, i.created_by, i.created_at
-       FROM water_ticket_issuance i
-       LEFT JOIN sub_stations s ON i.station_id = s.station_id
-       LEFT JOIN products p ON i.product_id = p.product_id
-       ${whereSql}
-       ORDER BY i.created_at DESC
-       LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`,
+    // 批次级总数与分页
+    const [countRows] = await pool.execute(
+      `SELECT COUNT(DISTINCT i.batch_id) AS total FROM water_ticket_issuance i ${whereSql}`,
       params
     );
-    const list = rows.map((r) => ({
-      issuanceId: r.issuance_id,
-      stationId: r.station_id,
-      stationName: r.station_name || r.station_id,
-      productId: r.product_id,
-      productName: r.product_name || r.product_id,
-      specification: r.specification || '',
-      quantity: Number(r.quantity) || 0,
-      distributionDeliveryFee: Number(r.distribution_delivery_fee) || 0,
-      month: r.month,
-      remark: r.remark || '',
-      createdBy: r.created_by || '',
-      createdAt: r.created_at
+    const [batchRows] = await pool.execute(
+      `SELECT i.batch_id, i.station_id, s.station_name, i.month, i.created_by, MIN(i.created_at) AS created_at,
+              SUM(i.quantity) AS total_quantity, ROUND(SUM(i.distribution_delivery_fee), 2) AS total_fee,
+              COUNT(*) AS item_count, MAX(i.remark) AS remark
+       FROM water_ticket_issuance i
+       LEFT JOIN sub_stations s ON i.station_id = s.station_id
+       ${whereSql}
+       GROUP BY i.batch_id, i.station_id, s.station_name, i.month, i.created_by
+       ORDER BY created_at DESC, i.batch_id DESC
+       LIMIT ${parseInt(size, 10)} OFFSET ${parseInt(offset, 10)}`,
+      params
+    );
+
+    // 批次内明细
+    const batchIds = batchRows.map((b) => b.batch_id);
+    let itemsRows = [];
+    if (batchIds.length) {
+      [itemsRows] = await pool.execute(
+        `SELECT i.batch_id, i.issuance_id, i.product_id, p.product_name, p.specification,
+                i.quantity, i.distribution_delivery_fee, i.remark
+         FROM water_ticket_issuance i
+         LEFT JOIN products p ON i.product_id = p.product_id
+         WHERE i.batch_id IN (${batchIds.map(() => '?').join(',')})
+         ORDER BY i.issuance_id`,
+        batchIds
+      );
+    }
+
+    const list = batchRows.map((b) => ({
+      batchId: b.batch_id,
+      stationId: b.station_id,
+      stationName: b.station_name || b.station_id,
+      month: b.month,
+      remark: b.remark || '',
+      createdBy: b.created_by || '',
+      createdAt: b.created_at,
+      totalQuantity: Number(b.total_quantity) || 0,
+      totalFee: Number(b.total_fee) || 0,
+      itemCount: Number(b.item_count) || 0,
+      items: itemsRows
+        .filter((x) => x.batch_id === b.batch_id)
+        .map((x) => ({
+          issuanceId: x.issuance_id,
+          productId: x.product_id,
+          productName: x.product_name || x.product_id,
+          specification: x.specification || '',
+          quantity: Number(x.quantity) || 0,
+          distributionDeliveryFee: Number(x.distribution_delivery_fee) || 0,
+          remark: x.remark || ''
+        }))
     }));
     return success(res, { list, total: countRows[0].total, page: p, pageSize: size });
   } catch (e) {
@@ -372,6 +410,62 @@ async function adjustBalance(req, res) {
   }
 }
 
+// 分销配送费余额调整（管理员）：将某水站某商品的配送费累计调整为目标金额
+// 差额计入该水站该商品最新一条发行记录，使 SUM 恰好等于目标值
+async function adjustDeliveryFee(req, res) {
+  let connection;
+  try {
+    const { stationId, station_id, productId, product_id, targetFee } = req.body || {};
+    const actualStationId = stationId || station_id;
+    const actualProductId = productId || product_id;
+    const target = Number(targetFee);
+    if (!actualStationId) return error(res, '请选择水站', 400);
+    if (!actualProductId) return error(res, '请选择商品', 400);
+    if (isNaN(target) || target < 0) return error(res, '分销配送费必须大于等于0', 400);
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    const [sumRows] = await connection.execute(
+      `SELECT ROUND(SUM(distribution_delivery_fee), 2) AS s FROM water_ticket_issuance WHERE station_id = ? AND product_id = ?`,
+      [actualStationId, actualProductId]
+    );
+    const current = Number(sumRows[0].s) || 0;
+    const diff = Math.round((target - current) * 100) / 100;
+
+    if (diff !== 0) {
+      const [rows] = await connection.execute(
+        `SELECT issuance_id, distribution_delivery_fee FROM water_ticket_issuance
+         WHERE station_id = ? AND product_id = ?
+         ORDER BY created_at DESC, issuance_id DESC LIMIT 1`,
+        [actualStationId, actualProductId]
+      );
+      if (rows.length === 0) {
+        await connection.rollback();
+        return error(res, '该水站商品无发行记录，无法调整配送费', 400);
+      }
+      const newFee = Math.round((Number(rows[0].distribution_delivery_fee) + diff) * 100) / 100;
+      if (newFee < 0) {
+        await connection.rollback();
+        return error(res, '调整后单笔配送费为负，无法调整', 400);
+      }
+      await connection.execute(
+        `UPDATE water_ticket_issuance SET distribution_delivery_fee = ? WHERE issuance_id = ?`,
+        [newFee, rows[0].issuance_id]
+      );
+    }
+
+    await connection.commit();
+    return success(res, { stationId: actualStationId, productId: actualProductId, current, target }, '配送费调整成功');
+  } catch (e) {
+    if (connection) await connection.rollback().catch(() => {});
+    console.error('adjustDeliveryFee error:', e);
+    return error(res, '配送费调整失败', 500);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 module.exports = {
   issueTickets,
   getTicketInventory,
@@ -379,5 +473,6 @@ module.exports = {
   cancelTicket,
   getIssuanceList,
   updateIssuance,
-  adjustBalance
+  adjustBalance,
+  adjustDeliveryFee
 };

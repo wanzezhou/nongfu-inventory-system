@@ -37,7 +37,7 @@
                   <el-icon><DocumentAdd /></el-icon>录入并发行水票
                 </el-button>
               </div>
-              <span class="issue-hint">按每月返货清单录入：商品 × 数量 = 生成等量水票；分销配送费自动带出商品档案（可修改）。</span>
+              <span class="issue-hint">按每月返货清单录入：商品 × 数量 = 生成等量水票；分销配送费自动带出商品档案（随数量联动，可修改）。</span>
             </div>
           </div>
         </el-tab-pane>
@@ -57,8 +57,8 @@
             <el-table-column prop="available" label="水票余额" width="110" align="center">
               <template #default="{ row }"><el-tag type="success">{{ row.available }} 张</el-tag></template>
             </el-table-column>
-            <el-table-column prop="deliveryFeeTotal" label="分销配送费余额" width="140" align="right">
-              <template #default="{ row }">¥{{ fmtMoney(row.deliveryFeeTotal) }}</template>
+            <el-table-column prop="stationDeliveryFee" label="分销配送费余额" width="140" align="right">
+              <template #default="{ row }">¥{{ fmtMoney(row.stationDeliveryFee) }}</template>
             </el-table-column>
             <el-table-column label="操作" width="90" align="center" fixed="right">
               <template #default="{ row }">
@@ -70,22 +70,35 @@
       </el-tabs>
     </el-card>
 
-    <!-- 发行记录（可编辑） -->
+    <!-- 发行记录（批次视图，可筛选、可编辑） -->
     <el-card class="detail-card" shadow="never" v-if="activeTab === 'issue'">
-      <template #header>发行记录（返货清单，管理员可修改）</template>
-      <el-table :data="issuanceRows" border stripe size="small">
+      <template #header>
+        <div class="iss-filter">
+          <span class="iss-title">发行记录（返货清单，管理员可修改）</span>
+          <div class="iss-filter-right">
+            <el-select v-model="issFilter.stationId" filterable clearable placeholder="水站" style="width: 150px">
+              <el-option v-for="s in stationOptions" :key="s.id" :label="s.name" :value="s.id" />
+            </el-select>
+            <el-date-picker v-model="issFilter.month" type="month" value-format="YYYY-MM" placeholder="月份" style="width: 130px" />
+            <el-button type="primary" size="small" @click="searchIssuances"><el-icon><Search /></el-icon>查询</el-button>
+          </div>
+        </div>
+      </template>
+      <el-table :data="issuanceRows" :span-method="issSpanMethod" border stripe size="small">
+        <el-table-column prop="stationName" label="水站" width="120" />
         <el-table-column prop="month" label="月份" width="90" />
-        <el-table-column prop="stationName" label="水站" width="130" />
         <el-table-column prop="productName" label="商品" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="quantity" label="数量(水票数)" width="110" align="center" />
-        <el-table-column prop="distributionDeliveryFee" label="分销配送费" width="110" align="right">
-          <template #default="{ row }">¥{{ fmtMoney(row.distributionDeliveryFee) }}</template>
+        <el-table-column prop="quantity" label="数量" width="70" align="center" />
+        <el-table-column label="分销配送费" width="120" align="right">
+          <template #default="{ row }"><span class="fee-total">¥{{ fmtMoney(row.batch.totalFee) }}</span></template>
         </el-table-column>
-        <el-table-column prop="createdBy" label="录入人" width="100" />
-        <el-table-column prop="createdAt" label="录入时间" width="165" />
+        <el-table-column prop="createdBy" label="录入人" width="90" />
+        <el-table-column prop="createdAt" label="录入时间" width="155">
+          <template #default="{ row }">{{ fmtDateTime(row.createdAt) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="80" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEditIssuance(row)">编辑</el-button>
+            <el-button link type="primary" @click="openEditIssuance(row.batch)">编辑</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -101,21 +114,20 @@
       </div>
     </el-card>
 
-    <!-- 编辑发行记录弹窗 -->
-    <el-dialog v-model="editIssuanceVisible" title="编辑发行记录" :width="dialogWidth" @closed="resetEditForm">
-      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="100px">
-        <el-form-item label="水站/商品">
-          <span>{{ editForm.stationName }} - {{ editForm.productName }}</span>
-        </el-form-item>
-        <el-form-item label="数量" prop="quantity">
-          <el-input-number v-model="editForm.quantity" :min="1" :precision="0" :step="1" style="width: 100%" @change="onEditQuantityChange" />
-          <span class="unit-label">改大自动补发水票；改小作废未用水票（已核销不可减）；分销配送费随数量自动重算</span>
-        </el-form-item>
-        <el-form-item label="分销配送费" prop="distributionDeliveryFee">
-          <el-input-number v-model="editForm.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" style="width: 100%" />
-        </el-form-item>
+    <!-- 编辑发行记录弹窗（批次多行） -->
+    <el-dialog v-model="editIssuanceVisible" :title="`编辑发行记录 - ${editForm.stationName}（${editForm.month}）`" :width="dialogWidth" @closed="resetEditForm">
+      <div v-for="(it, idx) in editForm.items" :key="it.issuanceId || idx" class="edit-item-row">
+        <span class="item-label">商品</span>
+        <span class="edit-product">{{ it.productName }}<span v-if="it.specification">（{{ it.specification }}）</span></span>
+        <span class="item-label">数量</span>
+        <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 110px" @change="(v) => onEditItemQuantityChange(it, v)" />
+        <span class="item-label">分销配送费</span>
+        <el-input-number v-model="it.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" style="width: 130px" />
+      </div>
+      <div class="edit-item-hint">数量改大自动补发水票；改小作废未用水票（已核销不可减）；分销配送费随数量自动重算，可再手动调整。</div>
+      <el-form label-width="90px" style="margin-top: 10px">
         <el-form-item label="备注">
-          <el-input v-model="editForm.remark" type="textarea" :rows="2" placeholder="选填" />
+          <el-input v-model="editRemark" type="textarea" :rows="2" placeholder="选填" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -125,17 +137,23 @@
     </el-dialog>
 
     <!-- 水站账户调整弹窗 -->
-    <el-dialog v-model="adjustVisible" title="调整水票余额" :width="dialogWidth">
+    <el-dialog v-model="adjustVisible" title="调整水站账户" :width="dialogWidth">
       <el-form label-width="100px">
         <el-form-item label="水站/商品">
           <span>{{ adjustRow.stationName }} - {{ adjustRow.productName }}</span>
         </el-form-item>
-        <el-form-item label="当前余额">
+        <el-form-item label="当前水票">
           <el-tag type="success">{{ adjustRow.available }} 张</el-tag>
         </el-form-item>
-        <el-form-item label="目标数量" required>
+        <el-form-item label="水票目标数">
           <el-input-number v-model="adjustTarget" :min="0" :precision="0" :step="1" style="width: 100%" />
-          <span class="unit-label">改大自动补发；改小作废未用水票</span>
+        </el-form-item>
+        <el-form-item label="当前配送费">
+          <span>¥{{ fmtMoney(adjustFeeCurrent) }}</span>
+        </el-form-item>
+        <el-form-item label="配送费目标">
+          <el-input-number v-model="adjustFeeTarget" :min="0" :precision="2" :step="0.5" style="width: 100%" />
+          <span class="unit-label">输入目标金额后保存，差额计入最新发行记录</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -148,11 +166,11 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Search, Plus, Delete, DocumentAdd } from '@element-plus/icons-vue'
 import {
   issueTickets, getTicketInventory, getIssuanceList,
-  updateIssuance, adjustBalance
+  updateIssuance, adjustBalance, adjustDeliveryFee
 } from '@/api/waterTicket'
 import { getStations } from '@/api/station'
 import { getProductList } from '@/api/product'
@@ -164,7 +182,7 @@ const issuing = ref(false)
 const saving = ref(false)
 const stationOptions = ref([])
 const productOptions = ref([])
-const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '520px'))
+const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '560px'))
 
 // ---- 返货清单/发行 ----
 const issueForm = reactive({
@@ -174,13 +192,13 @@ const issueForm = reactive({
 })
 const addIssueItem = () => issueForm.items.push({ productId: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0 })
 const removeIssueItem = (idx) => { if (issueForm.items.length > 1) issueForm.items.splice(idx, 1) }
-// 选择商品自动带出商品档案的单件分销配送费，并按当前数量计算总额
+// 选择商品自动带出商品档案的单件分销配送费，并按数量计算总额
 const onIssueProductChange = (it, pid) => {
   const p = productOptions.value.find((x) => String(x.id) === String(pid))
   it.unitDeliveryFee = p ? Number(p.distributionDeliveryFee || p.distribution_delivery_fee || 0) : 0
   it.distributionDeliveryFee = Number((it.unitDeliveryFee * (it.quantity || 1)).toFixed(2))
 }
-// 数量变化：分销配送费 = 单件配送费 × 数量（自动联动，可再手改）
+// 数量变化：配送费随单件配送费联动重算
 const onIssueQuantityChange = (it, v) => {
   it.distributionDeliveryFee = Number((it.unitDeliveryFee * (Number(v) || 1)).toFixed(2))
 }
@@ -198,7 +216,7 @@ const handleIssue = async () => {
       items: items.map((x) => ({ productId: x.productId, quantity: x.quantity, distributionDeliveryFee: x.distributionDeliveryFee || 0 }))
     })
     ElMessage.success(res.message || '发行成功')
-    issueForm.items = [{ productId: '', quantity: 1, distributionDeliveryFee: 0 }]
+    issueForm.items = [{ productId: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0 }]
     fetchIssuances()
     fetchInventory()
   } catch (e) {
@@ -220,7 +238,7 @@ const fetchInventory = async () => {
   } catch (e) { console.error(e) } finally { loading.value = false }
 }
 
-// 水站名称列合并单元格（同一水站连续行合并）
+// 水站列(0) 与 分销配送费余额列(4) 按同一水站合并单元格（配送费余额合并后显示水站总计）
 const invSpanMap = computed(() => {
   const map = {}
   const list = inventoryList.value
@@ -237,59 +255,106 @@ const invSpanMap = computed(() => {
   return map
 })
 const invSpanMethod = ({ rowIndex, columnIndex }) => {
-  if (columnIndex === 0) {
+  if (columnIndex === 0 || columnIndex === 4) {
     const s = invSpanMap.value[rowIndex]
     if (!s) return
     return s.hidden ? { rowspan: 0, colspan: 0 } : { rowspan: s.rowspan, colspan: 1 }
   }
 }
 
-// ---- 发行记录 ----
-const issuanceRows = ref([])
+// ---- 发行记录（批次视图）----
+const issFilter = reactive({ stationId: '', month: '' })
+const issuanceBatchList = ref([])
 const issuanceTotal = ref(0)
 const issuancePage = reactive({ page: 1, pageSize: 10 })
 const fetchIssuances = async () => {
   try {
-    const res = await getIssuanceList({ page: issuancePage.page, pageSize: issuancePage.pageSize })
-    issuanceRows.value = res.data?.list || []
+    const res = await getIssuanceList({
+      stationId: issFilter.stationId || undefined,
+      month: issFilter.month || undefined,
+      page: issuancePage.page,
+      pageSize: issuancePage.pageSize
+    })
+    issuanceBatchList.value = res.data?.list || []
     issuanceTotal.value = res.data?.total || 0
   } catch (e) { console.error(e) }
 }
-
-// ---- 编辑发行记录 ----
-const editIssuanceVisible = ref(false)
-const editFormRef = ref(null)
-const editForm = reactive({ issuanceId: '', stationName: '', productName: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0, remark: '' })
-const editRules = {
-  quantity: [{ required: true, message: '请输入数量', trigger: 'blur' }],
-  distributionDeliveryFee: [{ required: true, message: '请输入分销配送费', trigger: 'blur' }]
+const searchIssuances = () => {
+  issuancePage.page = 1
+  fetchIssuances()
 }
-const openEditIssuance = (row) => {
-  editForm.issuanceId = row.issuanceId
-  editForm.stationName = row.stationName
-  editForm.productName = row.productName
-  editForm.quantity = row.quantity
-  editForm.distributionDeliveryFee = row.distributionDeliveryFee
-  editForm.unitDeliveryFee = Number(row.quantity) > 0 ? Number(row.distributionDeliveryFee) / Number(row.quantity) : 0
-  editForm.remark = row.remark || ''
+// 批次内明细展开为表格行（合并批次字段到行，供列 prop 直接取值）
+const issuanceRows = computed(() => {
+  const out = []
+  issuanceBatchList.value.forEach((b) => {
+    b.items.forEach((it) => out.push({ ...it, ...b, batch: b }))
+  })
+  return out
+})
+// 批次合并：水站/月份/配送费合计/录入人/录入时间/操作 列按批次合并
+const issSpanMap = computed(() => {
+  const map = {}
+  const rows = issuanceRows.value
+  let i = 0
+  while (i < rows.length) {
+    const bid = rows[i].batch.batchId
+    let j = i
+    while (j + 1 < rows.length && rows[j + 1].batch.batchId === bid) j++
+    for (let k = i; k <= j; k++) {
+      map[k] = k === i ? { rowspan: j - i + 1, hidden: false } : { rowspan: 0, hidden: true }
+    }
+    i = j + 1
+  }
+  return map
+})
+const issSpanMethod = ({ rowIndex, columnIndex }) => {
+  const mergeCols = [0, 1, 4, 5, 6, 7] // 水站/月份/分销配送费/录入人/录入时间/操作
+  if (mergeCols.includes(columnIndex)) {
+    const s = issSpanMap.value[rowIndex]
+    if (!s) return
+    return s.hidden ? { rowspan: 0, colspan: 0 } : { rowspan: s.rowspan, colspan: 1 }
+  }
+}
+
+// ---- 编辑发行记录（批次多行）----
+const editIssuanceVisible = ref(false)
+const editForm = reactive({ batchId: '', stationName: '', month: '', items: [] })
+const editRemark = ref('')
+const openEditIssuance = (batch) => {
+  editForm.batchId = batch.batchId
+  editForm.stationName = batch.stationName
+  editForm.month = batch.month
+  editForm.items = batch.items.map((it) => ({
+    issuanceId: it.issuanceId,
+    productName: it.productName,
+    specification: it.specification,
+    quantity: it.quantity,
+    distributionDeliveryFee: it.distributionDeliveryFee,
+    unitDeliveryFee: it.quantity > 0 ? Number(it.distributionDeliveryFee) / Number(it.quantity) : 0
+  }))
+  editRemark.value = batch.remark || ''
   editIssuanceVisible.value = true
 }
-// 编辑时数量变化：配送费随单件配送费联动重算
-const onEditQuantityChange = (v) => {
-  editForm.distributionDeliveryFee = Number((editForm.unitDeliveryFee * (Number(v) || 1)).toFixed(2))
+const onEditItemQuantityChange = (it, v) => {
+  it.distributionDeliveryFee = Number((it.unitDeliveryFee * (Number(v) || 1)).toFixed(2))
 }
-const resetEditForm = () => { editFormRef.value?.clearValidate() }
+const resetEditForm = () => {
+  editForm.items = []
+  editRemark.value = ''
+}
 const handleSaveIssuance = async () => {
-  const valid = await editFormRef.value?.validate().catch(() => false)
-  if (!valid) return
+  const bad = editForm.items.some((it) => !it.quantity || it.quantity <= 0 || it.distributionDeliveryFee < 0)
+  if (bad) { ElMessage.warning('每行数量须大于0，配送费须大于等于0'); return }
   saving.value = true
   try {
-    const res = await updateIssuance(editForm.issuanceId, {
-      quantity: editForm.quantity,
-      distributionDeliveryFee: editForm.distributionDeliveryFee,
-      remark: editForm.remark
-    })
-    ElMessage.success(res.message || '修改成功')
+    for (const it of editForm.items) {
+      await updateIssuance(it.issuanceId, {
+        quantity: it.quantity,
+        distributionDeliveryFee: it.distributionDeliveryFee,
+        remark: editRemark.value
+      })
+    }
+    ElMessage.success('修改成功')
     editIssuanceVisible.value = false
     fetchIssuances()
     fetchInventory()
@@ -301,10 +366,12 @@ const handleSaveIssuance = async () => {
   }
 }
 
-// ---- 水站账户调整 ----
+// ---- 水站账户调整（水票余额 + 分销配送费余额）----
 const adjustVisible = ref(false)
 const adjustRow = reactive({ stationId: '', stationName: '', productId: '', productName: '', available: 0 })
 const adjustTarget = ref(0)
+const adjustFeeCurrent = ref(0)
+const adjustFeeTarget = ref(0)
 const openAdjust = (row) => {
   adjustRow.stationId = row.stationId
   adjustRow.stationName = row.stationName
@@ -312,18 +379,28 @@ const openAdjust = (row) => {
   adjustRow.productName = row.productName
   adjustRow.available = row.available
   adjustTarget.value = row.available
+  adjustFeeCurrent.value = row.deliveryFeeTotal || 0
+  adjustFeeTarget.value = row.deliveryFeeTotal || 0
   adjustVisible.value = true
 }
 const handleAdjust = async () => {
-  if (adjustTarget.value < 0) { ElMessage.warning('目标数量不能为负数'); return }
+  if (adjustTarget.value < 0) { ElMessage.warning('水票目标数不能为负数'); return }
+  if (adjustFeeTarget.value < 0) { ElMessage.warning('分销配送费不能为负数'); return }
   saving.value = true
   try {
-    const res = await adjustBalance({
+    await adjustBalance({
       stationId: adjustRow.stationId,
       productId: adjustRow.productId,
       targetQuantity: adjustTarget.value
     })
-    ElMessage.success(res.message || '调整成功')
+    if (Number(adjustFeeTarget.value) !== Number(adjustFeeCurrent.value)) {
+      await adjustDeliveryFee({
+        stationId: adjustRow.stationId,
+        productId: adjustRow.productId,
+        targetFee: adjustFeeTarget.value
+      })
+    }
+    ElMessage.success('调整成功')
     adjustVisible.value = false
     fetchInventory()
     fetchIssuances()
@@ -336,6 +413,13 @@ const handleAdjust = async () => {
 }
 
 const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtDateTime = (v) => {
+  if (!v) return ''
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return String(v)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 const loadOptions = async () => {
   try {
@@ -368,8 +452,16 @@ onMounted(() => {
 .issue-hint { font-size: 12px; color: #909399; }
 .unit-label { margin-left: 8px; font-size: 12px; color: #909399; }
 .pager { display: flex; justify-content: flex-end; margin-top: 14px; }
+.iss-filter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.iss-title { font-weight: 600; }
+.iss-filter-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fee-total { color: #d48806; font-weight: 600; }
+.edit-item-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.edit-product { font-size: 13px; min-width: 120px; }
+.edit-item-hint { font-size: 12px; color: #909399; margin-top: 2px; }
 @media screen and (max-width: 768px) {
   .issue-form-grid { grid-template-columns: 1fr; }
   .issue-item-row .el-select, .issue-item-row .el-input-number { width: 100% !important; }
+  .iss-filter { flex-direction: column; align-items: flex-start; }
 }
 </style>

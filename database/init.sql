@@ -345,6 +345,7 @@ CREATE TABLE IF NOT EXISTS water_tickets (
 
 CREATE TABLE IF NOT EXISTS water_ticket_issuance (
     issuance_id         VARCHAR(50)     NOT NULL COMMENT '发行记录ID，主键',
+    batch_id            VARCHAR(32)     DEFAULT NULL COMMENT '发行批次号（同一次录入共享，列表按批次合并）',
     station_id          VARCHAR(50)     NOT NULL COMMENT '水站ID',
     product_id          VARCHAR(50)     NOT NULL COMMENT '商品ID',
     quantity            INT             NOT NULL COMMENT '返货/发行数量（生成等量水票）',
@@ -352,12 +353,13 @@ CREATE TABLE IF NOT EXISTS water_ticket_issuance (
     month               VARCHAR(7)      NOT NULL COMMENT '所属月份（如 2026-08）',
     remark              VARCHAR(255)    DEFAULT NULL COMMENT '备注',
     created_by          VARCHAR(50)     DEFAULT NULL COMMENT '录入人',
-    created_at          DATETIME        DEFAULT NULL,
+    created_at          DATETIME        DEFAULT CURRENT_TIMESTAMP COMMENT '录入时间',
     PRIMARY KEY (issuance_id),
     KEY idx_station (station_id),
     KEY idx_product (product_id),
-    KEY idx_month (month)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='水票发行记录（每月返货清单：水站+商品+数量+返货配送费，生成等量水票）';
+    KEY idx_month (month),
+    KEY idx_batch (batch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='水票发行记录（每月返货清单：水站+商品+数量+分销配送费，生成等量水票）';
 
 -- ============================================================
 -- 脚本执行完毕
