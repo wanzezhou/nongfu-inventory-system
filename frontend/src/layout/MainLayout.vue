@@ -92,19 +92,15 @@
           </template>
           <el-menu-item index="/finance/platform">
             <el-icon><Van /></el-icon>
-            <template #title>线上平台销售</template>
+            <template #title>官方平台销售</template>
           </el-menu-item>
           <el-menu-item index="/finance/distribution">
             <el-icon><Goods /></el-icon>
-            <template #title>线下水站分销</template>
+            <template #title>直营水站销售</template>
           </el-menu-item>
           <el-menu-item index="/finance/retail">
             <el-icon><ShoppingCart /></el-icon>
             <template #title>线下零售</template>
-          </el-menu-item>
-          <el-menu-item index="/finance/return">
-            <el-icon><Coin /></el-icon>
-            <template #title>线下水站返货</template>
           </el-menu-item>
           <el-menu-item index="/finance/bulk-machine">
             <el-icon><Wallet /></el-icon>
@@ -126,11 +122,11 @@
           </el-menu-item>
           <el-menu-item index="/cost/platform">
             <el-icon><Van /></el-icon>
-            <template #title>线上平台销售成本</template>
+            <template #title>官方平台销售成本</template>
           </el-menu-item>
           <el-menu-item index="/cost/distribution">
             <el-icon><Goods /></el-icon>
-            <template #title>线下水站分销成本</template>
+            <template #title>直营水站销售成本</template>
           </el-menu-item>
           <el-menu-item index="/cost/retail">
             <el-icon><ShoppingCart /></el-icon>
@@ -140,13 +136,27 @@
             <el-icon><Wallet /></el-icon>
             <template #title>量贩机供货成本</template>
           </el-menu-item>
-          <el-menu-item index="/cost/return">
-            <el-icon><RefreshLeft /></el-icon>
-            <template #title>线下水站返货成本</template>
-          </el-menu-item>
           <el-menu-item index="/cost/retail-machine">
             <el-icon><Van /></el-icon>
             <template #title>零售机供货成本</template>
+          </el-menu-item>
+        </el-sub-menu>
+        <el-sub-menu index="/water-tickets">
+          <template #title>
+            <el-icon><Ticket /></el-icon>
+            <span>水站返货管理</span>
+          </template>
+          <el-menu-item index="/water-tickets/issue">
+            <el-icon><EditPen /></el-icon>
+            <template #title>返货清单/发行</template>
+          </el-menu-item>
+          <el-menu-item index="/water-tickets/inventory">
+            <el-icon><Box /></el-icon>
+            <template #title>水票库存</template>
+          </el-menu-item>
+          <el-menu-item index="/water-tickets/list">
+            <el-icon><List /></el-icon>
+            <template #title>水票明细/核销流水</template>
           </el-menu-item>
         </el-sub-menu>
       </el-menu>

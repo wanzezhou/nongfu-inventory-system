@@ -2,29 +2,28 @@ const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 const XLSX = require('xlsx');
 
-// 订单类型映射（与订单管理一致）
+// 订单类型映射（与订单管理一致；5-线下水站返货 已停用删除，2026-08-25）
 const ORDER_TYPES = {
-  1: '线上平台销售',
-  2: '线下水站分销',
+  1: '官方平台销售',
+  2: '直营水站销售',
   3: '线下零售',
-  4: '量贩机',
-  5: '线下水站返货',
-  6: '零售机'
+  4: '量贩机供货',
+  6: '零售机供货'
 };
 
 // 机台类型映射（machine_stations.machine_type）
 const MACHINE_TYPES = { 1: '量贩机', 2: '零售机' };
 
 // ---------------------------------------------------------------------------
-// 营收口径说明（2026-08-24 定版）：
+// 营收口径说明（2026-08-25 更新）：
 //   订单类（orders + order_items，排除已取消订单 canceled_at IS NULL）：
-//     类型1 线上平台销售：营收 = (进货价 + 总包配送费) × 数量
-//     类型2 线下水站分销：营收 = 分销价 × 数量
+//     类型1 官方平台销售：营收 = (进货价 + 总包配送费) × 数量
+//     类型2 直营水站销售：营收 = 实收 —— 按分销价(计价1) = 分销价×数量；按水票抵扣(计价2) = 进货价×数量
 //     类型3 线下零售：    营收 = 零售价 × 数量（下单时手动填写）
-//     类型5 线下水站返货：营收 = (进货价 + 总包配送费) × 数量
 //   机台类（machine_sales 手动录入，按销售日期统计）：
 //     类型4 量贩机：营收 = 机台售价 × 销量
 //     类型6 零售机：营收 = 机台售价 × 销量
+//   类型5 线下水站返货已删除（2026-08-25），业务转为【水站返货管理】水票机制
 // ---------------------------------------------------------------------------
 
 // 财务版时间范围（闭区间 [start, end]，end 含当天）
@@ -59,13 +58,12 @@ function resolveDateRange(range, startDate, endDate) {
   }
 }
 
-// 订单类营收表达式（按订单类型返回 SQL 表达式）
+// 订单类营收表达式（按订单类型返回 SQL 表达式；5 已删除；type2 按计价方式取实收）
 function revenueExpr() {
   return `(CASE o.order_type
       WHEN 1 THEN (oi.purchase_price + oi.total_delivery_fee) * oi.quantity
-      WHEN 2 THEN oi.wholesale_price * oi.quantity
+      WHEN 2 THEN IF(oi.pricing_type = 2, oi.purchase_price, oi.wholesale_price) * oi.quantity
       WHEN 3 THEN oi.retail_price * oi.quantity
-      WHEN 5 THEN (oi.purchase_price + oi.total_delivery_fee) * oi.quantity
       WHEN 4 THEN oi.purchase_price * oi.quantity
       WHEN 6 THEN oi.purchase_price * oi.quantity
       ELSE 0 END)`;
@@ -84,11 +82,11 @@ async function getFinanceOrders(req, res) {
     // 动态构建 WHERE（支持 range=all 无时间过滤）
     const parts = ['o.canceled_at IS NULL'];
     const params = [];
-    if (wantType && [1, 2, 3, 4, 5, 6].includes(wantType)) {
+    if (wantType && [1, 2, 3, 4, 6].includes(wantType)) {
       parts.push('o.order_type = ?');
       params.push(wantType);
     } else {
-      parts.push('o.order_type IN (1,2,3,5)');
+      parts.push('o.order_type IN (1,2,3,4,6)');
     }
     if (start && end) {
       parts.push('DATE(o.created_at) BETWEEN ? AND ?');
@@ -142,7 +140,7 @@ async function getFinanceSummary(req, res) {
     const { start, end } = resolveDateRange(range, startDate, endDate);
     const expr = revenueExpr();
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
-    const isOrderType = wantType !== null && [1, 2, 3, 5].includes(wantType);
+    const isOrderType = wantType !== null && [1, 2, 3, 4, 6].includes(wantType);
     const isMachineType = wantType === 4 || wantType === 6;
 
     // 订单类：按订单类型分组（机台类型 4/6 时跳过订单；range=all 无时间过滤）
@@ -152,7 +150,7 @@ async function getFinanceSummary(req, res) {
       orderParts.push('o.order_type = ?');
       orderParams.push(wantType);
     } else if (!isMachineType) {
-      orderParts.push('o.order_type IN (1,2,3,5)');
+      orderParts.push('o.order_type IN (1,2,3,4,6)');
     }
     if (start && end) {
       orderParts.push('DATE(o.created_at) BETWEEN ? AND ?');
@@ -203,7 +201,7 @@ async function getFinanceSummary(req, res) {
       qtyMap[key] = Number(r.total_qty) || 0;
     });
 
-    const list = [1, 2, 3, 4, 5, 6].map((t) => ({
+    const list = [1, 2, 3, 4, 6].map((t) => ({
       orderType: t,
       typeName: ORDER_TYPES[t],
       revenue: revenueMap[t] || 0,
@@ -376,7 +374,7 @@ async function exportFinance(req, res) {
     const { start, end } = resolveDateRange(range, startDate, endDate);
     const expr = revenueExpr();
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
-    const isOrderType = wantType !== null && [1, 2, 3, 5].includes(wantType);
+    const isOrderType = wantType !== null && [1, 2, 3, 4, 6].includes(wantType);
     const isMachineType = wantType === 4 || wantType === 6;
 
     // 订单 sheet：指定订单类型时只导该类型；机台类型(4/6)时导供货订单；无类型时导 1/2/3/5 全部；range=all 无时间过滤
@@ -386,7 +384,7 @@ async function exportFinance(req, res) {
       oParts.push('o.order_type = ?');
       orderParams.push(wantType);
     } else {
-      oParts.push('o.order_type IN (1,2,3,5)');
+      oParts.push('o.order_type IN (1,2,3,4,6)');
     }
     if (start && end) {
       oParts.push('DATE(o.created_at) BETWEEN ? AND ?');

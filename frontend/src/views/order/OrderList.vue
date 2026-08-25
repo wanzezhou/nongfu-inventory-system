@@ -22,11 +22,10 @@
             clearable
             style="width: 160px"
           >
-            <el-option label="线上平台销售" :value="1" />
-            <el-option label="线下水站分销" :value="2" />
+            <el-option label="官方平台销售" :value="1" />
+            <el-option label="直营水站销售" :value="2" />
             <el-option label="线下零售" :value="3" />
             <el-option label="量贩机供货" :value="4" />
-            <el-option label="线下水站返货" :value="5" />
             <el-option label="零售机供货" :value="6" />
           </el-select>
         </el-form-item>
@@ -171,11 +170,10 @@
           >
             <el-form-item label="订单类型" prop="orderType">
               <el-radio-group v-model="orderForm.orderType" @change="onOrderTypeChange">
-                <el-radio :value="1">线上平台销售</el-radio>
-                <el-radio :value="2">线下水站分销</el-radio>
+                <el-radio :value="1">官方平台销售</el-radio>
+                <el-radio :value="2">直营水站销售</el-radio>
                 <el-radio :value="3">线下零售</el-radio>
                 <el-radio :value="4">量贩机供货</el-radio>
-                <el-radio :value="5">线下水站返货</el-radio>
                 <el-radio :value="6">零售机供货</el-radio>
               </el-radio-group>
             </el-form-item>
@@ -220,7 +218,7 @@
                 <el-option label="其他" :value="3" />
               </el-select>
             </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 2 || orderForm.orderType === 5" label="水站名称" prop="stationId">
+            <el-form-item v-if="orderForm.orderType === 2" label="水站名称" prop="stationId">
               <el-select
                 v-model="orderForm.stationId"
                 placeholder="请选择水站"
@@ -236,13 +234,22 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 2 || orderForm.orderType === 5" label="联系人">
+            <el-form-item v-if="orderForm.orderType === 2" label="计价方式" prop="pricingType">
+              <el-radio-group v-model="orderForm.pricingType" @change="onPricingTypeChange">
+                <el-radio :value="'price'">按分销价</el-radio>
+                <el-radio :value="'ticket'">水票抵扣（按进货价）</el-radio>
+              </el-radio-group>
+              <div v-if="orderForm.pricingType === 'ticket' && ticketAvailable !== null" class="ticket-hint">
+                {{ ticketHintText }}
+              </div>
+            </el-form-item>
+            <el-form-item v-if="orderForm.orderType === 2" label="联系人">
               <el-input v-model="orderForm.contactName" placeholder="选择水站后自动带出" disabled style="width: 50%" />
             </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 2 || orderForm.orderType === 5" label="联系电话">
+            <el-form-item v-if="orderForm.orderType === 2" label="联系电话">
               <el-input v-model="orderForm.customerPhone" placeholder="选择水站后自动带出" disabled style="width: 50%" />
             </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 2 || orderForm.orderType === 5" label="水站地址">
+            <el-form-item v-if="orderForm.orderType === 2" label="水站地址">
               <el-input
                 v-model="orderForm.customerAddress"
                 type="textarea"
@@ -263,7 +270,7 @@
               <el-input v-model="orderForm.customerAddress" type="textarea" :rows="2" placeholder="请输入客户地址" style="width: 80%" />
             </el-form-item>
 
-            <!-- 线上平台销售：客户姓名/电话/地址 -->
+            <!-- 官方平台销售：客户姓名/电话/地址 -->
             <el-form-item v-if="orderForm.orderType === 1" label="客户姓名" prop="customerName">
               <el-input v-model="orderForm.customerName" placeholder="请输入客户姓名" style="width: 50%" />
             </el-form-item>
@@ -370,11 +377,11 @@
             class="step-form"
           >
             <el-form-item label="配送方式" prop="deliveryMethod">
-              <!-- 线上平台销售：自有员工配送（固定） -->
+              <!-- 官方平台销售：自有员工配送（固定） -->
               <el-radio-group v-if="orderForm.orderType === 1" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
                 <el-radio :value="1">自有员工配送</el-radio>
               </el-radio-group>
-              <!-- 线下水站分销：水站配送（固定） -->
+              <!-- 直营水站销售：水站配送（固定） -->
               <el-radio-group v-else-if="orderForm.orderType === 2" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
                 <el-radio :value="2">水站配送</el-radio>
               </el-radio-group>
@@ -386,10 +393,6 @@
               <!-- 量贩机供货：量贩机配送（固定） -->
               <el-radio-group v-else-if="orderForm.orderType === 4" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
                 <el-radio :value="2">量贩机配送</el-radio>
-              </el-radio-group>
-              <!-- 线下水站返货：水站配送（固定） -->
-              <el-radio-group v-else-if="orderForm.orderType === 5" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
-                <el-radio :value="2">水站配送</el-radio>
               </el-radio-group>
               <!-- 零售机供货：零售机配送（固定） -->
               <el-radio-group v-else-if="orderForm.orderType === 6" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
@@ -543,6 +546,7 @@ import {
   updateOrder,
   hardDeleteOrder
 } from '@/api/order'
+import { getTicketInventory } from '@/api/waterTicket'
 import { getProductList } from '@/api/product'
 import { getInventoryList } from '@/api/inventory'
 import { getMachineStations } from '@/api/machineStation'
@@ -598,6 +602,7 @@ const staffOptions = ref([])
 
 const orderForm = reactive({
   orderType: 3,
+  pricingType: 'price',
   platformType: null,
   platformOrderNo: '',
   stationId: null,
@@ -623,8 +628,8 @@ const basicRules = {
 
 // 动态校验：按订单类型设置必填项
 // - 创建人：所有类型必填
-// - 线上平台销售(1)：平台类型必填、客户信息必填
-// - 线下水站分销(2)/返货(5)：水站必填（信息自动带出）
+// - 官方平台销售(1)：平台类型必填、客户信息必填
+// - 直营水站销售(2)/返货(5)：水站必填（信息自动带出）
 // - 线下零售(3)：客户信息必填
 // - 量贩机供货(4)/零售机供货(6)：机台必填（站点名称/地址自动带出）
 const getBasicRules = () => {
@@ -670,11 +675,10 @@ const formatMoney = (value) => {
 
 const getOrderTypeText = (type) => {
   const map = {
-    1: '线上平台销售',
-    2: '线下水站分销',
+    1: '官方平台销售',
+    2: '直营水站销售',
     3: '线下零售',
     4: '量贩机供货',
-    5: '线下水站返货',
     6: '零售机供货'
   }
   return map[type] || '未知'
@@ -853,6 +857,29 @@ const handleStationChange = () => {
     orderForm.customerName = station.name
     orderForm.customerPhone = station.phone
     orderForm.customerAddress = station.address
+  }
+  if (orderForm.pricingType === 'ticket') fetchTicketAvailable()
+}
+
+// 直营水站销售：计价方式切换（水票抵扣时查询该水站可用水票）
+const ticketAvailable = ref(null)
+const ticketHintText = computed(() => {
+  if (!orderForm.stationId) return '请先选择水站'
+  const total = ticketAvailable.value || 0
+  return total > 0 ? `该水站当前可用水票 ${total} 张（下单需每件商品票数≥数量）` : '该水站暂无可用水票，无法按水票抵扣下单'
+})
+const onPricingTypeChange = () => {
+  if (orderForm.pricingType === 'ticket') fetchTicketAvailable()
+}
+const fetchTicketAvailable = async () => {
+  if (!orderForm.stationId) return
+  try {
+    const res = await getTicketInventory({ stationId: orderForm.stationId })
+    const list = res.data?.list || []
+    ticketAvailable.value = list.reduce((sum, x) => sum + x.available, 0)
+  } catch (e) {
+    console.error('查询水票失败:', e)
+    ticketAvailable.value = 0
   }
 }
 
@@ -1035,15 +1062,12 @@ const handleProductChange = (index) => {
         price = product.purchasePrice || 0
         break
       case 2:
-        price = product.wholesalePrice || 0
+        price = orderForm.pricingType === 'ticket' ? (product.purchasePrice || 0) : (product.wholesalePrice || 0)
         break
       case 3:
         price = product.retailPrice || 0
         break
       case 4:
-        price = product.purchasePrice || 0
-        break
-      case 5:
         price = product.purchasePrice || 0
         break
       case 6:
@@ -1067,12 +1091,10 @@ const getPriceColumnLabel = () => {
     case 1:
       return '进货价'
     case 2:
-      return '分销价'
+      return orderForm.pricingType === 'ticket' ? '进货价' : '分销价'
     case 3:
       return '零售价'
     case 4:
-      return '进货价'
-    case 5:
       return '进货价'
     case 6:
       return '进货价'
@@ -1099,19 +1121,16 @@ const onOrderTypeChange = () => {
     orderForm.machineStationId = null
   }
   switch (orderType) {
-    case 1: // 线上平台销售 -> 自有员工配送
+    case 1: // 官方平台销售 -> 自有员工配送
       orderForm.deliveryMethod = 1
       break
-    case 2: // 线下水站分销 -> 水站配送
+    case 2: // 直营水站销售 -> 水站配送
       orderForm.deliveryMethod = 2
       break
     case 3: // 线下零售 -> 默认自有员工配送
       orderForm.deliveryMethod = 1
       break
     case 4: // 量贩机供货 -> 量贩机配送（用2=水站配送占位）
-      orderForm.deliveryMethod = 2
-      break
-    case 5: // 线下水站返货 -> 水站配送
       orderForm.deliveryMethod = 2
       break
     case 6: // 零售机供货 -> 零售机配送（用2=水站配送占位）
@@ -1443,5 +1462,11 @@ onMounted(() => {
     justify-content: flex-end;
     gap: 8px;
   }
+}
+.ticket-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #e6a23c;
+  line-height: 1.5;
 }
 </style>

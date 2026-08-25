@@ -10,6 +10,7 @@ router.get('/export', auth, costController.exportCost);
 
 // ---- 固定支出（手动录入）----
 router.get('/fixed-summary', auth, costController.getFixedSummary);
+router.get('/return-delivery-summary', auth, costController.getReturnDeliveryFeeSummary);
 router.get('/fixed-expenses', auth, costController.getFixedExpenses);
 router.get('/expense-types', auth, costController.getExpenseTypes);
 router.post('/fixed-expenses', auth, costController.createFixedExpense);

@@ -1,6 +1,6 @@
 -- ============================================================
 -- 测试数据种子脚本（幂等：先清空再重建）【2026-08-24 修订】
--- 说明：商品(products)/库存(inventory) 为真实档案，**不清理、不动**；
+-- 说明：商品(products)/库存(inventory) 为真实档案，**不清理、不动**；订单类型 1-官方平台销售 2-直营水站销售 3-线下零售 4-量贩机供货 6-零售机供货（5-返货已删除，2026-08-25）；
 --       仅重建 基础信息其他模块 + 订单测试数据。
 -- 订单商品引用原商品 ID（Pmrf3fgpqDNVO8Q 等），明细价格为下单快照（手填合理值）。
 -- 执行方式：mysql -u root nongfu_inventory < seed_test_data.sql
@@ -11,6 +11,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE order_items;
 TRUNCATE TABLE orders;
 TRUNCATE TABLE machine_sales;
+TRUNCATE TABLE water_tickets;
+TRUNCATE TABLE water_ticket_issuance;
 TRUNCATE TABLE sub_stations;
 TRUNCATE TABLE machine_stations;
 TRUNCATE TABLE suppliers;
@@ -112,12 +114,6 @@ INSERT INTO orders (order_id, order_type, machine_station_id, customer_name, cus
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
 ('SZX202608080007', 'Pmrf3fgpqDNVO8Q', 40, 15.00, 15.00, 18.00, 24.00, 0.00, 4.00, 2.50, 2.00, 0.45, 0.00, 600.00);
 
--- ⑧ 线下水站返货（type=5）2026-08-06：D×12（unit=进货价19，配送=0）
-INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
-('SZX202608060008', 5, 'ST003', '鼓楼水站', '13900000003', '南京市鼓楼区中山北路', '郑老板', 228.00, 60.00, 288.00, 1, NULL, 1, 288.00, 'W005', '2026-08-06 10:15:00', '2026-08-06 10:15:00');
-INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202608060008', 'Pmrf3fgq30J6ZV3', 12, 19.00, 19.00, 21.00, 26.00, 0.00, 8.00, 5.00, 4.00, 0.90, 0.00, 228.00);
-
 -- ⑨ 零售机供货（type=6）2026-08-04：C×20（unit=进货价21，配送=工机1.2）
 INSERT INTO orders (order_id, order_type, machine_station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
 ('SZX202608040009', 6, 'R001', '零售机-地铁大行宫站', '13700000003', '南京市玄武区地铁2号线大行宫站内', '王站长', 420.00, 0.00, 420.00, 2, 'W002', 1, 420.00, 'W005', '2026-08-04 08:40:00', '2026-08-04 08:40:00');
@@ -142,10 +138,24 @@ INSERT INTO orders (order_id, order_type, customer_name, customer_phone, custome
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
 ('SZX202607180012', 'Pmrf3fgpqDNVO8Q', 3, 24.00, 15.00, 18.00, 24.00, 0.00, 4.00, 2.50, 2.00, 0.45, 0.00, 72.00);
 
--- ⑬ 线下水站返货（type=5）2026-07-12（历史月）：A×12
-INSERT INTO orders (order_id, order_type, station_id, customer_name, customer_phone, customer_address, contact_name, order_amount, delivery_fee, total_receivable, delivery_type, worker_id, payment_status, paid_amount, created_by, created_at, updated_at) VALUES
-('SZX202607120013', 5, 'ST005', '建邺水站', '13900000005', '南京市建邺区兴隆大街', '褚老板', 180.00, 30.00, 210.00, 1, NULL, 1, 210.00, 'W005', '2026-07-12 09:50:00', '2026-07-12 09:50:00');
-INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES
-('SZX202607120013', 'Pmrf3fgpqDNVO8Q', 12, 15.00, 15.00, 18.00, 24.00, 0.00, 4.00, 2.50, 2.00, 0.45, 0.00, 180.00);
-
 SELECT '测试数据已重建（商品/库存未动）：基础信息 6 模块 + 订单 13 笔（覆盖 6 种订单类型）' AS message;
+
+-- ============================================================
+-- 水票演示数据（水站返货管理，2026-08-25 追加）
+-- 模拟每月返货清单：水站 ST001 商品A×5 配送费25；ST002 商品B×3 配送费18
+-- ============================================================
+INSERT INTO water_ticket_issuance (issuance_id, station_id, product_id, quantity, return_delivery_fee, month, remark, created_by) VALUES
+('WTI20260825000001', 'ST001', 'Pmrf3fgpqDNVO8Q', 5, 25.00, '2026-08', '8月返货清单', 'seed'),
+('WTI20260825000002', 'ST002', 'Pmrf3fgq6AASZ1I', 3, 18.00, '2026-08', '8月返货清单', 'seed');
+
+INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by) VALUES
+('WT20260825000001', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
+('WT20260825000002', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
+('WT20260825000003', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
+('WT20260825000004', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
+('WT20260825000005', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', NOW(), 'seed'),
+('WT20260825000006', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000002', NOW(), 'seed'),
+('WT20260825000007', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000002', NOW(), 'seed'),
+('WT20260825000008', 'Pmrf3fgq6AASZ1I', 'ST002', 1, '2026-08', 'WTI20260825000002', NOW(), 'seed');
+
+SELECT '测试数据已重建（商品/库存未动）：基础信息 + 订单 11 笔（5 种订单类型）+ 水票演示数据（ST001×5、ST002×3）' AS message;

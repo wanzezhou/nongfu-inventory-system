@@ -13,17 +13,16 @@ const XLSX = require('xlsx');
 // 均排除已取消订单（canceled_at IS NULL）
 // ---------------------------------------------------------------------------
 const COST_TYPES = {
-  1: '线上平台销售', 2: '线下水站分销', 3: '线下零售',
-  4: '量贩机供货', 5: '线下水站返货', 6: '零售机供货'
+  1: '官方平台销售', 2: '直营水站销售', 3: '线下零售',
+  4: '量贩机供货', 6: '零售机供货'
 };
 
-// 每类订单的配送费字段（进货价统一 purchase_price）
+// 每类订单的配送费字段（进货价统一 purchase_price；5 已停用删除）
 const DELIVERY_FIELD = {
   1: 'worker_retail_delivery_fee',
   2: 'worker_wholesale_delivery_fee',
   3: 'worker_retail_delivery_fee',
   4: 'worker_machine_delivery_fee',
-  5: 'distribution_delivery_fee',
   6: 'worker_machine_delivery_fee'
 };
 
@@ -62,7 +61,6 @@ async function getCostSummary(req, res) {
     // 每类型一个查询成本高，改用 CASE 表达式一次查出各类型进货价/配送费/成本
     const deliveryExpr = `
       CASE
-        WHEN o.order_type = 5 THEN oi.distribution_delivery_fee
         WHEN o.delivery_type = 3 THEN 0
         WHEN o.order_type = 1 THEN oi.worker_retail_delivery_fee
         WHEN o.order_type = 2 THEN oi.worker_wholesale_delivery_fee
@@ -73,11 +71,11 @@ async function getCostSummary(req, res) {
 
     const parts = ['o.canceled_at IS NULL'];
     const params = [];
-    if (wantType && [1, 2, 3, 4, 5, 6].includes(wantType)) {
+    if (wantType && [1, 2, 3, 4, 6].includes(wantType)) {
       parts.push('o.order_type = ?');
       params.push(wantType);
     } else {
-      parts.push('o.order_type IN (1,2,3,4,5,6)');
+      parts.push('o.order_type IN (1,2,3,4,6)');
     }
     if (start && end) {
       parts.push('DATE(o.created_at) BETWEEN ? AND ?');
@@ -102,7 +100,7 @@ async function getCostSummary(req, res) {
       };
     });
 
-    const list = [1, 2, 3, 4, 5, 6].map((t) => {
+    const list = [1, 2, 3, 4, 6].map((t) => {
       const m = map[t] || { purchaseTotal: 0, deliveryTotal: 0 };
       return {
         orderType: t,
@@ -138,7 +136,6 @@ async function getCostOrders(req, res) {
 
     const deliveryExpr = `
       CASE
-        WHEN o.order_type = 5 THEN oi.distribution_delivery_fee
         WHEN o.delivery_type = 3 THEN 0
         WHEN o.order_type = 1 THEN oi.worker_retail_delivery_fee
         WHEN o.order_type = 2 THEN oi.worker_wholesale_delivery_fee
@@ -149,11 +146,11 @@ async function getCostOrders(req, res) {
 
     const parts = ['o.canceled_at IS NULL'];
     const params = [];
-    if (wantType && [1, 2, 3, 4, 5, 6].includes(wantType)) {
+    if (wantType && [1, 2, 3, 4, 6].includes(wantType)) {
       parts.push('o.order_type = ?');
       params.push(wantType);
     } else {
-      parts.push('o.order_type IN (1,2,3,4,5,6)');
+      parts.push('o.order_type IN (1,2,3,4,6)');
     }
     if (start && end) {
       parts.push('DATE(o.created_at) BETWEEN ? AND ?');
@@ -213,7 +210,6 @@ async function exportCost(req, res) {
 
     const deliveryExpr = `
       CASE
-        WHEN o.order_type = 5 THEN oi.distribution_delivery_fee
         WHEN o.delivery_type = 3 THEN 0
         WHEN o.order_type = 1 THEN oi.worker_retail_delivery_fee
         WHEN o.order_type = 2 THEN oi.worker_wholesale_delivery_fee
@@ -224,11 +220,11 @@ async function exportCost(req, res) {
 
     const parts = ['o.canceled_at IS NULL'];
     const params = [];
-    if (wantType && [1, 2, 3, 4, 5, 6].includes(wantType)) {
+    if (wantType && [1, 2, 3, 4, 6].includes(wantType)) {
       parts.push('o.order_type = ?');
       params.push(wantType);
     } else {
-      parts.push('o.order_type IN (1,2,3,4,5,6)');
+      parts.push('o.order_type IN (1,2,3,4,6)');
     }
     if (start && end) {
       parts.push('DATE(o.created_at) BETWEEN ? AND ?');
@@ -309,6 +305,45 @@ async function getFixedSummary(req, res) {
   } catch (e) {
     console.error('getFixedSummary error:', e);
     return error(res, '固定支出汇总查询失败', 500);
+  }
+}
+
+// 返货配送费统计（来自【水站返货管理】发行记录的 return_delivery_fee，成本统计支出项）
+async function getReturnDeliveryFeeSummary(req, res) {
+  try {
+    const { range = 'all', startDate, endDate } = req.query;
+    const { start, end } = resolveDateRange(range, startDate, endDate);
+    const parts = [];
+    const params = [];
+    if (start && end) {
+      parts.push('i.month BETWEEN ? AND ?');
+      params.push(start.slice(0, 7), end.slice(0, 7));
+    }
+    const whereSql = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
+
+    const [rows] = await pool.execute(
+      `SELECT i.month, i.station_id, s.station_name, ROUND(SUM(i.return_delivery_fee), 2) AS total, COUNT(*) AS cnt
+       FROM water_ticket_issuance i
+       LEFT JOIN sub_stations s ON i.station_id = s.station_id
+       ${whereSql}
+       GROUP BY i.month, i.station_id, s.station_name
+       ORDER BY i.month DESC`,
+      params
+    );
+    const list = rows.map((r) => ({
+      month: r.month,
+      stationId: r.station_id,
+      stationName: r.station_name || r.station_id,
+      total: Number(r.total) || 0,
+      count: Number(r.cnt) || 0
+    }));
+    const overall = {
+      total: Math.round(list.reduce((s, x) => s + x.total, 0) * 100) / 100
+    };
+    return success(res, { list, overall, start, end });
+  } catch (e) {
+    console.error('getReturnDeliveryFeeSummary error:', e);
+    return error(res, '返货配送费统计失败', 500);
   }
 }
 
@@ -473,5 +508,6 @@ module.exports = {
   createFixedExpense,
   updateFixedExpense,
   deleteFixedExpense,
+  getReturnDeliveryFeeSummary,
   exportFixed
 };

@@ -7,6 +7,7 @@ export const exportCost = (params) => request.get('/cost/export', { params, resp
 
 // ---- 固定支出 ----
 export const getFixedSummary = (params) => request.get('/cost/fixed-summary', { params })
+export const getReturnDeliveryFeeSummary = (params) => request.get('/cost/return-delivery-summary', { params })
 export const getFixedExpenses = (params) => request.get('/cost/fixed-expenses', { params })
 export const getExpenseTypes = () => request.get('/cost/expense-types')
 export const createFixedExpense = (data) => request.post('/cost/fixed-expenses', data)

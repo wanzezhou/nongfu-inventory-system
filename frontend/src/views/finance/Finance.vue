@@ -276,7 +276,7 @@ import { getMachineStations } from '@/api/machineStation'
 import { getOrderDetail } from '@/api/order'
 import { downloadBlob } from '@/api/excel'
 
-// 当前营收类型（路由 props 传入：1-线上平台销售 2-线下水站分销 3-线下零售 4-量贩机 5-线下水站返货 6-零售机）
+// 当前营收类型（路由 props 传入：1-官方平台销售 2-直营水站销售 3-线下零售 4-量贩机供货 6-零售机供货）
 const props = defineProps({
   orderType: { type: Number, required: true }
 })
@@ -333,11 +333,10 @@ const currentOrder = ref(null)
 
 // 指标卡定义（与后端口径一致）
 const ORDER_TYPE_NAME = {
-  1: '线上平台销售',
-  2: '线下水站分销',
+  1: '官方平台销售',
+  2: '直营水站销售',
   3: '线下零售',
   4: '量贩机',
-  5: '线下水站返货',
   6: '零售机'
 }
 const CARD_META = {

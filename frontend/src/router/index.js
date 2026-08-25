@@ -93,14 +93,14 @@ const routes = [
         name: 'FinancePlatform',
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 1 },
-        meta: { title: '线上平台销售营收', icon: 'Van', requiresAuth: true }
+        meta: { title: '官方平台销售营收', icon: 'Van', requiresAuth: true }
       },
       {
         path: 'finance/distribution',
         name: 'FinanceDistribution',
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 2 },
-        meta: { title: '线下水站分销营收', icon: 'Goods', requiresAuth: true }
+        meta: { title: '直营水站销售营收', icon: 'Goods', requiresAuth: true }
       },
       {
         path: 'finance/retail',
@@ -115,13 +115,6 @@ const routes = [
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 4 },
         meta: { title: '量贩机营收', icon: 'Wallet', requiresAuth: true }
-      },
-      {
-        path: 'finance/return',
-        name: 'FinanceReturn',
-        component: () => import('@/views/finance/Finance.vue'),
-        props: { orderType: 5 },
-        meta: { title: '线下水站返货营收', icon: 'Coin', requiresAuth: true }
       },
       {
         path: 'finance/retail-machine',
@@ -145,14 +138,14 @@ const routes = [
         name: 'CostPlatform',
         component: () => import('@/views/cost/CostList.vue'),
         props: { orderType: 1 },
-        meta: { title: '线上平台销售成本', icon: 'Van', requiresAuth: true }
+        meta: { title: '官方平台销售成本', icon: 'Van', requiresAuth: true }
       },
       {
         path: 'cost/distribution',
         name: 'CostDistribution',
         component: () => import('@/views/cost/CostList.vue'),
         props: { orderType: 2 },
-        meta: { title: '线下水站分销成本', icon: 'Goods', requiresAuth: true }
+        meta: { title: '直营水站销售成本', icon: 'Goods', requiresAuth: true }
       },
       {
         path: 'cost/retail',
@@ -169,18 +162,35 @@ const routes = [
         meta: { title: '量贩机供货成本', icon: 'Wallet', requiresAuth: true }
       },
       {
-        path: 'cost/return',
-        name: 'CostReturn',
-        component: () => import('@/views/cost/CostList.vue'),
-        props: { orderType: 5 },
-        meta: { title: '线下水站返货成本', icon: 'RefreshLeft', requiresAuth: true }
-      },
-      {
         path: 'cost/retail-machine',
         name: 'CostRetailMachine',
         component: () => import('@/views/cost/CostList.vue'),
         props: { orderType: 6 },
         meta: { title: '零售机供货成本', icon: 'Van', requiresAuth: true }
+      },
+      {
+        path: 'water-tickets',
+        redirect: '/water-tickets/inventory'
+      },
+      {
+        path: 'water-tickets/issue',
+        name: 'WaterTicketIssue',
+        component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
+        meta: { title: '返货清单/水票发行', icon: 'EditPen', requiresAuth: true }
+      },
+      {
+        path: 'water-tickets/inventory',
+        name: 'WaterTicketInventory',
+        component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
+        props: { tab: 'inventory' },
+        meta: { title: '水票库存', icon: 'Box', requiresAuth: true }
+      },
+      {
+        path: 'water-tickets/list',
+        name: 'WaterTicketList',
+        component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
+        props: { tab: 'list' },
+        meta: { title: '水票明细/核销流水', icon: 'List', requiresAuth: true }
       }
     ]
   }

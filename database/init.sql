@@ -213,6 +213,7 @@ CREATE TABLE order_items (
     worker_retail_delivery_fee      DECIMAL(8,2)    NOT NULL DEFAULT 0.00 COMMENT '工人零售配送费（终端零售客户配送）',
     worker_wholesale_delivery_fee   DECIMAL(8,2)    NOT NULL DEFAULT 0.00 COMMENT '工人水站配送费（面包车配送给水站）',
     worker_machine_delivery_fee     DECIMAL(8,2)    NOT NULL DEFAULT 0.00 COMMENT '工人零售机配送费（面包车配送给零售机）',
+    pricing_type                    TINYINT         NOT NULL DEFAULT 1 COMMENT '计价方式 1-分销价 2-水票抵扣（直营水站销售）',
     subtotal                        DECIMAL(12,2)   NOT NULL DEFAULT 0.00 COMMENT '明细小计（根据订单类型：线上=进货价*数量，分销=批发价*数量，零售=零售价*数量，零售机=零售机供货价*数量）',
     PRIMARY KEY (item_id),
     KEY idx_order (order_id),
@@ -320,6 +321,45 @@ CREATE TABLE IF NOT EXISTS fixed_expenses (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='固定支出记录表（房租/水电等仓库支出，手动录入）';
 
 -- ============================================================
+-- 水站返货管理：水票表 + 发行记录表（2026-08-25）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS water_tickets (
+    ticket_id       VARCHAR(50)     NOT NULL COMMENT '水票编号，主键',
+    product_id      VARCHAR(50)     NOT NULL COMMENT '对应商品ID（一张票=一件对应商品）',
+    station_id      VARCHAR(50)     NOT NULL COMMENT '持有水站ID',
+    status          TINYINT         NOT NULL DEFAULT 1 COMMENT '状态 1-未用 2-已核销 3-作废',
+    month           VARCHAR(7)      NOT NULL COMMENT '所属月份（返货清单月份，如 2026-08）',
+    issuance_id     VARCHAR(50)     DEFAULT NULL COMMENT '来源返货清单/发行记录ID',
+    issued_at       DATETIME        DEFAULT NULL COMMENT '发行时间',
+    issued_by       VARCHAR(50)     DEFAULT NULL COMMENT '发行操作人',
+    used_at         DATETIME        DEFAULT NULL COMMENT '核销时间',
+    order_id        VARCHAR(50)     DEFAULT NULL COMMENT '核销关联订单ID',
+    remark          VARCHAR(255)    DEFAULT NULL COMMENT '备注',
+    PRIMARY KEY (ticket_id),
+    KEY idx_product (product_id),
+    KEY idx_station (station_id),
+    KEY idx_status (status),
+    KEY idx_month (month),
+    KEY idx_order (order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='水票表（一张水票=一件对应商品，价值=进货价，经销商按返货清单获取）';
+
+CREATE TABLE IF NOT EXISTS water_ticket_issuance (
+    issuance_id         VARCHAR(50)     NOT NULL COMMENT '发行记录ID，主键',
+    station_id          VARCHAR(50)     NOT NULL COMMENT '水站ID',
+    product_id          VARCHAR(50)     NOT NULL COMMENT '商品ID',
+    quantity            INT             NOT NULL COMMENT '返货/发行数量（生成等量水票）',
+    return_delivery_fee DECIMAL(12,2)   NOT NULL DEFAULT 0 COMMENT '返货配送费（本月返货清单配送费）',
+    month               VARCHAR(7)      NOT NULL COMMENT '所属月份（如 2026-08）',
+    remark              VARCHAR(255)    DEFAULT NULL COMMENT '备注',
+    created_by          VARCHAR(50)     DEFAULT NULL COMMENT '录入人',
+    created_at          DATETIME        DEFAULT NULL,
+    PRIMARY KEY (issuance_id),
+    KEY idx_station (station_id),
+    KEY idx_product (product_id),
+    KEY idx_month (month)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='水票发行记录（每月返货清单：水站+商品+数量+返货配送费，生成等量水票）';
+
+-- ============================================================
 -- 脚本执行完毕
 -- ============================================================
-SELECT '数据库初始化完成！共创建12张表。' AS message;
+SELECT '数据库初始化完成！共创建14张表。' AS message;

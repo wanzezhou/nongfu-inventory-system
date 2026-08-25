@@ -51,6 +51,11 @@
         <div class="card-value">¥{{ fmtMoney(overall.total) }}</div>
         <div class="card-desc">共 {{ overall.count }} 笔固定支出</div>
       </div>
+      <div class="summary-card card-return-fee">
+        <div class="card-label"><el-icon><Van /></el-icon>返货配送费</div>
+        <div class="card-value">¥{{ fmtMoney(returnDeliveryFee) }}</div>
+        <div class="card-desc">来自水站返货管理发行记录</div>
+      </div>
     </div>
 
     <!-- 明细 -->
@@ -126,7 +131,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Download, Plus, Coin, Money } from '@element-plus/icons-vue'
 import {
   getFixedSummary, getFixedExpenses, getExpenseTypes,
-  createFixedExpense, updateFixedExpense, deleteFixedExpense, exportFixed
+  createFixedExpense, updateFixedExpense, deleteFixedExpense, exportFixed,
+  getReturnDeliveryFeeSummary
 } from '@/api/cost'
 import { downloadBlob } from '@/api/excel'
 
@@ -142,6 +148,7 @@ const rangeText = computed(() => {
 
 const summaryList = ref([])
 const overall = reactive({ total: 0, count: 0 })
+const returnDeliveryFee = ref(0)
 const rows = ref([])
 const total = ref(0)
 const pagination = reactive({ page: 1, pageSize: 10 })
@@ -182,6 +189,12 @@ const fetchSummary = async () => {
     }
   } catch (e) {
     console.error('获取固定支出汇总失败:', e)
+  }
+  try {
+    const rd = await getReturnDeliveryFeeSummary(buildParams())
+    returnDeliveryFee.value = rd.data?.overall?.total || 0
+  } catch (e) {
+    console.error('获取返货配送费失败:', e)
   }
 }
 
@@ -333,6 +346,7 @@ onMounted(() => {
 .card-red { background: linear-gradient(135deg, #f56c6c, #e64340); }
 .card-gray { background: linear-gradient(135deg, #909399, #6c6f73); }
 .card-total { background: linear-gradient(135deg, #303133, #1f1f21); }
+.card-return-fee { background: linear-gradient(135deg, #13c2c2, #08979c); }
 
 .detail-card { border-radius: 10px; }
 .cost-text { color: #e64340; font-weight: 600; }

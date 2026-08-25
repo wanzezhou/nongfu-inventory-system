@@ -227,11 +227,14 @@ async function createOrder(req, res) {
       return error(res, '订单类型、客户姓名、配送方式和商品明细不能为空', 400);
     }
 
-    // 校验订单类型
-    const validOrderTypes = [1, 2, 3, 4, 5, 6];
+    // 校验订单类型（5-线下水站返货 已停用删除，2026-08-25）
+    const validOrderTypes = [1, 2, 3, 4, 6];
     if (!validOrderTypes.includes(Number(actualOrderType))) {
       return error(res, '订单类型无效', 400);
     }
+
+    // 直营水站销售(2) 计价方式：price-分销价（默认） / ticket-水票抵扣（整单按进货价，核销水票）
+    const isTicketPricing = Number(actualOrderType) === 2 && String(req.body.pricing_type || req.body.pricingType || 'price').toLowerCase() === 'ticket';
 
     // 校验配送类型
     const validDeliveryTypes = [1, 2, 3];
@@ -239,8 +242,8 @@ async function createOrder(req, res) {
       return error(res, '配送方式无效', 400);
     }
 
-    // 水站订单（分销/返货）必须有水站ID
-    if ((Number(actualOrderType) === 2 || Number(actualOrderType) === 5) && !actualStationId) {
+    // 直营水站销售必须选择水站
+    if (Number(actualOrderType) === 2 && !actualStationId) {
       return error(res, '水站订单必须选择水站', 400);
     }
 
@@ -248,9 +251,6 @@ async function createOrder(req, res) {
     if ((Number(actualOrderType) === 4 || Number(actualOrderType) === 6) && !actualMachineStationId) {
       return error(res, '机台供货订单必须选择机台', 400);
     }
-
-    // 返货订单：使用水站配送，无需额外校验
-    const isReturnOrder = Number(actualOrderType) === 5;
 
     // 开始事务
     await connection.beginTransaction();
@@ -304,8 +304,10 @@ async function createOrder(req, res) {
           unitPrice = product.purchase_price;
           deliveryFeePerUnit = product.worker_retail_delivery_fee;
           break;
-        case 2: // 水站分销：分销价 + 工人水站配送费
-          unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price;
+        case 2: // 直营水站销售：分销价（水票抵扣=进货价）+ 工人水站配送费
+          unitPrice = isTicketPricing
+            ? product.purchase_price
+            : (itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price);
           deliveryFeePerUnit = product.worker_wholesale_delivery_fee;
           break;
         case 3: // 线下零售：零售价 + 工人零售配送费（无需配送时为0）
@@ -319,10 +321,6 @@ async function createOrder(req, res) {
         case 6: // 零售机供货：与量贩机供货一致（进货价 + 工人零售机配送费）
           unitPrice = product.purchase_price;
           deliveryFeePerUnit = product.worker_machine_delivery_fee;
-          break;
-        case 5: // 线下水站返货：进货价 + 工人水站配送费
-          unitPrice = product.purchase_price;
-          deliveryFeePerUnit = product.worker_wholesale_delivery_fee;
           break;
       }
 
@@ -356,8 +354,27 @@ async function createOrder(req, res) {
         worker_retail_delivery_fee: product.worker_retail_delivery_fee,
         worker_wholesale_delivery_fee: product.worker_wholesale_delivery_fee,
         worker_machine_delivery_fee: product.worker_machine_delivery_fee,
+        pricing_type: Number(actualOrderType) === 2 && isTicketPricing ? 2 : 1,
         subtotal: subtotal
       });
+    }
+
+    // 水票抵扣模式：校验水站可用水票覆盖整单（每商品需 ≥ 数量张），并收集待核销票
+    const ticketUsage = {};
+    if (Number(actualOrderType) === 2 && isTicketPricing) {
+      for (const item of actualItems) {
+        const pid = item.product_id || item.productId;
+        const quantity = Number(item.quantity);
+        const [tickets] = await connection.execute(
+          `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(quantity, 10)}`,
+          [actualStationId, pid]
+        );
+        if (tickets.length < quantity) {
+          await connection.rollback();
+          return error(res, `水站水票不足：商品「${productMap[pid].product_name}」需要 ${quantity} 张，可用 ${tickets.length} 张`, 400);
+        }
+        ticketUsage[pid] = tickets.map(t => t.ticket_id);
+      }
     }
 
     const total_receivable = order_amount + delivery_fee;
@@ -403,8 +420,8 @@ async function createOrder(req, res) {
         order_id, product_id, quantity, unit_price,
         purchase_price, wholesale_price, retail_price, machine_price,
         total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee,
-        worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        worker_wholesale_delivery_fee, worker_machine_delivery_fee, pricing_type, subtotal
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
       const itemValues = [
         orderId,
@@ -420,6 +437,7 @@ async function createOrder(req, res) {
         item.worker_retail_delivery_fee,
         item.worker_wholesale_delivery_fee,
         item.worker_machine_delivery_fee,
+        item.pricing_type || 1,
         item.subtotal
       ];
 
@@ -437,20 +455,22 @@ async function createOrder(req, res) {
       }
 
       const currentQuantity = inventoryRows[0].quantity;
-      let newQuantity;
-      if (isReturnOrder) {
-        // 返货：增加库存
-        newQuantity = currentQuantity + item.quantity;
+      // 销售：扣减库存（允许负数）
+      const newQuantity = currentQuantity - item.quantity;
+      await connection.execute(
+        'UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?',
+        [newQuantity, now, now, item.product_id]
+      );
+    }
+
+    // 水票抵扣模式：核销水票（status 1→2，关联订单）
+    if (Number(actualOrderType) === 2 && isTicketPricing) {
+      const ticketIds = Object.values(ticketUsage).flat();
+      if (ticketIds.length > 0) {
+        const placeholders = ticketIds.map(() => '?').join(',');
         await connection.execute(
-          'UPDATE inventory SET quantity = ?, last_in_time = ?, updated_at = ? WHERE product_id = ?',
-          [newQuantity, now, now, item.product_id]
-        );
-      } else {
-        // 销售：扣减库存（允许负数）
-        newQuantity = currentQuantity - item.quantity;
-        await connection.execute(
-          'UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?',
-          [newQuantity, now, now, item.product_id]
+          `UPDATE water_tickets SET status = 2, used_at = ?, order_id = ? WHERE ticket_id IN (${placeholders})`,
+          [now, orderId, ...ticketIds]
         );
       }
     }
@@ -532,7 +552,6 @@ async function deleteOrder(req, res) {
     );
 
     // 恢复库存
-    const isReturnOrder = Number(order.order_type) === 5;
     for (const item of items) {
       const [inventoryRows] = await connection.execute(
         'SELECT inventory_id, quantity FROM inventory WHERE product_id = ? FOR UPDATE',
@@ -540,19 +559,11 @@ async function deleteOrder(req, res) {
       );
 
       if (inventoryRows.length > 0) {
-        if (isReturnOrder) {
-          const newQuantity = Math.max(0, inventoryRows[0].quantity - item.quantity);
-          await connection.execute(
-            'UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?',
-            [newQuantity, new Date(), item.product_id]
-          );
-        } else {
-          const newQuantity = inventoryRows[0].quantity + item.quantity;
-          await connection.execute(
-            'UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?',
-            [newQuantity, new Date(), item.product_id]
-          );
-        }
+        const newQuantity = inventoryRows[0].quantity + item.quantity;
+        await connection.execute(
+          'UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?',
+          [newQuantity, new Date(), item.product_id]
+        );
       }
     }
 
@@ -620,7 +631,6 @@ async function hardDeleteOrder(req, res) {
     );
 
     // 恢复库存
-    const isReturnOrder = Number(order.order_type) === 5;
     for (const item of items) {
       const [inventoryRows] = await connection.execute(
         'SELECT inventory_id, quantity FROM inventory WHERE product_id = ? FOR UPDATE',
@@ -628,19 +638,11 @@ async function hardDeleteOrder(req, res) {
       );
 
       if (inventoryRows.length > 0) {
-        if (isReturnOrder) {
-          const newQuantity = Math.max(0, inventoryRows[0].quantity - item.quantity);
-          await connection.execute(
-            'UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?',
-            [newQuantity, new Date(), item.product_id]
-          );
-        } else {
-          const newQuantity = inventoryRows[0].quantity + item.quantity;
-          await connection.execute(
-            'UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?',
-            [newQuantity, new Date(), item.product_id]
-          );
-        }
+        const newQuantity = inventoryRows[0].quantity + item.quantity;
+        await connection.execute(
+          'UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?',
+          [newQuantity, new Date(), item.product_id]
+        );
       }
     }
 
@@ -710,16 +712,14 @@ async function updateOrder(req, res) {
     const actualCreatedById = (created_by !== undefined ? created_by : createdById) || null;
     const actualItems = items || [];
 
-    // 校验订单类型
+    // 校验订单类型（5-线下水站返货 已停用删除，2026-08-25）
     if (actualOrderType !== undefined && actualOrderType !== null) {
-      const validOrderTypes = [1, 2, 3, 4, 5, 6];
+      const validOrderTypes = [1, 2, 3, 4, 6];
       if (!validOrderTypes.includes(Number(actualOrderType))) {
         await connection.rollback();
         return error(res, '订单类型无效', 400);
       }
     }
-
-    const isReturnOrder = Number(actualOrderType) === 5;
 
     await connection.beginTransaction();
 
@@ -785,7 +785,6 @@ async function updateOrder(req, res) {
         case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; deliveryFeePerUnit = Number(actualDeliveryType) === 3 ? 0 : product.worker_retail_delivery_fee; break;
         case 4: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
         case 6: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
-        case 5: unitPrice = product.purchase_price; deliveryFeePerUnit = 0; break;
       }
 
       const subtotal = unitPrice * quantity;
@@ -816,20 +815,15 @@ async function updateOrder(req, res) {
 
     // 插入新明细并处理库存
     for (const item of orderItems) {
-      await connection.execute(`INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, item.product_id, item.quantity, item.unit_price, item.purchase_price, item.wholesale_price, item.retail_price, item.machine_price, item.total_delivery_fee, item.distribution_delivery_fee, item.worker_retail_delivery_fee, item.worker_wholesale_delivery_fee, item.worker_machine_delivery_fee, item.subtotal]);
+      await connection.execute(`INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, pricing_type, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, item.product_id, item.quantity, item.unit_price, item.purchase_price, item.wholesale_price, item.retail_price, item.machine_price, item.total_delivery_fee, item.distribution_delivery_fee, item.worker_retail_delivery_fee, item.worker_wholesale_delivery_fee, item.worker_machine_delivery_fee, 1, item.subtotal]);
 
       // 库存处理
       const [invRows] = await connection.execute('SELECT quantity FROM inventory WHERE product_id = ? FOR UPDATE', [item.product_id]);
       if (invRows.length === 0) { await connection.rollback(); return error(res, `商品库存不存在: ${item.product_id}`, 400); }
       
-      if (isReturnOrder) {
-        // 返货：增加库存
-        await connection.execute('UPDATE inventory SET quantity = ?, last_in_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity + item.quantity, new Date(), new Date(), item.product_id]);
-      } else {
-        // 销售：扣减库存（允许负数）
-        await connection.execute('UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity - item.quantity, new Date(), new Date(), item.product_id]);
-      }
+      // 库存处理（销售扣减，允许负数）
+      await connection.execute('UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity - item.quantity, new Date(), new Date(), item.product_id]);
     }
 
     // 如果是水站订单，增加新欠款
