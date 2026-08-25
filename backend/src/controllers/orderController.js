@@ -172,6 +172,7 @@ async function getOrderById(req, res) {
       workerRetailDeliveryFee: Number(item.worker_retail_delivery_fee) || 0,
       workerWholesaleDeliveryFee: Number(item.worker_wholesale_delivery_fee) || 0,
       workerMachineDeliveryFee: Number(item.worker_machine_delivery_fee) || 0,
+      pricingType: Number(item.pricing_type) || 1,
       subtotal: Number(item.subtotal) || 0
     }));
 

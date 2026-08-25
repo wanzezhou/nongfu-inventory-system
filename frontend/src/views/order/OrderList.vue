@@ -333,10 +333,19 @@
             </el-table-column>
             <el-table-column label="数量" width="120">
               <template #default="{ row }">
-                <el-input-number v-model="row.quantity" :min="1" :precision="0" :step="1" style="width: 100%" @change="calculateDeliveryFee" />
+                <el-input-number v-model="row.quantity" :min="1" :precision="0" :step="1" style="width: 100%" @change="onItemQuantityChange(row)" />
               </template>
             </el-table-column>
-            <el-table-column v-if="[2, 3].includes(orderForm.orderType)" :label="getPriceColumnLabel()" width="130">
+            <el-table-column v-if="isTicketMode" label="消耗水票" width="160">
+              <template #default="{ row }">
+                <template v-if="row.productId">
+                  <span :class="row.ticketShortage ? 'ticket-short' : 'ticket-ok'">{{ row.quantity }} 张</span>
+                  <div v-if="row.ticketShortage" class="ticket-short-msg">可用仅 {{ ticketMap[row.productId] || 0 }} 张</div>
+                </template>
+                <span v-else class="ticket-empty">选择商品后显示</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="[2, 3].includes(orderForm.orderType) && !isTicketMode" :label="getPriceColumnLabel()" width="130">
               <template #default="{ row }">
                 <el-input-number
                   v-if="orderForm.orderType === 2 || orderForm.orderType === 3"
@@ -349,7 +358,7 @@
                 <span v-else>¥{{ formatMoney(row.unitPrice) }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="[2, 3].includes(orderForm.orderType)" label="小计" width="120">
+            <el-table-column v-if="[2, 3].includes(orderForm.orderType) && !isTicketMode" label="小计" width="120">
               <template #default="{ row }">
                 <span class="subtotal-text">¥{{ formatMoney(calculateItemSubtotal(row)) }}</span>
               </template>
@@ -362,7 +371,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <div v-if="[2, 3].includes(orderForm.orderType)" class="order-total">
+          <div v-if="[2, 3].includes(orderForm.orderType) && !isTicketMode" class="order-total">
             合计金额：<span class="total-amount">¥{{ formatMoney(calculateTotalAmount()) }}</span>
           </div>
         </div>
@@ -862,25 +871,53 @@ const handleStationChange = () => {
 }
 
 // 直营水站销售：计价方式切换（水票抵扣时查询该水站可用水票）
+const isTicketMode = computed(() => orderForm.orderType === 2 && orderForm.pricingType === 'ticket')
 const ticketAvailable = ref(null)
+// 商品级可用水票数（productId -> available）
+const ticketMap = ref({})
 const ticketHintText = computed(() => {
   if (!orderForm.stationId) return '请先选择水站'
   const total = ticketAvailable.value || 0
   return total > 0 ? `该水站当前可用水票 ${total} 张（下单需每件商品票数≥数量）` : '该水站暂无可用水票，无法按水票抵扣下单'
 })
 const onPricingTypeChange = () => {
-  if (orderForm.pricingType === 'ticket') fetchTicketAvailable()
+  if (orderForm.pricingType === 'ticket') {
+    fetchTicketAvailable()
+  } else {
+    // 切回分销价：清除行水票不足标记
+    orderForm.items.forEach((row) => { row.ticketShortage = false })
+  }
 }
 const fetchTicketAvailable = async () => {
   if (!orderForm.stationId) return
   try {
     const res = await getTicketInventory({ stationId: orderForm.stationId })
     const list = res.data?.list || []
-    ticketAvailable.value = list.reduce((sum, x) => sum + x.available, 0)
+    const map = {}
+    list.forEach((x) => { map[x.productId] = Number(x.available) || 0 })
+    ticketMap.value = map
+    ticketAvailable.value = list.reduce((sum, x) => sum + (Number(x.available) || 0), 0)
+    validateTicketRows()
   } catch (e) {
     console.error('查询水票失败:', e)
+    ticketMap.value = {}
     ticketAvailable.value = 0
   }
+}
+// 校验单行：数量 > 该商品可用水票数 -> 标红提示
+const validateTicketRow = (row) => {
+  if (!isTicketMode.value || !row.productId) { row.ticketShortage = false; return }
+  const avail = ticketMap.value[row.productId] || 0
+  row.ticketShortage = Number(row.quantity) > avail
+}
+const validateTicketRows = () => {
+  if (!isTicketMode.value) return
+  orderForm.items.forEach((row) => validateTicketRow(row))
+}
+// 明细行数量变化：联动配送费 + 水票校验
+const onItemQuantityChange = (row) => {
+  calculateDeliveryFee()
+  validateTicketRow(row)
 }
 
 // 拉取量贩机/零售机列表，用于订单表单的机台关联下拉
@@ -1016,8 +1053,11 @@ const handleEditFromDetail = () => {
 const fillOrderForm = (order) => {
   isEditMode.value = true
   editingOrderId.value = order.id || order.orderNo
+  // 恢复计价方式（订单明细水票抵扣 -> 直营水站销售水票抵扣）
+  const firstPricing = order.items && order.items[0] && (order.items[0].pricingType || order.items[0].pricing_type)
   Object.assign(orderForm, {
     orderType: order.orderType,
+    pricingType: Number(order.orderType) === 2 && Number(firstPricing) === 2 ? 'ticket' : 'price',
     platformType: order.platformType,
     platformOrderNo: order.platformOrderNo || '',
     stationId: order.stationId,
@@ -1079,6 +1119,7 @@ const handleProductChange = (index) => {
     orderForm.items[index].unitPrice = price
   }
   calculateDeliveryFee()
+  validateTicketRow(orderForm.items[index])
 }
 
 const getProductField = (productId, field) => {
@@ -1162,6 +1203,15 @@ const handleSubmitOrder = async (print = false) => {
   if (hasInvalidProduct) {
     ElMessage.warning('请完善所有商品信息')
     return
+  }
+  // 水票抵扣：校验每行可用水票充足
+  if (isTicketMode.value) {
+    validateTicketRows()
+    const shortage = orderForm.items.find((row) => row.ticketShortage)
+    if (shortage) {
+      ElMessage.warning('可用水票不足，请减少数量或切换计价方式')
+      return
+    }
   }
   try {
     await deliveryFormRef.value?.validate()
@@ -1469,4 +1519,8 @@ onMounted(() => {
   color: #e6a23c;
   line-height: 1.5;
 }
+.ticket-ok { color: #67c23a; font-weight: 600; }
+.ticket-short { color: #f56c6c; font-weight: 600; }
+.ticket-short-msg { font-size: 12px; color: #f56c6c; }
+.ticket-empty { font-size: 12px; color: #c0c4cc; }
 </style>
