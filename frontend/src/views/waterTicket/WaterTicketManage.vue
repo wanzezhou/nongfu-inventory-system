@@ -101,9 +101,10 @@
         <el-table-column prop="createdAt" label="录入时间" width="155">
           <template #default="{ row }">{{ fmtDateTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center" fixed="right">
+        <el-table-column label="操作" width="130" align="center" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEditIssuance(row.batch)">编辑</el-button>
+            <el-button link type="danger" @click="handleDeleteIssuance(row.batch)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -186,11 +187,11 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Delete, DocumentAdd } from '@element-plus/icons-vue'
 import {
   issueTickets, getTicketInventory, getIssuanceList,
-  updateIssuance, adjustBalance, adjustStationDeliveryFee
+  updateIssuance, adjustBalance, adjustStationDeliveryFee, deleteIssuanceBatch
 } from '@/api/waterTicket'
 import { getStations } from '@/api/station'
 import { getProductList } from '@/api/product'
@@ -382,6 +383,31 @@ const handleSaveIssuance = async () => {
   } catch (e) {
     console.error('编辑失败:', e)
     ElMessage.error(e.response?.data?.message || '修改失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+// ---- 删除发行批次 ----
+const handleDeleteIssuance = async (batch) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除该批次吗？将同时删除其生成的 ${batch.totalQuantity} 张水票（已核销水票的批次不可删）。`,
+      `删除批次 - ${batch.stationName}（${batch.month}）`,
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    )
+  } catch (e) {
+    return // 用户取消
+  }
+  saving.value = true
+  try {
+    const res = await deleteIssuanceBatch(batch.batchId)
+    ElMessage.success(res.message || '批次已删除')
+    fetchIssuances()
+    fetchInventory()
+  } catch (e) {
+    console.error('删除失败:', e)
+    ElMessage.error(e.response?.data?.message || '删除失败')
   } finally {
     saving.value = false
   }

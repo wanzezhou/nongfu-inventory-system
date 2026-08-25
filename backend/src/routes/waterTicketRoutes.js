@@ -13,5 +13,6 @@ router.put('/issuances/:id', auth, waterTicketController.updateIssuance);       
 router.post('/adjust-balance', auth, waterTicketController.adjustBalance);      // 水站账户调整（管理员）
 router.post('/adjust-delivery-fee', auth, waterTicketController.adjustDeliveryFee); // 分销配送费余额调整（管理员）
 router.post('/adjust-station-delivery-fee', auth, waterTicketController.adjustStationDeliveryFee); // 水站级分销配送费调整（管理员）
+router.delete('/issuances/batch/:batchId', auth, waterTicketController.deleteIssuanceBatch);   // 删除发行批次（管理员）
 
 module.exports = router;

@@ -527,6 +527,55 @@ async function adjustStationDeliveryFee(req, res) {
   }
 }
 
+// 删除发行批次（管理员）：整批删除
+// 约束：该批次存在已核销水票（status=2，已被订单抵扣）时拒绝删除；
+// 未用(1)/作废(3)水票随批次一并删除
+async function deleteIssuanceBatch(req, res) {
+  let connection;
+  try {
+    const { batchId } = req.params;
+    if (!batchId) return error(res, '缺少批次号', 400);
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    const [issRows] = await connection.execute(
+      'SELECT issuance_id FROM water_ticket_issuance WHERE batch_id = ?',
+      [batchId]
+    );
+    if (issRows.length === 0) {
+      await connection.rollback();
+      return error(res, '批次不存在', 404);
+    }
+    const ids = issRows.map((r) => r.issuance_id);
+    const placeholders = ids.map(() => '?').join(',');
+
+    // 检查已核销水票
+    const [usedRows] = await connection.execute(
+      `SELECT COUNT(*) AS c FROM water_tickets WHERE issuance_id IN (${placeholders}) AND status = 2`,
+      ids
+    );
+    const usedCount = Number(usedRows[0].c) || 0;
+    if (usedCount > 0) {
+      await connection.rollback();
+      return error(res, `该批次已有 ${usedCount} 张水票被订单核销，无法删除（请先处理关联订单）`, 400);
+    }
+
+    // 删除水票（未用/作废）与发行记录
+    await connection.execute(`DELETE FROM water_tickets WHERE issuance_id IN (${placeholders})`, ids);
+    await connection.execute('DELETE FROM water_ticket_issuance WHERE batch_id = ?', [batchId]);
+
+    await connection.commit();
+    return success(res, { batchId, removed: issRows.length }, '批次已删除');
+  } catch (e) {
+    if (connection) await connection.rollback().catch(() => {});
+    console.error('deleteIssuanceBatch error:', e);
+    return error(res, '删除失败', 500);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 module.exports = {
   issueTickets,
   getTicketInventory,
@@ -536,5 +585,6 @@ module.exports = {
   updateIssuance,
   adjustBalance,
   adjustDeliveryFee,
-  adjustStationDeliveryFee
+  adjustStationDeliveryFee,
+  deleteIssuanceBatch
 };
