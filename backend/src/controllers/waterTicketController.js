@@ -466,6 +466,67 @@ async function adjustDeliveryFee(req, res) {
   }
 }
 
+// 水站级分销配送费余额调整（管理员）：将某水站全部发行记录配送费总计调整为目标金额
+// 差额计入该水站最新一条发行记录，使水站总计恰好等于目标值
+async function adjustStationDeliveryFee(req, res) {
+  let connection;
+  try {
+    const { stationId, station_id, targetFee } = req.body || {};
+    const actualStationId = stationId || station_id;
+    const target = Number(targetFee);
+    if (!actualStationId) return error(res, '请选择水站', 400);
+    if (isNaN(target) || target < 0) return error(res, '分销配送费必须大于等于0', 400);
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    const [sumRows] = await connection.execute(
+      `SELECT ROUND(SUM(distribution_delivery_fee), 2) AS s FROM water_ticket_issuance WHERE station_id = ?`,
+      [actualStationId]
+    );
+    const current = Number(sumRows[0].s) || 0;
+    const diff = Math.round((target - current) * 100) / 100;
+
+    if (diff !== 0) {
+      const [allRows] = await connection.execute(
+        `SELECT issuance_id, distribution_delivery_fee FROM water_ticket_issuance
+         WHERE station_id = ?
+         ORDER BY created_at DESC, issuance_id DESC`,
+        [actualStationId]
+      );
+      if (allRows.length === 0) {
+        await connection.rollback();
+        return error(res, '该水站无发行记录，无法调整配送费', 400);
+      }
+      // 差额均摊到全部发行记录（首笔吸收余数），避免单笔为负
+      const n = allRows.length;
+      const per = Math.floor(diff * 100 / n) / 100;
+      const remainder = Math.round((diff - per * n) * 100) / 100;
+      for (let i = 0; i < n; i++) {
+        const adj = i === 0 ? Math.round((per + remainder) * 100) / 100 : per;
+        const newFee = Math.round((Number(allRows[i].distribution_delivery_fee) + adj) * 100) / 100;
+        if (newFee < 0) {
+          await connection.rollback();
+          return error(res, '调整后单笔配送费为负，无法调整', 400);
+        }
+        await connection.execute(
+          `UPDATE water_ticket_issuance SET distribution_delivery_fee = ? WHERE issuance_id = ?`,
+          [newFee, allRows[i].issuance_id]
+        );
+      }
+    }
+
+    await connection.commit();
+    return success(res, { stationId: actualStationId, current, target }, '配送费调整成功');
+  } catch (e) {
+    if (connection) await connection.rollback().catch(() => {});
+    console.error('adjustStationDeliveryFee error:', e);
+    return error(res, '配送费调整失败', 500);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 module.exports = {
   issueTickets,
   getTicketInventory,
@@ -474,5 +535,6 @@ module.exports = {
   getIssuanceList,
   updateIssuance,
   adjustBalance,
-  adjustDeliveryFee
+  adjustDeliveryFee,
+  adjustStationDeliveryFee
 };

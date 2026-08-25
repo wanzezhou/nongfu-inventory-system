@@ -57,8 +57,13 @@
             <el-table-column prop="available" label="水票余额" width="110" align="center">
               <template #default="{ row }"><el-tag type="success">{{ row.available }} 张</el-tag></template>
             </el-table-column>
-            <el-table-column prop="stationDeliveryFee" label="分销配送费余额" width="140" align="right">
-              <template #default="{ row }">¥{{ fmtMoney(row.stationDeliveryFee) }}</template>
+            <el-table-column prop="stationDeliveryFee" label="分销配送费余额" width="170" align="right">
+              <template #default="{ row }">
+                <div class="fee-cell">
+                  <span>¥{{ fmtMoney(row.stationDeliveryFee) }}</span>
+                  <el-button link type="primary" size="small" @click="openAdjustStationFee(row)">调整</el-button>
+                </div>
+              </template>
             </el-table-column>
             <el-table-column label="操作" width="90" align="center" fixed="right">
               <template #default="{ row }">
@@ -114,15 +119,17 @@
       </div>
     </el-card>
 
-    <!-- 编辑发行记录弹窗（批次多行） -->
-    <el-dialog v-model="editIssuanceVisible" :title="`编辑发行记录 - ${editForm.stationName}（${editForm.month}）`" :width="dialogWidth" @closed="resetEditForm">
-      <div v-for="(it, idx) in editForm.items" :key="it.issuanceId || idx" class="edit-item-row">
-        <span class="item-label">商品</span>
-        <span class="edit-product">{{ it.productName }}<span v-if="it.specification">（{{ it.specification }}）</span></span>
-        <span class="item-label">数量</span>
-        <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 110px" @change="(v) => onEditItemQuantityChange(it, v)" />
-        <span class="item-label">分销配送费</span>
-        <el-input-number v-model="it.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" style="width: 130px" />
+    <!-- 编辑发行记录弹窗（批次多行，加宽） -->
+    <el-dialog v-model="editIssuanceVisible" :title="`编辑发行记录 - ${editForm.stationName}（${editForm.month}）`" :width="editDialogWidth" @closed="resetEditForm">
+      <div class="edit-items">
+        <div v-for="(it, idx) in editForm.items" :key="it.issuanceId || idx" class="edit-item-row">
+          <span class="item-label">商品</span>
+          <span class="edit-product">{{ it.productName }}<span v-if="it.specification">（{{ it.specification }}）</span></span>
+          <span class="item-label">数量</span>
+          <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 120px" @change="(v) => onEditItemQuantityChange(it, v)" />
+          <span class="item-label">分销配送费</span>
+          <el-input-number v-model="it.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" style="width: 140px" />
+        </div>
       </div>
       <div class="edit-item-hint">数量改大自动补发水票；改小作废未用水票（已核销不可减）；分销配送费随数量自动重算，可再手动调整。</div>
       <el-form label-width="90px" style="margin-top: 10px">
@@ -136,8 +143,8 @@
       </template>
     </el-dialog>
 
-    <!-- 水站账户调整弹窗 -->
-    <el-dialog v-model="adjustVisible" title="调整水站账户" :width="dialogWidth">
+    <!-- 商品水票调整弹窗（仅调整水票数量） -->
+    <el-dialog v-model="adjustVisible" title="调整水票数量" :width="dialogWidth">
       <el-form label-width="100px">
         <el-form-item label="水站/商品">
           <span>{{ adjustRow.stationName }} - {{ adjustRow.productName }}</span>
@@ -148,17 +155,30 @@
         <el-form-item label="水票目标数">
           <el-input-number v-model="adjustTarget" :min="0" :precision="0" :step="1" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="当前配送费">
-          <span>¥{{ fmtMoney(adjustFeeCurrent) }}</span>
-        </el-form-item>
-        <el-form-item label="配送费目标">
-          <el-input-number v-model="adjustFeeTarget" :min="0" :precision="2" :step="0.5" style="width: 100%" />
-          <span class="unit-label">输入目标金额后保存，差额计入最新发行记录</span>
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="adjustVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleAdjust">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 水站分销配送费调整弹窗 -->
+    <el-dialog v-model="adjustStationFeeVisible" title="调整水站分销配送费" :width="dialogWidth">
+      <el-form label-width="110px">
+        <el-form-item label="水站">
+          <span>{{ adjustFeeRow.stationName }}</span>
+        </el-form-item>
+        <el-form-item label="当前配送费总计">
+          <span>¥{{ fmtMoney(adjustFeeRow.stationDeliveryFee) }}</span>
+        </el-form-item>
+        <el-form-item label="目标金额">
+          <el-input-number v-model="adjustStationFeeTarget" :min="0" :precision="2" :step="10" style="width: 100%" />
+          <span class="unit-label">差额计入该水站最新发行记录</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="adjustStationFeeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleAdjustStationFee">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -170,7 +190,7 @@ import { ElMessage } from 'element-plus'
 import { Search, Plus, Delete, DocumentAdd } from '@element-plus/icons-vue'
 import {
   issueTickets, getTicketInventory, getIssuanceList,
-  updateIssuance, adjustBalance, adjustDeliveryFee
+  updateIssuance, adjustBalance, adjustStationDeliveryFee
 } from '@/api/waterTicket'
 import { getStations } from '@/api/station'
 import { getProductList } from '@/api/product'
@@ -182,7 +202,8 @@ const issuing = ref(false)
 const saving = ref(false)
 const stationOptions = ref([])
 const productOptions = ref([])
-const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '560px'))
+const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '520px'))
+const editDialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '780px'))
 
 // ---- 返货清单/发行 ----
 const issueForm = reactive({
@@ -366,12 +387,10 @@ const handleSaveIssuance = async () => {
   }
 }
 
-// ---- 水站账户调整（水票余额 + 分销配送费余额）----
+// ---- 商品水票调整（仅水票数量）----
 const adjustVisible = ref(false)
 const adjustRow = reactive({ stationId: '', stationName: '', productId: '', productName: '', available: 0 })
 const adjustTarget = ref(0)
-const adjustFeeCurrent = ref(0)
-const adjustFeeTarget = ref(0)
 const openAdjust = (row) => {
   adjustRow.stationId = row.stationId
   adjustRow.stationName = row.stationName
@@ -379,13 +398,10 @@ const openAdjust = (row) => {
   adjustRow.productName = row.productName
   adjustRow.available = row.available
   adjustTarget.value = row.available
-  adjustFeeCurrent.value = row.deliveryFeeTotal || 0
-  adjustFeeTarget.value = row.deliveryFeeTotal || 0
   adjustVisible.value = true
 }
 const handleAdjust = async () => {
   if (adjustTarget.value < 0) { ElMessage.warning('水票目标数不能为负数'); return }
-  if (adjustFeeTarget.value < 0) { ElMessage.warning('分销配送费不能为负数'); return }
   saving.value = true
   try {
     await adjustBalance({
@@ -393,13 +409,6 @@ const handleAdjust = async () => {
       productId: adjustRow.productId,
       targetQuantity: adjustTarget.value
     })
-    if (Number(adjustFeeTarget.value) !== Number(adjustFeeCurrent.value)) {
-      await adjustDeliveryFee({
-        stationId: adjustRow.stationId,
-        productId: adjustRow.productId,
-        targetFee: adjustFeeTarget.value
-      })
-    }
     ElMessage.success('调整成功')
     adjustVisible.value = false
     fetchInventory()
@@ -407,6 +416,37 @@ const handleAdjust = async () => {
   } catch (e) {
     console.error('调整失败:', e)
     ElMessage.error(e.response?.data?.message || '调整失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+// ---- 水站分销配送费调整（水站级总计）----
+const adjustStationFeeVisible = ref(false)
+const adjustFeeRow = reactive({ stationId: '', stationName: '', stationDeliveryFee: 0 })
+const adjustStationFeeTarget = ref(0)
+const openAdjustStationFee = (row) => {
+  adjustFeeRow.stationId = row.stationId
+  adjustFeeRow.stationName = row.stationName
+  adjustFeeRow.stationDeliveryFee = row.stationDeliveryFee || 0
+  adjustStationFeeTarget.value = row.stationDeliveryFee || 0
+  adjustStationFeeVisible.value = true
+}
+const handleAdjustStationFee = async () => {
+  if (adjustStationFeeTarget.value < 0) { ElMessage.warning('分销配送费不能为负数'); return }
+  saving.value = true
+  try {
+    await adjustStationDeliveryFee({
+      stationId: adjustFeeRow.stationId,
+      targetFee: adjustStationFeeTarget.value
+    })
+    ElMessage.success('调整成功')
+    adjustStationFeeVisible.value = false
+    fetchInventory()
+    fetchIssuances()
+  } catch (e) {
+    console.error('配送费调整失败:', e)
+    ElMessage.error(e.response?.data?.message || '配送费调整失败')
   } finally {
     saving.value = false
   }
@@ -456,8 +496,11 @@ onMounted(() => {
 .iss-title { font-weight: 600; }
 .iss-filter-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .fee-total { color: #d48806; font-weight: 600; }
-.edit-item-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-.edit-product { font-size: 13px; min-width: 120px; }
+.fee-cell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.edit-items { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; padding: 2px; }
+.edit-item-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 4px; border-bottom: 1px dashed #ebeef5; }
+.edit-item-row:last-child { border-bottom: none; }
+.edit-product { font-size: 13px; min-width: 200px; }
 .edit-item-hint { font-size: 12px; color: #909399; margin-top: 2px; }
 @media screen and (max-width: 768px) {
   .issue-form-grid { grid-template-columns: 1fr; }
