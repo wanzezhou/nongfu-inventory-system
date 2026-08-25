@@ -19,7 +19,11 @@
               <div v-for="(it, idx) in issueForm.items" :key="idx" class="issue-item-row">
                 <span class="item-label">商品</span>
                 <el-select v-model="it.productId" filterable placeholder="请选择商品" style="width: 36%" @change="(pid) => onIssueProductChange(it, pid)">
-                  <el-option v-for="p in productOptions" :key="p.id" :label="`${p.name}（${p.spec || ''}）`" :value="p.id" />
+                  <el-option v-for="p in productOptions" :key="p.id" :label="`${p.name}（${p.spec || ''}）`" :value="p.id" :disabled="p.stock <= 0" :class="{ 'option-out-of-stock': p.stock <= 0 }">
+                    <span :style="{ color: p.stock <= 0 ? '#c0c4cc' : '' }">{{ p.name }}（{{ p.spec || '' }}）</span>
+                    <span v-if="p.stock <= 0" style="color: #c0c4cc; font-size: 12px; margin-left: 8px;">无库存</span>
+                    <span v-else style="color: #67c23a; font-size: 12px; margin-left: 8px;">库存: {{ p.stock }}</span>
+                  </el-option>
                 </el-select>
                 <span class="item-label">数量</span>
                 <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 20%" @change="(v) => onIssueQuantityChange(it, v)" />
@@ -195,6 +199,7 @@ import {
 } from '@/api/waterTicket'
 import { getStations } from '@/api/station'
 import { getProductList } from '@/api/product'
+import { getInventoryList } from '@/api/inventory'
 
 const activeTab = ref('issue')
 
@@ -493,8 +498,17 @@ const loadOptions = async () => {
     stationOptions.value = (s.data?.list || s.data || []).map((x) => ({ id: x.station_id || x.stationId, name: x.station_name || x.stationName }))
   } catch (e) { console.error('加载水站失败:', e) }
   try {
-    const p = await getProductList({ status: 1, pageSize: 200 })
-    productOptions.value = p.data?.list || p.data || []
+    const [pRes, invRes] = await Promise.all([
+      getProductList({ status: 1, pageSize: 200 }),
+      getInventoryList({ pageSize: 200 })
+    ])
+    const products = pRes.data?.list || pRes.data || []
+    // 合并库存：无库存商品禁用选择（下拉置灰）
+    const stockMap = {}
+    const invList = invRes.data?.list || invRes.data || []
+    invList.forEach((item) => { stockMap[item.id] = Number(item.stock) || 0 })
+    products.forEach((p) => { p.stock = stockMap[p.id] ?? 0 })
+    productOptions.value = products
   } catch (e) { console.error('加载商品失败:', e) }
 }
 
@@ -514,6 +528,7 @@ onMounted(() => {
 .issue-items { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .issue-item-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .item-label { font-size: 12px; color: #909399; white-space: nowrap; }
+.option-out-of-stock { color: #c0c4cc; }
 .issue-actions { display: flex; align-items: center; gap: 10px; }
 .issue-hint { font-size: 12px; color: #909399; }
 .unit-label { margin-left: 8px; font-size: 12px; color: #909399; }
