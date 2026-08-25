@@ -322,7 +322,7 @@ async function getReturnDeliveryFeeSummary(req, res) {
     const whereSql = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
 
     const [rows] = await pool.execute(
-      `SELECT i.month, i.station_id, s.station_name, ROUND(SUM(i.return_delivery_fee), 2) AS total, COUNT(*) AS cnt
+      `SELECT i.month, i.station_id, s.station_name, ROUND(SUM(i.distribution_delivery_fee), 2) AS total, COUNT(*) AS cnt
        FROM water_ticket_issuance i
        LEFT JOIN sub_stations s ON i.station_id = s.station_id
        ${whereSql}

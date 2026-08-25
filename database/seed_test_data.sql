@@ -144,7 +144,7 @@ SELECT '测试数据已重建（商品/库存未动）：基础信息 6 模块 +
 -- 水票演示数据（水站返货管理，2026-08-25 追加）
 -- 模拟每月返货清单：水站 ST001 商品A×5 配送费25；ST002 商品B×3 配送费18
 -- ============================================================
-INSERT INTO water_ticket_issuance (issuance_id, station_id, product_id, quantity, return_delivery_fee, month, remark, created_by) VALUES
+INSERT INTO water_ticket_issuance (issuance_id, station_id, product_id, quantity, distribution_delivery_fee, month, remark, created_by) VALUES
 ('WTI20260825000001', 'ST001', 'Pmrf3fgpqDNVO8Q', 5, 25.00, '2026-08', '8月返货清单', 'seed'),
 ('WTI20260825000002', 'ST002', 'Pmrf3fgq6AASZ1I', 3, 18.00, '2026-08', '8月返货清单', 'seed');
 

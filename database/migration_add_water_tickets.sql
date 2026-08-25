@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS water_ticket_issuance (
   station_id           VARCHAR(50)   NOT NULL COMMENT '水站ID',
   product_id           VARCHAR(50)   NOT NULL COMMENT '商品ID',
   quantity             INT           NOT NULL COMMENT '返货/发行数量（生成等量水票）',
-  return_delivery_fee  DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '返货配送费（本月返货清单配送费）',
+  distribution_delivery_fee DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '分销配送费（自动带出商品档案 distribution_delivery_fee，可改）',
   month                VARCHAR(7)    NOT NULL COMMENT '所属月份（如 2026-08）',
   remark               VARCHAR(255)  DEFAULT NULL COMMENT '备注',
   created_by           VARCHAR(50)   DEFAULT NULL COMMENT '录入人',

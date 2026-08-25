@@ -21,9 +21,9 @@ async function issueTickets(req, res) {
     const cleanItems = items.map((it) => ({
       productId: it.productId || it.product_id,
       quantity: Number(it.quantity),
-      returnDeliveryFee: Number(it.returnDeliveryFee !== undefined ? it.returnDeliveryFee : (it.return_delivery_fee || 0))
+      distributionDeliveryFee: Number(it.distributionDeliveryFee !== undefined ? it.distributionDeliveryFee : (it.distribution_delivery_fee !== undefined ? it.distribution_delivery_fee : 0))
     }));
-    const invalid = cleanItems.some((it) => !it.productId || isNaN(it.quantity) || it.quantity <= 0 || isNaN(it.returnDeliveryFee) || it.returnDeliveryFee < 0);
+    const invalid = cleanItems.some((it) => !it.productId || isNaN(it.quantity) || it.quantity <= 0 || isNaN(it.distributionDeliveryFee) || it.distributionDeliveryFee < 0);
     if (invalid) return error(res, '每条需填写商品、数量（>0）与返货配送费（≥0）', 400);
 
     // 校验水站与商品存在
@@ -48,9 +48,9 @@ async function issueTickets(req, res) {
     for (const it of cleanItems) {
       const issuanceId = `WTI${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
       await connection.execute(
-        `INSERT INTO water_ticket_issuance (issuance_id, station_id, product_id, quantity, return_delivery_fee, month, remark, created_by)
+        `INSERT INTO water_ticket_issuance (issuance_id, station_id, product_id, quantity, distribution_delivery_fee, month, remark, created_by)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [issuanceId, actualStationId, it.productId, it.quantity, it.returnDeliveryFee, actualMonth, remark || null, operator]
+        [issuanceId, actualStationId, it.productId, it.quantity, it.distributionDeliveryFee, actualMonth, remark || null, operator]
       );
       issuanceIds.push(issuanceId);
 
@@ -198,7 +198,7 @@ async function getIssuanceList(req, res) {
     const [countRows] = await pool.execute(`SELECT COUNT(*) AS total FROM water_ticket_issuance i ${whereSql}`, params);
     const [rows] = await pool.execute(
       `SELECT i.issuance_id, i.station_id, s.station_name, i.product_id, p.product_name, p.specification,
-              i.quantity, i.return_delivery_fee, i.month, i.remark, i.created_by, i.created_at
+              i.quantity, i.distribution_delivery_fee, i.month, i.remark, i.created_by, i.created_at
        FROM water_ticket_issuance i
        LEFT JOIN sub_stations s ON i.station_id = s.station_id
        LEFT JOIN products p ON i.product_id = p.product_id
@@ -215,7 +215,7 @@ async function getIssuanceList(req, res) {
       productName: r.product_name || r.product_id,
       specification: r.specification || '',
       quantity: Number(r.quantity) || 0,
-      returnDeliveryFee: Number(r.return_delivery_fee) || 0,
+      distributionDeliveryFee: Number(r.distribution_delivery_fee) || 0,
       month: r.month,
       remark: r.remark || '',
       createdBy: r.created_by || '',
@@ -228,10 +228,152 @@ async function getIssuanceList(req, res) {
   }
 }
 
+// 编辑发行记录（管理员）：可改数量/分销配送费/备注
+// 数量变化联动水票：增加→补发未用票；减少→作废未核销票（不足则提示）
+async function updateIssuance(req, res) {
+  let connection;
+  try {
+    const { id } = req.params;
+    const { quantity, distributionDeliveryFee, distribution_delivery_fee, month, remark } = req.body || {};
+    const operator = (req.user && (req.user.username || req.user.id)) || null;
+
+    const [exist] = await pool.execute('SELECT * FROM water_ticket_issuance WHERE issuance_id = ?', [id]);
+    if (exist.length === 0) return error(res, '发行记录不存在', 404);
+    const old = exist[0];
+
+    const newQuantity = quantity !== undefined && quantity !== '' ? Number(quantity) : Number(old.quantity);
+    if (isNaN(newQuantity) || newQuantity <= 0) return error(res, '数量必须大于0', 400);
+    const newFee = (distributionDeliveryFee !== undefined ? Number(distributionDeliveryFee) : (distribution_delivery_fee !== undefined ? Number(distribution_delivery_fee) : Number(old.distribution_delivery_fee)));
+    if (isNaN(newFee) || newFee < 0) return error(res, '分销配送费必须大于等于0', 400);
+    const newMonth = month || old.month;
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // 数量调整：计算差额
+    const diff = newQuantity - Number(old.quantity);
+    if (diff > 0) {
+      // 补发水票
+      const now = new Date();
+      const values = [];
+      for (let i = 0; i < diff; i++) {
+        const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
+        values.push([ticketId, old.product_id, old.station_id, 1, newMonth, id, now, operator, null, null, null]);
+      }
+      await connection.query(
+        `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
+        [values]
+      );
+    } else if (diff < 0) {
+      // 作废多余的未核销水票（按票最早优先）
+      const need = -diff;
+      const [tickets] = await connection.execute(
+        `SELECT ticket_id FROM water_tickets WHERE issuance_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
+        [id]
+      );
+      if (tickets.length < need) {
+        await connection.rollback();
+        return error(res, `可作废的未用水票不足：需减 ${need} 张，仅剩 ${tickets.length} 张（部分已核销）`, 400);
+      }
+      const ids = tickets.map((t) => t.ticket_id);
+      await connection.execute(
+        `UPDATE water_tickets SET status = 3 WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
+        ids
+      );
+    }
+
+    await connection.execute(
+      `UPDATE water_ticket_issuance SET quantity = ?, distribution_delivery_fee = ?, month = ?, remark = ? WHERE issuance_id = ?`,
+      [newQuantity, newFee, newMonth, remark !== undefined ? remark : old.remark, id]
+    );
+
+    await connection.commit();
+    return success(res, { issuanceId: id, quantity: newQuantity }, '修改成功');
+  } catch (e) {
+    if (connection) await connection.rollback().catch(() => {});
+    console.error('updateIssuance error:', e);
+    return error(res, '修改失败', 500);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// 水站账户调整：将某水站某商品的可用水票数调整为目标数量（差额补发/作废）
+async function adjustBalance(req, res) {
+  let connection;
+  try {
+    const { stationId, station_id, productId, product_id, targetQuantity } = req.body || {};
+    const actualStationId = stationId || station_id;
+    const actualProductId = productId || product_id;
+    const target = Number(targetQuantity);
+    const operator = (req.user && (req.user.username || req.user.id)) || null;
+
+    if (!actualStationId) return error(res, '请选择水站', 400);
+    if (!actualProductId) return error(res, '请选择商品', 400);
+    if (isNaN(target) || target < 0) return error(res, '目标数量必须大于等于0', 400);
+
+    // 校验水站与商品
+    const [sRows] = await pool.execute('SELECT station_id FROM sub_stations WHERE station_id = ?', [actualStationId]);
+    if (sRows.length === 0) return error(res, '水站不存在', 404);
+    const [pRows] = await pool.execute('SELECT product_id FROM products WHERE product_id = ?', [actualProductId]);
+    if (pRows.length === 0) return error(res, '商品不存在', 404);
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    const [curRows] = await connection.execute(
+      `SELECT COUNT(*) AS c FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1`,
+      [actualStationId, actualProductId]
+    );
+    const current = Number(curRows[0].c) || 0;
+    const diff = target - current;
+    const now = new Date();
+
+    if (diff > 0) {
+      // 补发（不生成发行记录，issuance_id 为空，备注"账户调整"）
+      const values = [];
+      for (let i = 0; i < diff; i++) {
+        const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
+        values.push([ticketId, actualProductId, actualStationId, 1, now.toISOString().slice(0, 7), null, now, operator, null, null, '账户调整']);
+      }
+      await connection.query(
+        `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
+        [values]
+      );
+    } else if (diff < 0) {
+      const need = -diff;
+      const [tickets] = await connection.execute(
+        `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
+        [actualStationId, actualProductId]
+      );
+      if (tickets.length < need) {
+        await connection.rollback();
+        return error(res, `可作废的未用水票不足：需减 ${need} 张，仅剩 ${tickets.length} 张（部分已核销）`, 400);
+      }
+      const ids = tickets.map((t) => t.ticket_id);
+      await connection.execute(
+        `UPDATE water_tickets SET status = 3 WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
+        ids
+      );
+    }
+
+    await connection.commit();
+    return success(res, { stationId: actualStationId, productId: actualProductId, current, target, generated: Math.max(diff, 0), cancelled: Math.max(-diff, 0) }, '调整成功');
+  } catch (e) {
+    if (connection) await connection.rollback().catch(() => {});
+    console.error('adjustBalance error:', e);
+    return error(res, '调整失败', 500);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 module.exports = {
   issueTickets,
   getTicketInventory,
   getTicketList,
   cancelTicket,
-  getIssuanceList
+  getIssuanceList,
+  updateIssuance,
+  adjustBalance
 };
