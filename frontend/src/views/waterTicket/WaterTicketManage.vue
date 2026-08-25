@@ -17,11 +17,14 @@
             </el-form>
             <div class="issue-items">
               <div v-for="(it, idx) in issueForm.items" :key="idx" class="issue-item-row">
-                <el-select v-model="it.productId" filterable placeholder="商品" style="width: 42%" @change="(pid) => onIssueProductChange(it, pid)">
+                <span class="item-label">商品</span>
+                <el-select v-model="it.productId" filterable placeholder="请选择商品" style="width: 38%" @change="(pid) => onIssueProductChange(it, pid)">
                   <el-option v-for="p in productOptions" :key="p.id" :label="`${p.name}（${p.spec || ''}）`" :value="p.id" />
                 </el-select>
-                <el-input-number v-model="it.quantity" :min="1" :precision="0" :controls="false" placeholder="数量" style="width: 18%" />
-                <el-input-number v-model="it.returnDeliveryFee" :min="0" :precision="2" :controls="false" placeholder="返货配送费" style="width: 26%" />
+                <span class="item-label">数量</span>
+                <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 22%" />
+                <span class="item-label">返货配送费</span>
+                <el-input-number v-model="it.returnDeliveryFee" :min="0" :precision="2" :step="5" style="width: 24%" />
                 <el-button link type="danger" :disabled="issueForm.items.length === 1" @click="removeIssueItem(idx)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
@@ -248,8 +251,8 @@ const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFraction
 
 const loadOptions = async () => {
   try {
-    const s = await getStations({ status: 1, pageSize: 100 })
-    stationOptions.value = (s.data?.list || s.data || []).map((x) => ({ id: x.stationId || x.id, name: x.stationName || x.name }))
+    const s = await getStations({ pageSize: 100 })
+    stationOptions.value = (s.data?.list || s.data || []).map((x) => ({ id: x.station_id || x.stationId, name: x.station_name || x.stationName }))
   } catch (e) { console.error('加载水站失败:', e) }
   try {
     const p = await getProductList({ status: 1, pageSize: 200 })
@@ -272,7 +275,8 @@ onMounted(() => {
 .filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
 .issue-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
 .issue-items { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-.issue-item-row { display: flex; align-items: center; gap: 8px; }
+.issue-item-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.item-label { font-size: 12px; color: #909399; white-space: nowrap; }
 .issue-actions { display: flex; align-items: center; gap: 10px; }
 .issue-hint { font-size: 12px; color: #909399; }
 .pager { display: flex; justify-content: flex-end; margin-top: 14px; }

@@ -170,27 +170,9 @@ const routes = [
       },
       {
         path: 'water-tickets',
-        redirect: '/water-tickets/inventory'
-      },
-      {
-        path: 'water-tickets/issue',
-        name: 'WaterTicketIssue',
+        name: 'WaterTicketManage',
         component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
-        meta: { title: '返货清单/水票发行', icon: 'EditPen', requiresAuth: true }
-      },
-      {
-        path: 'water-tickets/inventory',
-        name: 'WaterTicketInventory',
-        component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
-        props: { tab: 'inventory' },
-        meta: { title: '水票库存', icon: 'Box', requiresAuth: true }
-      },
-      {
-        path: 'water-tickets/list',
-        name: 'WaterTicketList',
-        component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
-        props: { tab: 'list' },
-        meta: { title: '水票明细/核销流水', icon: 'List', requiresAuth: true }
+        meta: { title: '水站返货管理', icon: 'Ticket', requiresAuth: true }
       }
     ]
   }

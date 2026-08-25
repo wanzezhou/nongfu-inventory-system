@@ -141,24 +141,10 @@
             <template #title>零售机供货成本</template>
           </el-menu-item>
         </el-sub-menu>
-        <el-sub-menu index="/water-tickets">
-          <template #title>
-            <el-icon><Ticket /></el-icon>
-            <span>水站返货管理</span>
-          </template>
-          <el-menu-item index="/water-tickets/issue">
-            <el-icon><EditPen /></el-icon>
-            <template #title>返货清单/发行</template>
-          </el-menu-item>
-          <el-menu-item index="/water-tickets/inventory">
-            <el-icon><Box /></el-icon>
-            <template #title>水票库存</template>
-          </el-menu-item>
-          <el-menu-item index="/water-tickets/list">
-            <el-icon><List /></el-icon>
-            <template #title>水票明细/核销流水</template>
-          </el-menu-item>
-        </el-sub-menu>
+        <el-menu-item index="/water-tickets">
+          <el-icon><Ticket /></el-icon>
+          <template #title>水站返货管理</template>
+        </el-menu-item>
       </el-menu>
       <div class="sidebar-footer" v-if="!isCollapse">
         <div class="sidebar-footer-line"></div>
