@@ -336,11 +336,14 @@
                 <el-input-number v-model="row.quantity" :min="1" :precision="0" :step="1" style="width: 100%" @change="onItemQuantityChange(row)" />
               </template>
             </el-table-column>
-            <el-table-column v-if="isTicketMode" label="消耗水票" width="160">
+            <el-table-column v-if="isTicketMode" label="消耗水票" width="170">
               <template #default="{ row }">
                 <template v-if="row.productId">
-                  <span :class="row.ticketShortage ? 'ticket-short' : 'ticket-ok'">{{ row.quantity }} 张</span>
-                  <div v-if="row.ticketShortage" class="ticket-short-msg">可用仅 {{ ticketMap[row.productId] || 0 }} 张</div>
+                  <span :class="row.ticketShortage ? 'ticket-short' : 'ticket-ok'">消耗 {{ row.quantity }} 张</span>
+                  <div class="ticket-sub">
+                    <span v-if="row.ticketShortage" class="ticket-short-msg">可用仅 {{ ticketMap[row.productId] || 0 }} 张，请减少数量</span>
+                    <span v-else class="ticket-left">剩余 {{ Math.max((ticketMap[row.productId] || 0) - (row.quantity || 0), 0) }} 张</span>
+                  </div>
                 </template>
                 <span v-else class="ticket-empty">选择商品后显示</span>
               </template>
@@ -1521,6 +1524,8 @@ onMounted(() => {
 }
 .ticket-ok { color: #67c23a; font-weight: 600; }
 .ticket-short { color: #f56c6c; font-weight: 600; }
-.ticket-short-msg { font-size: 12px; color: #f56c6c; }
+.ticket-sub { font-size: 12px; line-height: 1.4; }
+.ticket-left { color: #909399; }
+.ticket-short-msg { color: #f56c6c; }
 .ticket-empty { font-size: 12px; color: #c0c4cc; }
 </style>
