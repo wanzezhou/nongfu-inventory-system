@@ -22,7 +22,7 @@
                   <el-option v-for="p in productOptions" :key="p.id" :label="`${p.name}（${p.spec || ''}）`" :value="p.id" />
                 </el-select>
                 <span class="item-label">数量</span>
-                <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 20%" />
+                <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 20%" @change="(v) => onIssueQuantityChange(it, v)" />
                 <span class="item-label">分销配送费</span>
                 <el-input-number v-model="it.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" style="width: 22%" />
                 <el-button link type="danger" :disabled="issueForm.items.length === 1" @click="removeIssueItem(idx)">
@@ -50,12 +50,15 @@
             </el-select>
             <el-button type="primary" @click="fetchInventory"><el-icon><Search /></el-icon>查询</el-button>
           </div>
-          <el-table :data="inventoryList" v-loading="loading" border stripe size="small">
+          <el-table :data="inventoryList" v-loading="loading" border stripe size="small" :span-method="invSpanMethod">
             <el-table-column prop="stationName" label="水站" width="140" />
             <el-table-column prop="productName" label="商品" min-width="180" show-overflow-tooltip />
             <el-table-column prop="specification" label="规格" width="110" />
             <el-table-column prop="available" label="水票余额" width="110" align="center">
               <template #default="{ row }"><el-tag type="success">{{ row.available }} 张</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="deliveryFeeTotal" label="分销配送费余额" width="140" align="right">
+              <template #default="{ row }">¥{{ fmtMoney(row.deliveryFeeTotal) }}</template>
             </el-table-column>
             <el-table-column label="操作" width="90" align="center" fixed="right">
               <template #default="{ row }">
@@ -105,8 +108,8 @@
           <span>{{ editForm.stationName }} - {{ editForm.productName }}</span>
         </el-form-item>
         <el-form-item label="数量" prop="quantity">
-          <el-input-number v-model="editForm.quantity" :min="1" :precision="0" :step="1" style="width: 100%" />
-          <span class="unit-label">改大自动补发水票；改小作废未用水票（已核销不可减）</span>
+          <el-input-number v-model="editForm.quantity" :min="1" :precision="0" :step="1" style="width: 100%" @change="onEditQuantityChange" />
+          <span class="unit-label">改大自动补发水票；改小作废未用水票（已核销不可减）；分销配送费随数量自动重算</span>
         </el-form-item>
         <el-form-item label="分销配送费" prop="distributionDeliveryFee">
           <el-input-number v-model="editForm.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" style="width: 100%" />
@@ -167,14 +170,19 @@ const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '520px')
 const issueForm = reactive({
   stationId: '',
   month: '',
-  items: [{ productId: '', quantity: 1, distributionDeliveryFee: 0 }]
+  items: [{ productId: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0 }]
 })
-const addIssueItem = () => issueForm.items.push({ productId: '', quantity: 1, distributionDeliveryFee: 0 })
+const addIssueItem = () => issueForm.items.push({ productId: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0 })
 const removeIssueItem = (idx) => { if (issueForm.items.length > 1) issueForm.items.splice(idx, 1) }
-// 选择商品自动带出商品档案的分销配送费
+// 选择商品自动带出商品档案的单件分销配送费，并按当前数量计算总额
 const onIssueProductChange = (it, pid) => {
   const p = productOptions.value.find((x) => String(x.id) === String(pid))
-  it.distributionDeliveryFee = p ? Number(p.distributionDeliveryFee || p.distribution_delivery_fee || 0) : 0
+  it.unitDeliveryFee = p ? Number(p.distributionDeliveryFee || p.distribution_delivery_fee || 0) : 0
+  it.distributionDeliveryFee = Number((it.unitDeliveryFee * (it.quantity || 1)).toFixed(2))
+}
+// 数量变化：分销配送费 = 单件配送费 × 数量（自动联动，可再手改）
+const onIssueQuantityChange = (it, v) => {
+  it.distributionDeliveryFee = Number((it.unitDeliveryFee * (Number(v) || 1)).toFixed(2))
 }
 
 const handleIssue = async () => {
@@ -212,6 +220,30 @@ const fetchInventory = async () => {
   } catch (e) { console.error(e) } finally { loading.value = false }
 }
 
+// 水站名称列合并单元格（同一水站连续行合并）
+const invSpanMap = computed(() => {
+  const map = {}
+  const list = inventoryList.value
+  let i = 0
+  while (i < list.length) {
+    const st = list[i].stationId
+    let j = i
+    while (j + 1 < list.length && list[j + 1].stationId === st) j++
+    for (let k = i; k <= j; k++) {
+      map[k] = k === i ? { rowspan: j - i + 1, hidden: false } : { rowspan: 0, hidden: true }
+    }
+    i = j + 1
+  }
+  return map
+})
+const invSpanMethod = ({ rowIndex, columnIndex }) => {
+  if (columnIndex === 0) {
+    const s = invSpanMap.value[rowIndex]
+    if (!s) return
+    return s.hidden ? { rowspan: 0, colspan: 0 } : { rowspan: s.rowspan, colspan: 1 }
+  }
+}
+
 // ---- 发行记录 ----
 const issuanceRows = ref([])
 const issuanceTotal = ref(0)
@@ -227,7 +259,7 @@ const fetchIssuances = async () => {
 // ---- 编辑发行记录 ----
 const editIssuanceVisible = ref(false)
 const editFormRef = ref(null)
-const editForm = reactive({ issuanceId: '', stationName: '', productName: '', quantity: 1, distributionDeliveryFee: 0, remark: '' })
+const editForm = reactive({ issuanceId: '', stationName: '', productName: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0, remark: '' })
 const editRules = {
   quantity: [{ required: true, message: '请输入数量', trigger: 'blur' }],
   distributionDeliveryFee: [{ required: true, message: '请输入分销配送费', trigger: 'blur' }]
@@ -238,8 +270,13 @@ const openEditIssuance = (row) => {
   editForm.productName = row.productName
   editForm.quantity = row.quantity
   editForm.distributionDeliveryFee = row.distributionDeliveryFee
+  editForm.unitDeliveryFee = Number(row.quantity) > 0 ? Number(row.distributionDeliveryFee) / Number(row.quantity) : 0
   editForm.remark = row.remark || ''
   editIssuanceVisible.value = true
+}
+// 编辑时数量变化：配送费随单件配送费联动重算
+const onEditQuantityChange = (v) => {
+  editForm.distributionDeliveryFee = Number((editForm.unitDeliveryFee * (Number(v) || 1)).toFixed(2))
 }
 const resetEditForm = () => { editFormRef.value?.clearValidate() }
 const handleSaveIssuance = async () => {

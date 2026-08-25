@@ -93,7 +93,10 @@ async function getTicketInventory(req, res) {
     const whereSql = 'WHERE ' + where.join(' AND ');
 
     const [rows] = await pool.execute(
-      `SELECT t.station_id, s.station_name, t.product_id, p.product_name, p.specification, COUNT(*) AS available
+      `SELECT t.station_id, s.station_name, t.product_id, p.product_name, p.specification, COUNT(*) AS available,
+              (SELECT ROUND(SUM(i2.distribution_delivery_fee), 2)
+               FROM water_ticket_issuance i2
+               WHERE i2.station_id = t.station_id AND i2.product_id = t.product_id) AS delivery_fee_total
        FROM water_tickets t
        LEFT JOIN sub_stations s ON t.station_id = s.station_id
        LEFT JOIN products p ON t.product_id = p.product_id
@@ -108,7 +111,8 @@ async function getTicketInventory(req, res) {
       productId: r.product_id,
       productName: r.product_name || r.product_id,
       specification: r.specification || '',
-      available: Number(r.available) || 0
+      available: Number(r.available) || 0,
+      deliveryFeeTotal: Number(r.delivery_fee_total) || 0
     }));
     return success(res, { list });
   } catch (e) {
