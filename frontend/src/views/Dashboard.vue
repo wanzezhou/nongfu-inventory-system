@@ -78,7 +78,7 @@ const statCards = computed(() => [
   {
     label: '水站欠款总额',
     value: '¥ ' + formatMoney(summaryData.value.stationDebt),
-    desc: '共 ' + summaryData.value.debtStationCount + ' 个水站',
+    desc: '共 ' + (summaryData.value.stationCount ?? 0) + ' 个水站',
     cls: 'card-orange',
     icon: Wallet
   },

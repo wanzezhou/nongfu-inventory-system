@@ -22,13 +22,14 @@ async function getSummary(req, res) {
     `);
     const monthSales = salesRows[0].monthSales;
 
-    // stationDebt：所有水站current_debt总和
+    // stationDebt：所有水站current_debt总和 + 水站数量
     const [debtRows] = await pool.execute(`
-      SELECT COALESCE(SUM(current_debt), 0) as stationDebt
+      SELECT COALESCE(SUM(current_debt), 0) as stationDebt, COUNT(*) as stationCount
       FROM sub_stations
       WHERE status = 1
     `);
     const stationDebt = debtRows[0].stationDebt;
+    const stationCount = debtRows[0].stationCount;
 
     // pendingOrders（待配送数）：自有员工配送(delivery_type=1)且未分配配送员(worker_id IS NULL)且未取消
     const [pendingRows] = await pool.execute(`
@@ -44,6 +45,7 @@ async function getSummary(req, res) {
       totalInventoryValue,
       monthSales,
       stationDebt,
+      stationCount,
       pendingOrders
     };
 
