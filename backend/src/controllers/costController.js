@@ -26,6 +26,20 @@ const DELIVERY_FIELD = {
   6: 'worker_machine_delivery_fee'
 };
 
+// 把任意日期输入（Date 对象 / ISO 字符串 / 'YYYY-MM-DD'）归一化为 MySQL DATE 可接受的 'YYYY-MM-DD'。
+// 用本地时区取年月日，避免 '2026-08-23T00:00:00+08:00' 被 toISOString 截成前一天的 UTC 偏移问题。
+function toDateOnly(v) {
+  if (v == null) return null
+  const s = String(v)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const d = (v instanceof Date) ? v : new Date(v)
+  if (isNaN(d.getTime())) return null
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 // 时间范围（与营收统计一致，all=无过滤）
 function resolveDateRange(range, startDate, endDate) {
   const now = new Date();
@@ -370,7 +384,7 @@ async function getFixedExpenses(req, res) {
 
     const [countRows] = await pool.execute(`SELECT COUNT(*) AS total FROM fixed_expenses ${where}`, params);
     const [rows] = await pool.execute(
-      `SELECT expense_id, expense_type, amount, expense_date, remark, created_by, created_at
+      `SELECT expense_id, expense_type, amount, DATE_FORMAT(expense_date, '%Y-%m-%d') AS expense_date, remark, created_by, created_at
        FROM fixed_expenses ${where}
        ORDER BY expense_date DESC, created_at DESC
        LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`,
@@ -420,7 +434,7 @@ async function createFixedExpense(req, res) {
     await pool.execute(
       `INSERT INTO fixed_expenses (expense_id, expense_type, amount, expense_date, remark, created_by)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [expenseId, expenseType, amt, expenseDate, remark || null, (req.user && (req.user.username || req.user.id)) || null]
+      [expenseId, expenseType, amt, toDateOnly(expenseDate), remark || null, (req.user && (req.user.username || req.user.id)) || null]
     );
     return success(res, { expenseId }, '录入成功');
   } catch (e) {
@@ -440,7 +454,7 @@ async function updateFixedExpense(req, res) {
 
     const [result] = await pool.execute(
       `UPDATE fixed_expenses SET expense_type=?, amount=?, expense_date=?, remark=?, updated_at=? WHERE expense_id=?`,
-      [expenseType, amt, expenseDate, remark || null, new Date(), id]
+      [expenseType, amt, toDateOnly(expenseDate), remark || null, new Date(), id]
     );
     if (result.affectedRows === 0) return error(res, '记录不存在', 404);
     return success(res, null, '修改成功');
@@ -475,7 +489,7 @@ async function exportFixed(req, res) {
     }
     const where = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
     const [rows] = await pool.execute(
-      `SELECT expense_type, amount, expense_date, remark, created_by FROM fixed_expenses ${where} ORDER BY expense_date DESC`,
+      `SELECT expense_type, amount, DATE_FORMAT(expense_date, '%Y-%m-%d') AS expense_date, remark, created_by FROM fixed_expenses ${where} ORDER BY expense_date DESC`,
       params
     );
     const sheet = rows.map((r) => ({
