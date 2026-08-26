@@ -340,9 +340,9 @@ const ORDER_TYPE_NAME = {
   6: '零售机'
 }
 const CARD_META = {
-  1: { icon: Van, cls: 'card-red', desc: '进货价 + 总包配送费' },
-  2: { icon: Goods, cls: 'card-blue', desc: '分销价 × 数量' },
-  3: { icon: ShoppingCart, cls: 'card-green', desc: '零售价（手动填写）× 数量' },
+  1: { icon: Van, cls: 'card-red', desc: '进货价之和 + 总包配送费（整单）' },
+  2: { icon: Goods, cls: 'card-blue', desc: '分销价之和；水票抵扣：进货价之和 + 总包配送费' },
+  3: { icon: ShoppingCart, cls: 'card-green', desc: '零售价之和（手动填写）' },
   4: { icon: Wallet, cls: 'card-gold', desc: '机台售价 × 销量（手动录入）' },
   5: { icon: Coin, cls: 'card-purple', desc: '进货价 + 总包配送费' },
   6: { icon: Van, cls: 'card-teal', desc: '机台售价 × 销量（手动录入）' }

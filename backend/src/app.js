@@ -17,7 +17,6 @@ const salesmanRoutes = require('./routes/salesmanRoutes');
 const statisticsRoutes = require('./routes/statisticsRoutes');
 const machineStationRoutes = require('./routes/machineStationRoutes');
 const financialRoutes = require('./routes/financialRoutes');
-const costRoutes = require('./routes/costRoutes');
 const waterTicketRoutes = require('./routes/waterTicketRoutes');
 
 const app = express();
@@ -51,7 +50,6 @@ app.use('/api/salesmen', salesmanRoutes);
 app.use('/api/statistics', statisticsRoutes);
 app.use('/api/machine-stations', machineStationRoutes);
 app.use('/api/finance', financialRoutes);
-app.use('/api/cost', costRoutes);
 app.use('/api/water-tickets', waterTicketRoutes);
 
 // 根路由

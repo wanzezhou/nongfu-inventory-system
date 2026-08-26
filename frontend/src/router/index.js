@@ -124,51 +124,6 @@ const routes = [
         meta: { title: '零售机营收', icon: 'Van', requiresAuth: true }
       },
       {
-        path: 'cost',
-        redirect: '/cost/fixed'
-      },
-      {
-        path: 'cost/fixed',
-        name: 'CostFixed',
-        component: () => import('@/views/cost/FixedExpense.vue'),
-        meta: { title: '固定支出', icon: 'Coin', requiresAuth: true }
-      },
-      {
-        path: 'cost/platform',
-        name: 'CostPlatform',
-        component: () => import('@/views/cost/CostList.vue'),
-        props: { orderType: 1 },
-        meta: { title: '官方平台销售成本', icon: 'Van', requiresAuth: true }
-      },
-      {
-        path: 'cost/distribution',
-        name: 'CostDistribution',
-        component: () => import('@/views/cost/CostList.vue'),
-        props: { orderType: 2 },
-        meta: { title: '直营水站销售成本', icon: 'Goods', requiresAuth: true }
-      },
-      {
-        path: 'cost/retail',
-        name: 'CostRetail',
-        component: () => import('@/views/cost/CostList.vue'),
-        props: { orderType: 3 },
-        meta: { title: '线下零售成本', icon: 'ShoppingCart', requiresAuth: true }
-      },
-      {
-        path: 'cost/bulk-machine',
-        name: 'CostBulkMachine',
-        component: () => import('@/views/cost/CostList.vue'),
-        props: { orderType: 4 },
-        meta: { title: '量贩机供货成本', icon: 'Wallet', requiresAuth: true }
-      },
-      {
-        path: 'cost/retail-machine',
-        name: 'CostRetailMachine',
-        component: () => import('@/views/cost/CostList.vue'),
-        props: { orderType: 6 },
-        meta: { title: '零售机供货成本', icon: 'Van', requiresAuth: true }
-      },
-      {
         path: 'water-tickets',
         name: 'WaterTicketManage',
         component: () => import('@/views/waterTicket/WaterTicketManage.vue'),

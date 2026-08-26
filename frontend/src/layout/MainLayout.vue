@@ -111,36 +111,6 @@
             <template #title>零售机</template>
           </el-menu-item>
         </el-sub-menu>
-        <el-sub-menu index="/cost">
-          <template #title>
-            <el-icon><Coin /></el-icon>
-            <span>成本统计</span>
-          </template>
-          <el-menu-item index="/cost/fixed">
-            <el-icon><Coin /></el-icon>
-            <template #title>固定支出</template>
-          </el-menu-item>
-          <el-menu-item index="/cost/platform">
-            <el-icon><Van /></el-icon>
-            <template #title>官方平台销售成本</template>
-          </el-menu-item>
-          <el-menu-item index="/cost/distribution">
-            <el-icon><Goods /></el-icon>
-            <template #title>直营水站销售成本</template>
-          </el-menu-item>
-          <el-menu-item index="/cost/retail">
-            <el-icon><ShoppingCart /></el-icon>
-            <template #title>线下零售成本</template>
-          </el-menu-item>
-          <el-menu-item index="/cost/bulk-machine">
-            <el-icon><Wallet /></el-icon>
-            <template #title>量贩机供货成本</template>
-          </el-menu-item>
-          <el-menu-item index="/cost/retail-machine">
-            <el-icon><Van /></el-icon>
-            <template #title>零售机供货成本</template>
-          </el-menu-item>
-        </el-sub-menu>
         <el-menu-item index="/water-tickets">
           <el-icon><Ticket /></el-icon>
           <template #title>水站返货管理</template>

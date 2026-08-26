@@ -15,15 +15,18 @@ const ORDER_TYPES = {
 const MACHINE_TYPES = { 1: '量贩机', 2: '零售机' };
 
 // ---------------------------------------------------------------------------
-// 营收口径说明（2026-08-25 更新）：
+// 营收口径说明（2026-08-26 更新）：
 //   订单类（orders + order_items，排除已取消订单 canceled_at IS NULL）：
-//     类型1 官方平台销售：营收 = (进货价 + 总包配送费) × 数量
-//     类型2 直营水站销售：营收 = 实收 —— 按分销价(计价1) = 分销价×数量；按水票抵扣(计价2) = 进货价×数量
-//     类型3 线下零售：    营收 = 零售价 × 数量（下单时手动填写）
+//     类型1 官方平台销售：营收 = 订单总包配送费(o.delivery_fee，整单一笔) + Σ(进货价×数量)
+//     类型2 直营水站销售：
+//        计价方式=分销价(1)：营收 = Σ(分销价×数量)
+//        计价方式=水票抵扣(2)：营收 = 订单总包配送费(o.delivery_fee) + Σ(进货价×数量)
+//     类型3 线下零售：    营收 = Σ(零售价×数量)（下单时手动填写）
 //   机台类（machine_sales 手动录入，按销售日期统计）：
 //     类型4 量贩机：营收 = 机台售价 × 销量
 //     类型6 零售机：营收 = 机台售价 × 销量
 //   类型5 线下水站返货已删除（2026-08-25），业务转为【水站返货管理】水票机制
+//   注：总包配送费仅对类型1、类型2(水票抵扣)计入，且为订单级整单一笔（不按件累加）。
 // ---------------------------------------------------------------------------
 
 // 财务版时间范围（闭区间 [start, end]，end 含当天）
@@ -58,14 +61,22 @@ function resolveDateRange(range, startDate, endDate) {
   }
 }
 
-// 订单类营收表达式（按订单类型返回 SQL 表达式；5 已删除；type2 按计价方式取实收）
-function revenueExpr() {
+// 订单类「件部分」营收表达式（不含总包配送费；总包配送费在订单聚合层加一次，避免按件重复累加）
+function itemRevenueExpr() {
   return `(CASE o.order_type
-      WHEN 1 THEN (oi.purchase_price + oi.total_delivery_fee) * oi.quantity
+      WHEN 1 THEN oi.purchase_price * oi.quantity
       WHEN 2 THEN IF(oi.pricing_type = 2, oi.purchase_price, oi.wholesale_price) * oi.quantity
       WHEN 3 THEN oi.retail_price * oi.quantity
       WHEN 4 THEN oi.purchase_price * oi.quantity
       WHEN 6 THEN oi.purchase_price * oi.quantity
+      ELSE 0 END)`;
+}
+
+// 订单级总包配送费（仅类型1、类型2且计价=水票抵扣计入；每个订单一笔，聚合时用 MAX 取一次，不按件累加）
+function orderDeliveryFeeExpr() {
+  return `(CASE
+      WHEN o.order_type = 1 THEN MAX(o.delivery_fee)
+      WHEN o.order_type = 2 AND MAX(oi.pricing_type) = 2 THEN MAX(o.delivery_fee)
       ELSE 0 END)`;
 }
 
@@ -93,7 +104,7 @@ async function getFinanceOrders(req, res) {
       params.push(start, end);
     }
     const where = 'WHERE ' + parts.join(' AND ');
-    const expr = revenueExpr();
+    const expr = itemRevenueExpr();
 
     const [countRows] = await pool.execute(
       `SELECT COUNT(DISTINCT o.order_id) AS total FROM orders o JOIN order_items oi ON o.order_id = oi.order_id ${where}`,
@@ -104,7 +115,7 @@ async function getFinanceOrders(req, res) {
       `SELECT o.order_id, o.order_type, o.customer_name, o.customer_phone, o.delivery_type,
               o.payment_status, o.created_at, o.canceled_at,
               SUM(oi.quantity) AS total_qty,
-              ROUND(SUM(${expr}), 2) AS revenue
+              ROUND(SUM(${expr}) + ${orderDeliveryFeeExpr()}, 2) AS revenue
        FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
        ${where}
        GROUP BY o.order_id, o.order_type, o.customer_name, o.customer_phone, o.delivery_type, o.payment_status, o.created_at, o.canceled_at
@@ -138,7 +149,7 @@ async function getFinanceSummary(req, res) {
   try {
     const { range = 'month', startDate, endDate, orderType } = req.query;
     const { start, end } = resolveDateRange(range, startDate, endDate);
-    const expr = revenueExpr();
+    const expr = itemRevenueExpr();
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
     const isOrderType = wantType !== null && [1, 2, 3, 4, 6].includes(wantType);
     const isMachineType = wantType === 4 || wantType === 6;
@@ -157,11 +168,17 @@ async function getFinanceSummary(req, res) {
       orderParams.push(start, end);
     }
     const orderWhere = isMachineType ? 'WHERE 1=0' : 'WHERE ' + orderParts.join(' AND ');
+    // 先按订单聚合（件部分求和 + 订单级总包配送费加一次），再按类型汇总，避免配送费按件/按行重复累加
     const [orderRows] = await pool.execute(
-      `SELECT o.order_type, ROUND(SUM(${expr}), 2) AS revenue
-       FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
-       ${orderWhere}
-       GROUP BY o.order_type`,
+      `SELECT t.order_type, ROUND(SUM(t.order_revenue), 2) AS revenue
+       FROM (
+         SELECT o.order_id, o.order_type,
+                SUM(${expr}) + ${orderDeliveryFeeExpr()} AS order_revenue
+         FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
+         ${orderWhere}
+         GROUP BY o.order_id, o.order_type
+       ) t
+       GROUP BY t.order_type`,
       orderParams
     );
 
@@ -372,7 +389,7 @@ async function exportFinance(req, res) {
   try {
     const { range = 'month', startDate, endDate, orderType } = req.query;
     const { start, end } = resolveDateRange(range, startDate, endDate);
-    const expr = revenueExpr();
+    const expr = itemRevenueExpr();
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
     const isOrderType = wantType !== null && [1, 2, 3, 4, 6].includes(wantType);
     const isMachineType = wantType === 4 || wantType === 6;
@@ -393,7 +410,7 @@ async function exportFinance(req, res) {
     const orderWhere = 'WHERE ' + oParts.join(' AND ');
     const [orderRows] = await pool.execute(
       `SELECT o.order_id, o.order_type, o.customer_name, o.customer_phone, o.payment_status,
-              o.created_at, SUM(oi.quantity) AS total_qty, ROUND(SUM(${expr}), 2) AS revenue
+              o.created_at, SUM(oi.quantity) AS total_qty, ROUND(SUM(${expr}) + ${orderDeliveryFeeExpr()}, 2) AS revenue
        FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
        ${orderWhere}
        GROUP BY o.order_id, o.order_type, o.customer_name, o.customer_phone, o.payment_status, o.created_at
