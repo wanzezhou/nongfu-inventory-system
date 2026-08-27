@@ -334,9 +334,9 @@ async function createOrder(req, res) {
           break;
       }
 
-      // 行级小计：水票抵扣件数按进货价，其余按分销价
+      // 行级小计：水票抵扣件数不计金额，仅未抵扣件数按分销价（2026-08-27）
       const subtotal = isStationType && ticketQty > 0
-        ? product.purchase_price * ticketQty + unitPrice * (quantity - ticketQty)
+        ? unitPrice * (quantity - ticketQty)
         : unitPrice * quantity;
 
       // 快照价：水站分销(2)/线下零售(3) 的单价由前端手动填写，快照需用手填值，
@@ -819,7 +819,7 @@ async function updateOrder(req, res) {
       }
 
       const subtotal = isStationType && ticketQty > 0
-        ? product.purchase_price * ticketQty + unitPrice * (quantity - ticketQty)
+        ? unitPrice * (quantity - ticketQty)
         : unitPrice * quantity;
       order_amount += subtotal;
       // 配送费暂不计算（delivery_fee 保持 0，2026-08-27）

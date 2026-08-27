@@ -380,7 +380,7 @@
               <template #default="{ row }">
                 <span class="subtotal-text">¥{{ formatMoney(calculateItemSubtotal(row)) }}</span>
                 <div v-if="orderForm.orderType === 2 && row.useTicket && row.ticketQty > 0" class="ticket-sub">
-                  <span class="ticket-left">水票 {{ row.ticketQty }} 件 × 进货价</span>
+                  <span class="ticket-left">水票 {{ row.ticketQty }} 件（不计金额）</span>
                 </div>
               </template>
             </el-table-column>
@@ -1153,11 +1153,6 @@ const handleProductChange = (index) => {
   calculateDeliveryFee()
 }
 
-const getProductField = (productId, field) => {
-  const product = productOptions.value.find(p => p.id === productId)
-  return product ? product[field] || 0 : 0
-}
-
 const getPriceColumnLabel = () => {
   switch (Number(orderForm.orderType)) {
     case 2:
@@ -1169,11 +1164,10 @@ const getPriceColumnLabel = () => {
   }
 }
 
-// 行级小计：类型2 水票抵扣件数按进货价 + 剩余件数按分销价；类型3 零售价×数量
+// 行级小计：类型2 水票抵扣件数不计金额，仅未抵扣件数按分销价；类型3 零售价×数量
 const calculateItemSubtotal = (item) => {
   if (Number(orderForm.orderType) === 2 && item.useTicket && item.ticketQty > 0) {
-    const purchase = getProductField(item.productId, 'purchasePrice')
-    return purchase * item.ticketQty + item.unitPrice * (item.quantity - item.ticketQty)
+    return item.unitPrice * (item.quantity - item.ticketQty)
   }
   return item.quantity * item.unitPrice || 0
 }
