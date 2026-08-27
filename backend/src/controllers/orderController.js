@@ -173,6 +173,7 @@ async function getOrderById(req, res) {
       workerWholesaleDeliveryFee: Number(item.worker_wholesale_delivery_fee) || 0,
       workerMachineDeliveryFee: Number(item.worker_machine_delivery_fee) || 0,
       pricingType: Number(item.pricing_type) || 1,
+      ticketQty: Number(item.ticket_qty) || 0,
       subtotal: Number(item.subtotal) || 0
     }));
 
@@ -234,8 +235,11 @@ async function createOrder(req, res) {
       return error(res, '订单类型无效', 400);
     }
 
-    // 直营水站销售(2) 计价方式：price-分销价（默认） / ticket-水票抵扣（整单按进货价，核销水票）
-    const isTicketPricing = Number(actualOrderType) === 2 && String(req.body.pricing_type || req.body.pricingType || 'price').toLowerCase() === 'ticket';
+    // 直营水站销售(2)：行级水票抵扣（2026-08-27）
+    //   每行通过 use_ticket/useTicket + ticket_qty/ticketQty 指定抵扣件数：
+    //   抵扣件数×进货价 + 剩余件数×分销价；未勾选/张数为0 的行整行按分销价
+    const isStationType = Number(actualOrderType) === 2;
+    let hasTicketDeduct = false; // 是否有任意行使用水票抵扣（营收口径：整单加总包配送费）
 
     // 校验配送类型
     const validDeliveryTypes = [1, 2, 3];
@@ -296,6 +300,21 @@ async function createOrder(req, res) {
         return error(res, '商品数量必须为正数', 400);
       }
 
+      // 直营水站销售：行级水票抵扣张数（use_ticket 勾选后生效，上限=数量，超出部分按分销价）
+      let ticketQty = 0;
+      if (isStationType) {
+        const useTicket = item.use_ticket !== undefined ? item.use_ticket : item.useTicket;
+        if (useTicket) {
+          const rawQty = item.ticket_qty !== undefined ? item.ticket_qty : item.ticketQty;
+          ticketQty = Math.max(0, parseInt(rawQty, 10) || 0);
+          if (ticketQty > quantity) {
+            await connection.rollback();
+            return error(res, `商品「${product.product_name}」水票抵扣张数(${ticketQty})不能大于数量(${quantity})`, 400);
+          }
+          if (ticketQty > 0) hasTicketDeduct = true;
+        }
+      }
+
       // 根据订单类型计算商品单价
       let unitPrice = 0;
       let deliveryFeePerUnit = 0;
@@ -305,15 +324,13 @@ async function createOrder(req, res) {
           unitPrice = product.purchase_price;
           deliveryFeePerUnit = product.worker_retail_delivery_fee;
           break;
-        case 2: // 直营水站销售：分销价（水票抵扣=进货价）+ 工人水站配送费
-          unitPrice = isTicketPricing
-            ? product.purchase_price
-            : (itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price);
+        case 2: // 直营水站销售：行级混合（水票抵扣件数按进货价 + 剩余件数按分销价）+ 工人水站配送费
+          unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price;
           deliveryFeePerUnit = product.worker_wholesale_delivery_fee;
           break;
-        case 3: // 线下零售：零售价 + 工人零售配送费（无需配送时为0）
+        case 3: // 线下零售：零售价 + 工人零售配送费（仅自有员工配送计费，2026-08-27）
           unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price;
-          deliveryFeePerUnit = Number(actualDeliveryType) === 3 ? 0 : product.worker_retail_delivery_fee;
+          deliveryFeePerUnit = Number(actualDeliveryType) === 1 ? product.worker_retail_delivery_fee : 0;
           break;
         case 4: // 量贩机供货：进货价 + 工人零售机配送费
           unitPrice = product.purchase_price;
@@ -325,7 +342,10 @@ async function createOrder(req, res) {
           break;
       }
 
-      const subtotal = unitPrice * quantity;
+      // 行级小计：水票抵扣件数按进货价，其余按分销价
+      const subtotal = isStationType && ticketQty > 0
+        ? product.purchase_price * ticketQty + unitPrice * (quantity - ticketQty)
+        : unitPrice * quantity;
       const itemDeliveryFee = deliveryFeePerUnit * quantity;
 
       // 快照价：水站分销(2)/线下零售(3) 的单价由前端手动填写，快照需用手填值，
@@ -355,24 +375,32 @@ async function createOrder(req, res) {
         worker_retail_delivery_fee: product.worker_retail_delivery_fee,
         worker_wholesale_delivery_fee: product.worker_wholesale_delivery_fee,
         worker_machine_delivery_fee: product.worker_machine_delivery_fee,
-        pricing_type: Number(actualOrderType) === 2 && isTicketPricing ? 2 : 1,
+        pricing_type: isStationType && ticketQty > 0 ? 2 : 1,
+        ticket_qty: isStationType ? ticketQty : 0,
         subtotal: subtotal
       });
     }
 
-    // 水票抵扣模式：校验水站可用水票覆盖整单（每商品需 ≥ 数量张），并收集待核销票
+    // 直营水站销售：行级水票校验（抵扣件数 ≤ 可用票数），聚合后一次取票并收集待核销票
     const ticketUsage = {};
-    if (Number(actualOrderType) === 2 && isTicketPricing) {
+    if (isStationType && hasTicketDeduct) {
+      const ticketDemand = {};
       for (const item of actualItems) {
         const pid = item.product_id || item.productId;
-        const quantity = Number(item.quantity);
+        const useTicket = item.use_ticket !== undefined ? item.use_ticket : item.useTicket;
+        if (useTicket) {
+          const tq = Math.max(0, parseInt(item.ticket_qty !== undefined ? item.ticket_qty : item.ticketQty, 10) || 0);
+          if (tq > 0) ticketDemand[pid] = (ticketDemand[pid] || 0) + tq;
+        }
+      }
+      for (const [pid, need] of Object.entries(ticketDemand)) {
         const [tickets] = await connection.execute(
-          `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(quantity, 10)}`,
+          `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
           [actualStationId, pid]
         );
-        if (tickets.length < quantity) {
+        if (tickets.length < need) {
           await connection.rollback();
-          return error(res, `水站水票不足：商品「${productMap[pid].product_name}」需要 ${quantity} 张，可用 ${tickets.length} 张`, 400);
+          return error(res, `水站水票不足：商品「${productMap[pid].product_name}」需抵扣 ${need} 张，可用 ${tickets.length} 张（剩余数量按分销价计价）`, 400);
         }
         ticketUsage[pid] = tickets.map(t => t.ticket_id);
       }
@@ -421,8 +449,8 @@ async function createOrder(req, res) {
         order_id, product_id, quantity, unit_price,
         purchase_price, wholesale_price, retail_price, machine_price,
         total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee,
-        worker_wholesale_delivery_fee, worker_machine_delivery_fee, pricing_type, subtotal
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        worker_wholesale_delivery_fee, worker_machine_delivery_fee, pricing_type, ticket_qty, subtotal
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
       const itemValues = [
         orderId,
@@ -439,6 +467,7 @@ async function createOrder(req, res) {
         item.worker_wholesale_delivery_fee,
         item.worker_machine_delivery_fee,
         item.pricing_type || 1,
+        item.ticket_qty || 0,
         item.subtotal
       ];
 
@@ -464,8 +493,8 @@ async function createOrder(req, res) {
       );
     }
 
-    // 水票抵扣模式：核销水票（status 1→2，关联订单）
-    if (Number(actualOrderType) === 2 && isTicketPricing) {
+    // 直营水站销售：核销水票（status 1→2，关联订单；仅核销实际抵扣张数）
+    if (isStationType && hasTicketDeduct) {
       const ticketIds = Object.values(ticketUsage).flat();
       if (ticketIds.length > 0) {
         const placeholders = ticketIds.map(() => '?').join(',');
@@ -764,10 +793,12 @@ async function updateOrder(req, res) {
     const productMap = {};
     for (const p of productRows) productMap[p.product_id] = p;
 
-    // 计算新金额
+    // 计算新金额（直营水站销售：行级水票抵扣，同创建逻辑）
     let order_amount = 0;
     let delivery_fee = 0;
     const orderItems = [];
+    const isStationType = Number(actualOrderType) === 2;
+    let hasTicketDeduct = false;
 
     for (const item of actualItems) {
       const pid = item.product_id || item.productId;
@@ -776,6 +807,16 @@ async function updateOrder(req, res) {
       const quantity = Number(item.quantity);
       const itemUnitPrice = item.unit_price !== undefined ? Number(item.unit_price) : (item.unitPrice !== undefined ? Number(item.unitPrice) : null);
 
+      let ticketQty = 0;
+      if (isStationType) {
+        const useTicket = item.use_ticket !== undefined ? item.use_ticket : item.useTicket;
+        if (useTicket) {
+          ticketQty = Math.max(0, parseInt(item.ticket_qty !== undefined ? item.ticket_qty : item.ticketQty, 10) || 0);
+          if (ticketQty > quantity) { await connection.rollback(); return error(res, `商品「${product.product_name}」水票抵扣张数(${ticketQty})不能大于数量(${quantity})`, 400); }
+          if (ticketQty > 0) hasTicketDeduct = true;
+        }
+      }
+
       let unitPrice = 0;
       let deliveryFeePerUnit = 0;
       switch (Number(actualOrderType)) {
@@ -783,12 +824,14 @@ async function updateOrder(req, res) {
         case 2: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price;
           if (Number(actualDeliveryType) === 2) deliveryFeePerUnit = product.distribution_delivery_fee;
           else if (Number(actualDeliveryType) === 1) deliveryFeePerUnit = product.worker_wholesale_delivery_fee; break;
-        case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; deliveryFeePerUnit = Number(actualDeliveryType) === 3 ? 0 : product.worker_retail_delivery_fee; break;
+        case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; deliveryFeePerUnit = Number(actualDeliveryType) === 1 ? product.worker_retail_delivery_fee : 0; break;
         case 4: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
         case 6: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
       }
 
-      const subtotal = unitPrice * quantity;
+      const subtotal = isStationType && ticketQty > 0
+        ? product.purchase_price * ticketQty + unitPrice * (quantity - ticketQty)
+        : unitPrice * quantity;
       order_amount += subtotal;
       delivery_fee += deliveryFeePerUnit * quantity;
 
@@ -802,7 +845,7 @@ async function updateOrder(req, res) {
           ? itemUnitPrice
           : product.retail_price;
 
-      orderItems.push({ product_id: pid, quantity, unit_price: unitPrice, purchase_price: product.purchase_price, wholesale_price: snapshotWholesale, retail_price: snapshotRetail, machine_price: product.machine_price, total_delivery_fee: product.total_delivery_fee, distribution_delivery_fee: product.distribution_delivery_fee, worker_retail_delivery_fee: product.worker_retail_delivery_fee, worker_wholesale_delivery_fee: product.worker_wholesale_delivery_fee, worker_machine_delivery_fee: product.worker_machine_delivery_fee, subtotal });
+      orderItems.push({ product_id: pid, quantity, unit_price: unitPrice, purchase_price: product.purchase_price, wholesale_price: snapshotWholesale, retail_price: snapshotRetail, machine_price: product.machine_price, total_delivery_fee: product.total_delivery_fee, distribution_delivery_fee: product.distribution_delivery_fee, worker_retail_delivery_fee: product.worker_retail_delivery_fee, worker_wholesale_delivery_fee: product.worker_wholesale_delivery_fee, worker_machine_delivery_fee: product.worker_machine_delivery_fee, pricing_type: isStationType && ticketQty > 0 ? 2 : 1, ticket_qty: isStationType ? ticketQty : 0, subtotal });
     }
 
     const total_receivable = order_amount + delivery_fee;
@@ -816,8 +859,8 @@ async function updateOrder(req, res) {
 
     // 插入新明细并处理库存
     for (const item of orderItems) {
-      await connection.execute(`INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, pricing_type, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, item.product_id, item.quantity, item.unit_price, item.purchase_price, item.wholesale_price, item.retail_price, item.machine_price, item.total_delivery_fee, item.distribution_delivery_fee, item.worker_retail_delivery_fee, item.worker_wholesale_delivery_fee, item.worker_machine_delivery_fee, 1, item.subtotal]);
+      await connection.execute(`INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, pricing_type, ticket_qty, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, item.product_id, item.quantity, item.unit_price, item.purchase_price, item.wholesale_price, item.retail_price, item.machine_price, item.total_delivery_fee, item.distribution_delivery_fee, item.worker_retail_delivery_fee, item.worker_wholesale_delivery_fee, item.worker_machine_delivery_fee, item.pricing_type || 1, item.ticket_qty || 0, item.subtotal]);
 
       // 库存处理
       const [invRows] = await connection.execute('SELECT quantity FROM inventory WHERE product_id = ? FOR UPDATE', [item.product_id]);

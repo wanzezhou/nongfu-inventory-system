@@ -20,6 +20,7 @@ function formatInventory(item, baseUrl) {
     unit: item.unit,
     category: item.category,
     stock: Number(item.quantity) || 0,
+    purchasePrice: Number(item.purchase_price) || 0,
     lastStockInTime: item.last_in_time,
     lastStockOutTime: item.last_out_time,
     updatedAt: item.updated_at,
@@ -100,7 +101,23 @@ async function getInventoryList(req, res) {
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     const formattedList = list.map(item => formatInventory(item, baseUrl));
 
-    return pagination(res, formattedList, total, currentPage, size);
+    // 库存价值合计（进货价×库存数量，全量统计，受搜索/分类过滤联动）
+    const sumSql = `
+      SELECT COALESCE(SUM(p.purchase_price * i.quantity), 0) AS total_value
+      FROM products p
+      LEFT JOIN inventory i ON p.product_id = i.product_id
+      ${whereClause}
+    `;
+    const [sumResult] = await pool.execute(sumSql, params);
+    const totalValue = Math.round(Number(sumResult[0].total_value) * 100) / 100;
+
+    return success(res, {
+      list: formattedList,
+      total,
+      page: currentPage,
+      pageSize: size,
+      summary: { totalValue }
+    });
   } catch (err) {
     console.error('获取库存列表失败:', err);
     return error(res, '获取库存列表失败: ' + err.message);

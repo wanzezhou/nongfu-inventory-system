@@ -61,6 +61,17 @@
       </el-form>
     </el-card>
 
+    <el-card class="summary-card" shadow="never">
+      <div class="summary-item">
+        <div class="summary-label">
+          <el-icon><Wallet /></el-icon>
+          库存价值
+        </div>
+        <div class="summary-value">¥{{ formatMoney(inventorySummary.totalValue) }}</div>
+        <div class="summary-tip">按商品档案进货价 × 当前库存数量合计</div>
+      </div>
+    </el-card>
+
     <el-card class="table-card" shadow="never">
       <el-table
         :data="tableData"
@@ -353,7 +364,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Plus, Minus, Edit, Picture, Download, Upload } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Minus, Edit, Picture, Download, Upload, Wallet } from '@element-plus/icons-vue'
 import { getInventoryList, stockIn, stockOut } from '@/api/inventory'
 import { getProductList, getCategoryList } from '@/api/product'
 import { getAllSuppliers } from '@/api/supplier'
@@ -405,6 +416,12 @@ const tableData = ref([])
 const categoryList = ref([])
 const productOptions = ref([])
 const supplierOptions = ref([])
+const inventorySummary = ref({ totalValue: 0 })
+
+const formatMoney = (val) => {
+  const num = Number(val) || 0
+  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
 const stockInForm = reactive({
   productId: null,
@@ -489,11 +506,13 @@ const fetchData = async () => {
     if (res.data) {
       tableData.value = res.data.list || res.data || []
       pagination.total = res.data.total || tableData.value.length
+      inventorySummary.value = res.data.summary || { totalValue: 0 }
     }
   } catch (error) {
     console.error('获取库存列表失败:', error)
     tableData.value = generateMockData()
     pagination.total = 35
+    inventorySummary.value = { totalValue: 0 }
   } finally {
     loading.value = false
   }
@@ -793,6 +812,39 @@ onMounted(() => {
 .filter-card {
   margin-bottom: 16px;
   border-radius: 8px;
+}
+
+.summary-card {
+  margin-bottom: 16px;
+  border-radius: 8px;
+}
+
+.summary-item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.summary-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #606266;
+  font-weight: 600;
+}
+
+.summary-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #409eff;
+  line-height: 1.2;
+}
+
+.summary-tip {
+  font-size: 12px;
+  color: #909399;
 }
 
 .filter-form {

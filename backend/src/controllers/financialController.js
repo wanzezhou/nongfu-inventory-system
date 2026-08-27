@@ -15,18 +15,19 @@ const ORDER_TYPES = {
 const MACHINE_TYPES = { 1: '量贩机', 2: '零售机' };
 
 // ---------------------------------------------------------------------------
-// 营收口径说明（2026-08-26 更新）：
+// 营收口径说明（2026-08-27 更新）：
 //   订单类（orders + order_items，排除已取消订单 canceled_at IS NULL）：
 //     类型1 官方平台销售：营收 = 订单总包配送费(o.delivery_fee，整单一笔) + Σ(进货价×数量)
-//     类型2 直营水站销售：
-//        计价方式=分销价(1)：营收 = Σ(分销价×数量)
-//        计价方式=水票抵扣(2)：营收 = 订单总包配送费(o.delivery_fee) + Σ(进货价×数量)
+//     类型2 直营水站销售（行级水票抵扣）：
+//        行内 ticket_qty>0（水票抵扣件数）：营收 = Σ(进货价×抵扣件数 + 分销价×剩余件数)
+//        行内 ticket_qty=0（旧数据整单抵扣 pricing_type=2）：营收 = Σ(进货价×数量)
+//        订单总包配送费(o.delivery_fee)：存在任意水票抵扣行（MAX(pricing_type)=2）时整单加一次
 //     类型3 线下零售：    营收 = Σ(零售价×数量)（下单时手动填写）
 //   机台类（machine_sales 手动录入，按销售日期统计）：
 //     类型4 量贩机：营收 = 机台售价 × 销量
 //     类型6 零售机：营收 = 机台售价 × 销量
 //   类型5 线下水站返货已删除（2026-08-25），业务转为【水站返货管理】水票机制
-//   注：总包配送费仅对类型1、类型2(水票抵扣)计入，且为订单级整单一笔（不按件累加）。
+//   注：总包配送费仅对类型1、类型2(含水票抵扣行)计入，且为订单级整单一笔（不按件累加）。
 // ---------------------------------------------------------------------------
 
 // 财务版时间范围（闭区间 [start, end]，end 含当天）
@@ -62,10 +63,14 @@ function resolveDateRange(range, startDate, endDate) {
 }
 
 // 订单类「件部分」营收表达式（不含总包配送费；总包配送费在订单聚合层加一次，避免按件重复累加）
+// 类型2 行级水票抵扣：ticket_qty>0 -> 抵扣件数按进货价 + 剩余件数按分销价；
+//   旧数据兼容：ticket_qty=0 且 pricing_type=2（整单抵扣）-> 全量按进货价
 function itemRevenueExpr() {
   return `(CASE o.order_type
       WHEN 1 THEN oi.purchase_price * oi.quantity
-      WHEN 2 THEN IF(oi.pricing_type = 2, oi.purchase_price, oi.wholesale_price) * oi.quantity
+      WHEN 2 THEN IF(oi.ticket_qty > 0,
+                     oi.purchase_price * oi.ticket_qty + oi.wholesale_price * (oi.quantity - oi.ticket_qty),
+                     IF(oi.pricing_type = 2, oi.purchase_price, oi.wholesale_price) * oi.quantity)
       WHEN 3 THEN oi.retail_price * oi.quantity
       WHEN 4 THEN oi.purchase_price * oi.quantity
       WHEN 6 THEN oi.purchase_price * oi.quantity
