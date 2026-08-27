@@ -79,8 +79,8 @@ function itemRevenueExpr() {
                      (oi.purchase_price + oi.total_delivery_fee) * oi.ticket_qty + oi.wholesale_price * (oi.quantity - oi.ticket_qty),
                      IF(oi.pricing_type = 2, (oi.purchase_price + oi.total_delivery_fee), oi.wholesale_price) * oi.quantity)
       WHEN 3 THEN oi.retail_price * oi.quantity
-      WHEN 4 THEN oi.purchase_price * oi.quantity
-      WHEN 6 THEN oi.purchase_price * oi.quantity
+      WHEN 4 THEN 0 -- 量贩机供货：不计算商品价格，营收按机台销量统计（2026-08-27）
+      WHEN 6 THEN 0 -- 零售机供货：不计算商品价格，营收按机台销量统计（2026-08-27）
       ELSE 0 END)`;
 }
 
@@ -158,14 +158,14 @@ async function getFinanceSummary(req, res) {
     const isOrderType = wantType !== null && [1, 2, 3, 4, 6].includes(wantType);
     const isMachineType = wantType === 4 || wantType === 6;
 
-    // 订单类：按订单类型分组（机台类型 4/6 时跳过订单；range=all 无时间过滤）
+    // 订单类：按订单类型分组（机台类型 4/6 时跳过订单；4/6 营收只来自机台销量 machine_sales，2026-08-27；range=all 无时间过滤）
     const orderParts = isMachineType ? [] : ['o.canceled_at IS NULL'];
     const orderParams = [];
     if (isOrderType) {
       orderParts.push('o.order_type = ?');
       orderParams.push(wantType);
     } else if (!isMachineType) {
-      orderParts.push('o.order_type IN (1,2,3,4,6)');
+      orderParts.push('o.order_type IN (1,2,3)');
     }
     if (start && end) {
       orderParts.push('DATE(o.created_at) BETWEEN ? AND ?');

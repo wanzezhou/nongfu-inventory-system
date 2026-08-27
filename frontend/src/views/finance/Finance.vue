@@ -574,9 +574,8 @@ const calcOrderRevenue = (order) => {
       else total += wp * q
     } else if (t === 3) {
       total += rp * q
-    } else {
-      total += pp * q
     }
+    // 类型4/6 机台供货：不计算商品价格，营收按机台销量统计
   }
   return Math.round(total * 100) / 100
 }
