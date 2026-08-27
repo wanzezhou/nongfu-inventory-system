@@ -60,7 +60,11 @@
                 <td>{{ item.spec }}</td>
                 <td>{{ item.unit || '-' }}</td>
                 <td align="center">{{ item.quantity }}</td>
-                <td align="right">{{ formatMoney(item.unitPrice) }}</td>
+                <!-- 水票抵扣商品：不显示单价，显示“水票抵扣”（2026-08-27） -->
+                <td align="center">
+                  <template v-if="isTicketItem(item)">水票抵扣</template>
+                  <template v-else>{{ formatMoney(item.unitPrice) }}</template>
+                </td>
                 <td align="right">{{ formatMoney(item.subtotal) }}</td>
                 <td></td>
               </tr>
@@ -130,6 +134,11 @@ watch(() => props.visible, (val) => {
 const formatMoney = (value) => {
   if (!value && value !== 0) return '0.00'
   return Number(value).toFixed(2)
+}
+
+// 水票抵扣行：直营水站销售(类型2) 且行内使用水票抵扣（pricingType=2 或 ticketQty>0）
+const isTicketItem = (item) => {
+  return Number(props.order.orderType) === 2 && (Number(item.pricingType) === 2 || Number(item.ticketQty) > 0)
 }
 
 const totalQuantity = computed(() => {
