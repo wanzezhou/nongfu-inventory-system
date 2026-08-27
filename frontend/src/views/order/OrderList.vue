@@ -107,7 +107,9 @@
         </el-table-column>
         <el-table-column prop="totalAmount" label="应收总额" width="100" align="right">
           <template #default="{ row }">
-            <span class="total-text">¥{{ formatMoney(row.totalAmount) }}</span>
+            <!-- 官方平台销售不显示应收总额（2026-08-27） -->
+            <span v-if="row.orderType !== 1" class="total-text">¥{{ formatMoney(row.totalAmount) }}</span>
+            <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="下单时间" width="170" />
@@ -529,7 +531,7 @@
             <span>订单金额：</span>
             <span>¥{{ formatMoney(currentOrder.orderAmount) }}</span>
           </div>
-          <div class="amount-row total">
+          <div class="amount-row total" v-if="currentOrder.orderType !== 1">
             <span>应收总额：</span>
             <span>¥{{ formatMoney(currentOrder.totalAmount) }}</span>
           </div>
