@@ -440,9 +440,9 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="配送费">
-              <span class="delivery-fee-text">¥{{ formatMoney(orderForm.deliveryFee) }}</span>
-              <span class="unit-label">（自动按商品配送费×数量计算）</span>
+            <el-form-item v-if="false" label="配送费" prop="deliveryFee">
+              <el-input-number v-model="orderForm.deliveryFee" :min="0" :precision="2" :step="1" />
+              <span class="unit-label">元</span>
             </el-form-item>
           </el-form>
         </div>
@@ -1176,38 +1176,9 @@ const calculateItemSubtotal = (item) => {
   return item.quantity * item.unitPrice || 0
 }
 
-// 根据订单类型和配送方式自动计算配送费（与后端一致）：
-//   类型1 自有员工配送：工人零售配送费
-//   类型2 水站配送：工人水站配送费
-//   类型3 仅自有员工配送计费（工人零售配送费），水站配送/无需配送=0
-//   类型4/6 机台配送：工人零售机配送费
+// 2026-08-27：所有订单类型暂不考虑配送费（统一为 0），保留函数以便切换类型/数量时刷新
 const calculateDeliveryFee = () => {
-  const deliveryType = Number(orderForm.deliveryMethod)
-  const orderType = Number(orderForm.orderType)
-  let total = 0
-  for (const item of orderForm.items) {
-    if (!item.productId || !item.quantity) continue
-    let feePerUnit = 0
-    switch (orderType) {
-      case 1:
-        feePerUnit = getProductField(item.productId, 'workerRetailDeliveryFee')
-        break
-      case 2:
-        feePerUnit = getProductField(item.productId, 'workerWholesaleDeliveryFee')
-        break
-      case 3:
-        feePerUnit = deliveryType === 1 ? getProductField(item.productId, 'workerRetailDeliveryFee') : 0
-        break
-      case 4:
-      case 6:
-        feePerUnit = getProductField(item.productId, 'workerMachineDeliveryFee')
-        break
-      default:
-        feePerUnit = 0
-    }
-    total += feePerUnit * item.quantity
-  }
-  orderForm.deliveryFee = Math.round(total * 100) / 100
+  orderForm.deliveryFee = 0
 }
 
 // 订单类型变更时设置默认配送方式

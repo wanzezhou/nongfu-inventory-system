@@ -284,7 +284,7 @@ async function createOrder(req, res) {
       }
     }
 
-    // 计算订单金额和配送费
+    // 计算订单金额（2026-08-27：所有订单类型暂不考虑配送费，delivery_fee 恒为 0）
     let order_amount = 0;
     let delivery_fee = 0;
     const orderItems = [];
@@ -315,30 +315,24 @@ async function createOrder(req, res) {
         }
       }
 
-      // 根据订单类型计算商品单价
+      // 根据订单类型计算商品单价（配送费统一不计算，2026-08-27）
       let unitPrice = 0;
-      let deliveryFeePerUnit = 0;
 
       switch (Number(actualOrderType)) {
-        case 1: // 线上平台销售：进货价 + 工人零售配送费
+        case 1: // 线上平台销售：进货价
           unitPrice = product.purchase_price;
-          deliveryFeePerUnit = product.worker_retail_delivery_fee;
           break;
-        case 2: // 直营水站销售：行级混合（水票抵扣件数按进货价 + 剩余件数按分销价）+ 工人水站配送费
+        case 2: // 直营水站销售：行级混合（水票抵扣件数按进货价 + 剩余件数按分销价）
           unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price;
-          deliveryFeePerUnit = product.worker_wholesale_delivery_fee;
           break;
-        case 3: // 线下零售：零售价 + 工人零售配送费（仅自有员工配送计费，2026-08-27）
+        case 3: // 线下零售：零售价
           unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price;
-          deliveryFeePerUnit = Number(actualDeliveryType) === 1 ? product.worker_retail_delivery_fee : 0;
           break;
-        case 4: // 量贩机供货：进货价 + 工人零售机配送费
+        case 4: // 量贩机供货：进货价
           unitPrice = product.purchase_price;
-          deliveryFeePerUnit = product.worker_machine_delivery_fee;
           break;
-        case 6: // 零售机供货：与量贩机供货一致（进货价 + 工人零售机配送费）
+        case 6: // 零售机供货：进货价
           unitPrice = product.purchase_price;
-          deliveryFeePerUnit = product.worker_machine_delivery_fee;
           break;
       }
 
@@ -346,7 +340,6 @@ async function createOrder(req, res) {
       const subtotal = isStationType && ticketQty > 0
         ? product.purchase_price * ticketQty + unitPrice * (quantity - ticketQty)
         : unitPrice * quantity;
-      const itemDeliveryFee = deliveryFeePerUnit * quantity;
 
       // 快照价：水站分销(2)/线下零售(3) 的单价由前端手动填写，快照需用手填值，
       // 否则财务统计（按 wholesale_price / retail_price）取到的是商品档案值而非成交值
@@ -360,7 +353,7 @@ async function createOrder(req, res) {
           : product.retail_price;
 
       order_amount += subtotal;
-      delivery_fee += itemDeliveryFee;
+      // 配送费暂不计算（delivery_fee 保持 0，2026-08-27）
 
       orderItems.push({
         product_id: pid,
@@ -817,23 +810,21 @@ async function updateOrder(req, res) {
         }
       }
 
+      // 根据订单类型计算商品单价（配送费统一不计算，2026-08-27）
       let unitPrice = 0;
-      let deliveryFeePerUnit = 0;
       switch (Number(actualOrderType)) {
-        case 1: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_retail_delivery_fee; break;
-        case 2: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price;
-          if (Number(actualDeliveryType) === 2) deliveryFeePerUnit = product.distribution_delivery_fee;
-          else if (Number(actualDeliveryType) === 1) deliveryFeePerUnit = product.worker_wholesale_delivery_fee; break;
-        case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; deliveryFeePerUnit = Number(actualDeliveryType) === 1 ? product.worker_retail_delivery_fee : 0; break;
-        case 4: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
-        case 6: unitPrice = product.purchase_price; deliveryFeePerUnit = product.worker_machine_delivery_fee; break;
+        case 1: unitPrice = product.purchase_price; break;
+        case 2: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price; break;
+        case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; break;
+        case 4: unitPrice = product.purchase_price; break;
+        case 6: unitPrice = product.purchase_price; break;
       }
 
       const subtotal = isStationType && ticketQty > 0
         ? product.purchase_price * ticketQty + unitPrice * (quantity - ticketQty)
         : unitPrice * quantity;
       order_amount += subtotal;
-      delivery_fee += deliveryFeePerUnit * quantity;
+      // 配送费暂不计算（delivery_fee 保持 0，2026-08-27）
 
       // 快照价：水站分销(2)/线下零售(3) 的单价由前端手动填写，快照需用手填值
       const snapshotWholesale =
