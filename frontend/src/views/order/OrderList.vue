@@ -97,7 +97,9 @@
         <el-table-column prop="customerName" label="客户/水站" min-width="130" />
         <el-table-column prop="orderAmount" label="订单金额" width="100" align="right">
           <template #default="{ row }">
-            <span class="money-text">¥{{ formatMoney(row.orderAmount) }}</span>
+            <!-- 官方平台销售不显示订单金额（2026-08-27） -->
+            <span v-if="row.orderType !== 1" class="money-text">¥{{ formatMoney(row.orderAmount) }}</span>
+            <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
         <el-table-column v-if="false" prop="deliveryFee" label="配送费" width="90" align="right">
@@ -527,7 +529,7 @@
         </el-descriptions>
 
         <div class="amount-summary">
-          <div class="amount-row">
+          <div class="amount-row" v-if="currentOrder.orderType !== 1">
             <span>订单金额：</span>
             <span>¥{{ formatMoney(currentOrder.orderAmount) }}</span>
           </div>
