@@ -328,11 +328,9 @@ async function createOrder(req, res) {
         case 3: // 线下零售：零售价
           unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price;
           break;
-        case 4: // 量贩机供货：进货价
-          unitPrice = product.purchase_price;
-          break;
-        case 6: // 零售机供货：进货价
-          unitPrice = product.purchase_price;
+        case 4: // 量贩机供货：不计算商品价格（价格在机台销量录入，2026-08-27）
+        case 6: // 零售机供货：不计算商品价格（价格在机台销量录入，2026-08-27）
+          unitPrice = 0;
           break;
       }
 
@@ -816,8 +814,8 @@ async function updateOrder(req, res) {
         case 1: unitPrice = product.purchase_price; break;
         case 2: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price; break;
         case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; break;
-        case 4: unitPrice = product.purchase_price; break;
-        case 6: unitPrice = product.purchase_price; break;
+        case 4: unitPrice = 0; break; // 量贩机供货：不计算商品价格（2026-08-27）
+        case 6: unitPrice = 0; break; // 零售机供货：不计算商品价格（2026-08-27）
       }
 
       const subtotal = isStationType && ticketQty > 0

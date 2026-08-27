@@ -1138,11 +1138,9 @@ const handleProductChange = (index) => {
       case 3:
         price = product.retailPrice || 0
         break
-      case 4:
-        price = product.purchasePrice || 0
-        break
-      case 6:
-        price = product.purchasePrice || 0
+      case 4: // 量贩机供货：不计算商品价格（2026-08-27）
+      case 6: // 零售机供货：不计算商品价格（2026-08-27）
+        price = 0
         break
       default:
         price = product.retailPrice || 0
