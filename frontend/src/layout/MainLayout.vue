@@ -113,7 +113,7 @@
         </el-sub-menu>
         <el-menu-item index="/water-tickets">
           <el-icon><Ticket /></el-icon>
-          <template #title>水站返货管理</template>
+          <template #title>水站账户管理</template>
         </el-menu-item>
       </el-menu>
       <div class="sidebar-footer" v-if="!isCollapse">

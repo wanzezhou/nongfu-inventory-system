@@ -38,12 +38,12 @@
 
     <!-- 汇总卡片 -->
     <div class="summary-grid">
-      <div v-for="card in summaryCards" :key="card.orderType" class="summary-card" :class="card.cls">
+      <div v-for="card in summaryCards" :key="card.key" class="summary-card" :class="card.cls">
         <div class="card-label">
           <el-icon><component :is="card.icon" /></el-icon>
-          <span>{{ card.typeName }}</span>
+          <span>{{ card.label }}</span>
         </div>
-        <div class="card-value">¥{{ fmtMoney(card.revenue) }}</div>
+        <div class="card-value">¥{{ fmtMoney(card.value) }}</div>
         <div class="card-desc">{{ card.desc }}</div>
       </div>
     </div>
@@ -268,7 +268,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Download, Plus, Delete, View,
-  Van, Goods, ShoppingCart, Coin, Wallet, Money, Histogram
+  Van, Goods, ShoppingCart, Coin, Wallet, Money, Histogram, Ticket
 } from '@element-plus/icons-vue'
 import { getFinanceSummary, getFinanceOrders, getMachineSales, createMachineSale, deleteMachineSale, exportFinance } from '@/api/finance'
 import { getProductList } from '@/api/product'
@@ -340,19 +340,35 @@ const ORDER_TYPE_NAME = {
   6: '零售机'
 }
 const CARD_META = {
-  1: { icon: Van, cls: 'card-red', desc: '进货价之和 + 总包配送费（整单）' },
-  2: { icon: Goods, cls: 'card-blue', desc: '分销价之和；水票抵扣：进货价之和 + 总包配送费' },
+  1: { icon: Van, cls: 'card-red', desc: '原货款（进货价之和）+ 总配送费' },
+  2: { icon: Goods, cls: 'card-blue', desc: '返货价值 + 总包配送费 + 分销价合计' },
   3: { icon: ShoppingCart, cls: 'card-green', desc: '零售价之和（手动填写）' },
   4: { icon: Wallet, cls: 'card-gold', desc: '机台售价 × 销量（手动录入）' },
   5: { icon: Coin, cls: 'card-purple', desc: '进货价 + 总包配送费' },
   6: { icon: Van, cls: 'card-teal', desc: '机台售价 × 销量（手动录入）' }
 }
 
+// 汇总卡片（类型1 拆 3 卡：原货款/总配送费/总计；类型2 拆 4 卡：返货价值/总包配送费/分销价合计/总计；其余单卡）
 const summaryCards = computed(() => {
   const item = summary.list.find((x) => x.orderType === props.orderType)
   if (!item) return []
+  if (props.orderType === 1) {
+    return [
+      { key: 'goods', label: '原货款', desc: '进货价之和', value: item.goodsAmount, icon: Goods, cls: 'card-red' },
+      { key: 'delivery', label: '总配送费', desc: '商品总包配送费之和', value: item.deliveryFee, icon: Van, cls: 'card-teal' },
+      { key: 'total', label: '总计', desc: '原货款 + 总配送费', value: item.revenue, icon: Money, cls: 'card-gold' }
+    ]
+  }
+  if (props.orderType === 2) {
+    return [
+      { key: 'ticket', label: '返货价值', desc: '水票抵扣商品的进货价', value: item.ticketValue, icon: Ticket, cls: 'card-purple' },
+      { key: 'delivery', label: '总包配送费', desc: '水票抵扣件数的总包配送费', value: item.deliveryFee, icon: Van, cls: 'card-teal' },
+      { key: 'wholesale', label: '分销价合计', desc: '以分销价购买的商品金额', value: item.goodsAmount, icon: Goods, cls: 'card-blue' },
+      { key: 'total', label: '总计', desc: '返货价值 + 总包配送费 + 分销价合计', value: item.revenue, icon: Money, cls: 'card-gold' }
+    ]
+  }
   const meta = CARD_META[item.orderType] || { icon: Money, cls: 'card-gray', desc: '' }
-  return [{ ...item, icon: meta.icon, cls: meta.cls, desc: meta.desc }]
+  return [{ key: 'total', label: item.typeName, value: item.revenue, icon: meta.icon, cls: meta.cls, desc: meta.desc }]
 })
 
 const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '520px'))

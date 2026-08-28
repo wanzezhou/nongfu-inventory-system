@@ -148,6 +148,33 @@ async function getFinanceOrders(req, res) {
   }
 }
 
+// 原货款（类型1=进货价之和；类型2=分销价合计，仅非抵扣件数；类型3=零售价之和）
+function goodsAmountExpr() {
+  return `(CASE o.order_type
+      WHEN 1 THEN oi.purchase_price * oi.quantity
+      WHEN 2 THEN IF(oi.ticket_qty > 0, oi.wholesale_price * (oi.quantity - oi.ticket_qty),
+                     IF(oi.pricing_type = 2, 0, oi.wholesale_price * oi.quantity))
+      WHEN 3 THEN oi.retail_price * oi.quantity
+      ELSE 0 END)`;
+}
+
+// 总包配送费（类型1=全部件数；类型2=仅水票抵扣件数；类型3=0）
+function deliveryFeeExpr() {
+  return `(CASE o.order_type
+      WHEN 1 THEN oi.total_delivery_fee * oi.quantity
+      WHEN 2 THEN IF(oi.ticket_qty > 0, oi.total_delivery_fee * oi.ticket_qty,
+                     IF(oi.pricing_type = 2, oi.total_delivery_fee * oi.quantity, 0))
+      ELSE 0 END)`;
+}
+
+// 返货价值（类型2 水票抵扣件数 × 进货价；其他类型为 0）
+function ticketValueExpr() {
+  return `(CASE WHEN o.order_type = 2 THEN
+      IF(oi.ticket_qty > 0, oi.purchase_price * oi.ticket_qty,
+         IF(oi.pricing_type = 2, oi.purchase_price * oi.quantity, 0))
+    ELSE 0 END)`;
+}
+
 // 营收汇总：订单类 1/2/3/5 + 机台类 4/6；可选 orderType 只聚合该类型（前端二级菜单）
 async function getFinanceSummary(req, res) {
   try {
@@ -172,11 +199,18 @@ async function getFinanceSummary(req, res) {
       orderParams.push(start, end);
     }
     const orderWhere = isMachineType ? 'WHERE 1=0' : 'WHERE ' + orderParts.join(' AND ');
-    // 先按订单聚合（件部分求和 + 订单级总包配送费加一次），再按类型汇总，避免配送费按件/按行重复累加
+    // 先按订单聚合（原货款/总包配送费/返货价值/营收分列），再按类型汇总，避免配送费按件/按行重复累加
     const [orderRows] = await pool.execute(
-      `SELECT t.order_type, ROUND(SUM(t.order_revenue), 2) AS revenue
+      `SELECT t.order_type,
+              ROUND(SUM(t.goods_amount), 2) AS goods_amount,
+              ROUND(SUM(t.delivery_fee), 2) AS delivery_fee,
+              ROUND(SUM(t.ticket_value), 2) AS ticket_value,
+              ROUND(SUM(t.order_revenue), 2) AS revenue
        FROM (
          SELECT o.order_id, o.order_type,
+                SUM(${goodsAmountExpr()}) AS goods_amount,
+                SUM(${deliveryFeeExpr()}) AS delivery_fee,
+                SUM(${ticketValueExpr()}) AS ticket_value,
                 SUM(${expr}) AS order_revenue
          FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
          ${orderWhere}
@@ -208,24 +242,37 @@ async function getFinanceSummary(req, res) {
     );
 
     const revenueMap = {
-      1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0
+      1: { revenue: 0, goodsAmount: 0, deliveryFee: 0, ticketValue: 0 },
+      2: { revenue: 0, goodsAmount: 0, deliveryFee: 0, ticketValue: 0 },
+      3: { revenue: 0, goodsAmount: 0, deliveryFee: 0, ticketValue: 0 },
+      4: { revenue: 0, goodsAmount: 0, deliveryFee: 0, ticketValue: 0 },
+      5: { revenue: 0, goodsAmount: 0, deliveryFee: 0, ticketValue: 0 },
+      6: { revenue: 0, goodsAmount: 0, deliveryFee: 0, ticketValue: 0 }
     };
     const qtyMap = {};
 
     orderRows.forEach((r) => {
-      revenueMap[r.order_type] = Number(r.revenue) || 0;
+      revenueMap[r.order_type] = {
+        revenue: Number(r.revenue) || 0,
+        goodsAmount: Number(r.goods_amount) || 0,
+        deliveryFee: Number(r.delivery_fee) || 0,
+        ticketValue: Number(r.ticket_value) || 0
+      };
     });
 
     machineRows.forEach((r) => {
       const key = r.machine_type === 2 ? 6 : 4; // 零售机 -> 6，量贩机 -> 4
-      revenueMap[key] = Number(r.revenue) || 0;
+      revenueMap[key].revenue = Number(r.revenue) || 0;
       qtyMap[key] = Number(r.total_qty) || 0;
     });
 
     const list = [1, 2, 3, 4, 6].map((t) => ({
       orderType: t,
       typeName: ORDER_TYPES[t],
-      revenue: revenueMap[t] || 0,
+      revenue: revenueMap[t].revenue,
+      goodsAmount: revenueMap[t].goodsAmount,
+      deliveryFee: revenueMap[t].deliveryFee,
+      ticketValue: revenueMap[t].ticketValue,
       source: t === 4 || t === 6 ? 'machine' : 'order',
       qty: qtyMap[t] || 0
     }));

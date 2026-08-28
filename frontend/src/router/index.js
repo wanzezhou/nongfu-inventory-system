@@ -127,7 +127,7 @@ const routes = [
         path: 'water-tickets',
         name: 'WaterTicketManage',
         component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
-        meta: { title: '水站返货管理', icon: 'Ticket', requiresAuth: true }
+        meta: { title: '水站账户管理', icon: 'Ticket', requiresAuth: true }
       }
     ]
   }
