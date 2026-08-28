@@ -23,6 +23,12 @@ const routes = [
         meta: { title: '仪表盘', icon: 'HomeFilled', requiresAuth: true }
       },
       {
+        path: 'salary',
+        name: 'SalaryStatistics',
+        component: () => import('@/views/statistics/SalaryStatistics.vue'),
+        meta: { title: '工资统计', icon: 'Money', requiresAuth: true }
+      },
+      {
         path: 'product',
         name: 'Product',
         component: () => import('@/views/product/ProductList.vue'),

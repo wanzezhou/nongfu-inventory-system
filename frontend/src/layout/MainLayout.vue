@@ -27,6 +27,10 @@
           <el-icon><HomeFilled /></el-icon>
           <template #title>仪表盘</template>
         </el-menu-item>
+        <el-menu-item index="/salary">
+          <el-icon><Money /></el-icon>
+          <template #title>工资统计</template>
+        </el-menu-item>
         <el-sub-menu index="/base">
           <template #title>
             <el-icon><Folder /></el-icon>
