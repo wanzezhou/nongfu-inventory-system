@@ -362,11 +362,13 @@
                 </template>
               </el-table-column>
             </template>
-            <!-- 价格列：类型2 分销价只读（自动带出商品档案）；类型3 零售价可编辑 -->
+            <!-- 价格列：类型2 分销价只读（自动带出商品档案，水票抵扣行不显示价格）；类型3 零售价可编辑 -->
             <el-table-column v-if="[2, 3].includes(orderForm.orderType)" :label="getPriceColumnLabel()" width="130">
               <template #default="{ row }">
+                <!-- 类型2 使用水票抵扣：不显示任何价格（2026-08-28） -->
+                <span v-if="orderForm.orderType === 2 && row.useTicket" class="ticket-empty">-</span>
                 <el-input-number
-                  v-if="orderForm.orderType === 3"
+                  v-else-if="orderForm.orderType === 3"
                   v-model="row.unitPrice"
                   :min="0"
                   :precision="2"
@@ -378,7 +380,9 @@
             </el-table-column>
             <el-table-column v-if="[2, 3].includes(orderForm.orderType)" label="小计" width="130">
               <template #default="{ row }">
-                <span class="subtotal-text">¥{{ formatMoney(calculateItemSubtotal(row)) }}</span>
+                <!-- 类型2 使用水票抵扣：不显示金额（未抵扣件数仍计入合计，2026-08-28） -->
+                <span v-if="orderForm.orderType === 2 && row.useTicket" class="ticket-empty">-</span>
+                <span v-else class="subtotal-text">¥{{ formatMoney(calculateItemSubtotal(row)) }}</span>
                 <div v-if="orderForm.orderType === 2 && row.useTicket && row.ticketQty > 0" class="ticket-sub">
                   <span class="ticket-left">水票 {{ row.ticketQty }} 件（不计金额）</span>
                 </div>
