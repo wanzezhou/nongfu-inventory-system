@@ -27,10 +27,6 @@
           <el-icon><HomeFilled /></el-icon>
           <template #title>仪表盘</template>
         </el-menu-item>
-        <el-menu-item index="/salary">
-          <el-icon><Money /></el-icon>
-          <template #title>工资统计</template>
-        </el-menu-item>
         <el-sub-menu index="/base">
           <template #title>
             <el-icon><Folder /></el-icon>
@@ -113,6 +109,16 @@
           <el-menu-item index="/finance/retail-machine">
             <el-icon><Van /></el-icon>
             <template #title>零售机</template>
+          </el-menu-item>
+        </el-sub-menu>
+        <el-sub-menu index="/cost">
+          <template #title>
+            <el-icon><Coin /></el-icon>
+            <span>成本统计</span>
+          </template>
+          <el-menu-item index="/salary">
+            <el-icon><Money /></el-icon>
+            <template #title>工资统计</template>
           </el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/water-tickets">
