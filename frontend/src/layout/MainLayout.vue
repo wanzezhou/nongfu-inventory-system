@@ -116,6 +116,10 @@
             <el-icon><Coin /></el-icon>
             <span>成本统计</span>
           </template>
+          <el-menu-item index="/cost/station">
+            <el-icon><OfficeBuilding /></el-icon>
+            <template #title>直营水站成本统计</template>
+          </el-menu-item>
           <el-menu-item index="/salary">
             <el-icon><Money /></el-icon>
             <template #title>工资统计</template>

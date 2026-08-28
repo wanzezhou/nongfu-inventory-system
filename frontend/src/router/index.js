@@ -29,6 +29,12 @@ const routes = [
         meta: { title: '工资统计', icon: 'Money', requiresAuth: true }
       },
       {
+        path: 'cost/station',
+        name: 'StationCost',
+        component: () => import('@/views/cost/StationCost.vue'),
+        meta: { title: '直营水站成本统计', icon: 'OfficeBuilding', requiresAuth: true }
+      },
+      {
         path: 'product',
         name: 'Product',
         component: () => import('@/views/product/ProductList.vue'),

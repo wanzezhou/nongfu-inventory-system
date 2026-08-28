@@ -19,6 +19,7 @@ const machineStationRoutes = require('./routes/machineStationRoutes');
 const financialRoutes = require('./routes/financialRoutes');
 const waterTicketRoutes = require('./routes/waterTicketRoutes');
 const salaryRoutes = require('./routes/salaryRoutes');
+const costRoutes = require('./routes/costRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -53,6 +54,7 @@ app.use('/api/machine-stations', machineStationRoutes);
 app.use('/api/finance', financialRoutes);
 app.use('/api/water-tickets', waterTicketRoutes);
 app.use('/api/salary', salaryRoutes);
+app.use('/api/cost', costRoutes);
 
 // 根路由
 app.get('/', (req, res) => {
