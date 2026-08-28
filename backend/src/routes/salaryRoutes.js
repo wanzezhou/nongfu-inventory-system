@@ -6,5 +6,7 @@ const salaryController = require('../controllers/salaryController');
 router.get('/summary', salaryController.getSalarySummary);
 // 指定员工当月配送订单明细
 router.get('/orders', salaryController.getSalaryOrders);
+// 指定订单的商品配送明细
+router.get('/order-items', salaryController.getSalaryOrderItems);
 
 module.exports = router;

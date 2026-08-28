@@ -97,6 +97,36 @@ async function getSalaryOrders(req, res) {
       [month, workerId]
     );
 
+    // 订单级商品明细（供展开查看：每件商品的配送费 = 费率快照 × 数量）
+    const orderIds = rows.map((r) => r.order_id);
+    let itemsByOrder = {};
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(',');
+      const [items] = await pool.execute(
+        `SELECT oi.order_id, p.product_name AS product_name, p.specification, oi.quantity,
+                ${feeExpr} AS unit_fee,
+                ROUND(${feeExpr} * oi.quantity, 2) AS fee
+         FROM order_items oi
+         JOIN orders o ON o.order_id = oi.order_id
+         LEFT JOIN products p ON p.product_id = oi.product_id
+         WHERE oi.order_id IN (${placeholders})
+           AND o.canceled_at IS NULL
+           AND o.order_type IN (1,2,3,4,6)
+         ORDER BY oi.order_id, oi.item_id`,
+        orderIds
+      );
+      itemsByOrder = {};
+      items.forEach((it) => {
+        (itemsByOrder[it.order_id] = itemsByOrder[it.order_id] || []).push({
+          productName: it.product_name || '未知商品',
+          spec: it.specification || '',
+          quantity: Number(it.quantity) || 0,
+          unitFee: Number(it.unit_fee) || 0,
+          fee: Number(it.fee) || 0
+        });
+      });
+    }
+
     const list = rows.map((r) => ({
       orderId: r.order_id,
       orderType: Number(r.order_type),
@@ -105,7 +135,8 @@ async function getSalaryOrders(req, res) {
       contactName: r.contact_name || '',
       createTime: r.created_at,
       totalQty: Number(r.total_qty) || 0,
-      deliveryFee: Number(r.delivery_fee) || 0
+      deliveryFee: Number(r.delivery_fee) || 0,
+      items: itemsByOrder[r.order_id] || []
     }));
 
     return success(res, { list, month, workerId });
@@ -115,4 +146,42 @@ async function getSalaryOrders(req, res) {
   }
 }
 
-module.exports = { getSalarySummary, getSalaryOrders };
+// 指定订单的商品配送明细（商品行：数量 × 对应费率）
+async function getSalaryOrderItems(req, res) {
+  try {
+    const { orderId } = req.query;
+    if (!orderId) {
+      return error(res, '缺少订单号', 400);
+    }
+    const feeExpr = deliveryFeeExpr();
+    const [rows] = await pool.execute(
+      `SELECT oi.product_id, p.product_name, p.specification, p.unit,
+              oi.quantity,
+              ${feeExpr} AS fee_per_unit,
+              ROUND(${feeExpr} * oi.quantity, 2) AS delivery_fee
+       FROM order_items oi
+       JOIN orders o ON o.order_id = oi.order_id
+       LEFT JOIN products p ON p.product_id = oi.product_id
+       WHERE o.order_id = ? AND o.canceled_at IS NULL
+       ORDER BY oi.item_id`,
+      [orderId]
+    );
+
+    const list = rows.map((r) => ({
+      productId: r.product_id,
+      productName: r.product_name || '-',
+      spec: r.specification || '',
+      unit: r.unit || '',
+      quantity: Number(r.quantity) || 0,
+      feePerUnit: Number(r.fee_per_unit) || 0,
+      deliveryFee: Number(r.delivery_fee) || 0
+    }));
+
+    return success(res, { list, orderId });
+  } catch (e) {
+    console.error('getSalaryOrderItems error:', e);
+    return error(res, '商品配送明细查询失败', 500);
+  }
+}
+
+module.exports = { getSalarySummary, getSalaryOrders, getSalaryOrderItems };

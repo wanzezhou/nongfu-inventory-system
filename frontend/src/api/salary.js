@@ -17,3 +17,12 @@ export function getSalaryOrders(params) {
     params
   })
 }
+
+// 指定订单的商品配送明细
+export function getSalaryOrderItems(params) {
+  return request({
+    url: '/salary/order-items',
+    method: 'get',
+    params
+  })
+}

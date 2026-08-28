@@ -89,10 +89,48 @@
             <span class="fee-text">¥{{ fmtMoney(row.deliveryFee) }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="100" align="center">
+          <template #default="{ row }">
+            <el-button type="primary" link @click="viewOrderItems(row)">
+              <el-icon><View /></el-icon>
+              商品明细
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <div class="detail-total">合计配送费：<span class="fee-text">¥{{ fmtMoney(detailTotal) }}</span></div>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 订单商品明细弹窗 -->
+    <el-dialog
+      v-model="itemsVisible"
+      :title="`商品配送明细：${currentOrder?.orderId || ''}（${currentOrder?.orderTypeName || ''}）`"
+      :width="dialogWidth"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-table :data="itemRows" v-loading="itemsLoading" border stripe size="small" max-height="380">
+        <el-table-column prop="productName" label="商品名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="spec" label="规格" width="100" />
+        <el-table-column prop="unit" label="单位" width="70" align="center">
+          <template #default="{ row }">{{ row.unit || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="quantity" label="数量" width="80" align="center" />
+        <el-table-column prop="feePerUnit" label="配送费率" width="100" align="right">
+          <template #default="{ row }">¥{{ fmtMoney(row.feePerUnit) }}/件</template>
+        </el-table-column>
+        <el-table-column prop="deliveryFee" label="配送费" width="110" align="right">
+          <template #default="{ row }">
+            <span class="fee-text">¥{{ fmtMoney(row.deliveryFee) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="detail-total">合计配送费：<span class="fee-text">¥{{ fmtMoney(itemsTotal) }}</span></div>
+      <template #footer>
+        <el-button @click="itemsVisible = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -102,7 +140,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, User, Money, List, View } from '@element-plus/icons-vue'
-import { getSalarySummary, getSalaryOrders } from '@/api/salary'
+import { getSalarySummary, getSalaryOrders, getSalaryOrderItems } from '@/api/salary'
 
 const loading = ref(false)
 const month = ref('')
@@ -113,6 +151,12 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailRows = ref([])
 const currentWorker = ref(null)
+
+// 订单商品明细
+const itemsVisible = ref(false)
+const itemsLoading = ref(false)
+const itemRows = ref([])
+const currentOrder = ref(null)
 
 const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '720px'))
 
@@ -127,6 +171,7 @@ const formatTime = (t) => {
 }
 
 const detailTotal = computed(() => detailRows.value.reduce((s, x) => s + (x.deliveryFee || 0), 0))
+const itemsTotal = computed(() => itemRows.value.reduce((s, x) => s + (x.deliveryFee || 0), 0))
 
 const fetchSummary = async () => {
   if (!month.value) {
@@ -165,6 +210,23 @@ const viewDetail = async (row) => {
     ElMessage.error('获取配送订单明细失败')
   } finally {
     detailLoading.value = false
+  }
+}
+
+// 订单商品配送明细
+const viewOrderItems = async (row) => {
+  currentOrder.value = row
+  itemsVisible.value = true
+  itemsLoading.value = true
+  itemRows.value = []
+  try {
+    const res = await getSalaryOrderItems({ orderId: row.orderId })
+    itemRows.value = res.data?.list || []
+  } catch (e) {
+    console.error('商品明细失败:', e)
+    ElMessage.error('获取商品配送明细失败')
+  } finally {
+    itemsLoading.value = false
   }
 }
 
