@@ -22,7 +22,6 @@ set "DB_PASSWORD="
 set "NPM_REGISTRY=https://registry.npmmirror.com"
 
 :: ---------- 1. 检测 Node.js ----------
-set "NODE_EXE=node.exe"
 where node >nul 2>&1
 if errorlevel 1 (
     echo [错误] 未检测到 Node.js，请先安装 Node.js 18+（https://nodejs.org/）后重新运行
