@@ -1,58 +1,57 @@
 @echo off
-chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 :: ============================================================
-::  å†œå¯Œåº“å­˜ç®¡ç†ç³»ç»Ÿ - ä¸€é”®å¯åŠ¨ï¼ˆå¯ç§»æ¤ç‰ˆï¼‰
-::  é€‚ç”¨ï¼šå…¨æ–°ç”µè„‘ï¼ˆWindowsï¼‰ï¼Œè‡ªåŠ¨å®ŒæˆçŽ¯å¢ƒæ£€æµ‹ -> æ•°æ®åº“åˆå§‹åŒ–
-::        -> ä¾èµ–å®‰è£… -> å¯åŠ¨åŽç«¯(3000)+å‰ç«¯(5173) -> æ‰“å¼€æµè§ˆå™¨
-::  ç”¨æ³•ï¼šåŒå‡» start.bat å³å¯
+::  Å©¸»¿â´æ¹ÜÀíÏµÍ³ - Ò»¼üÆô¶¯£¨¿ÉÒÆÖ²°æ£©
+::  ÊÊÓÃ£ºÈ«ÐÂµçÄÔ£¨Windows£©£¬×Ô¶¯Íê³É»·¾³¼ì²â -> Êý¾Ý¿â³õÊ¼»¯
+::        -> ÒÀÀµ°²×° -> Æô¶¯ºó¶Ë(3000)+Ç°¶Ë(5173) -> ´ò¿ªä¯ÀÀÆ÷
+::  ÓÃ·¨£ºË«»÷ start.bat ¼´¿É
 :: ============================================================
 
 cd /d "%~dp0"
 
 echo ============================================
-echo   å†œå¯Œåº“å­˜ç®¡ç†ç³»ç»Ÿ ä¸€é”®å¯åŠ¨
+echo   Å©¸»¿â´æ¹ÜÀíÏµÍ³ Ò»¼üÆô¶¯
 echo ============================================
 
-:: ---------- é…ç½®åŒºï¼ˆæ–°ç”µè„‘æŒ‰éœ€ä¿®æ”¹ï¼‰ ----------
-:: MySQL root å¯†ç ï¼ˆæ— å¯†ç è¯·ç•™ç©ºï¼‰
+:: ---------- ÅäÖÃÇø£¨ÐÂµçÄÔ°´ÐèÐÞ¸Ä£© ----------
+:: MySQL root ÃÜÂë£¨ÎÞÃÜÂëÇëÁô¿Õ£©
 set "DB_PASSWORD="
-:: npm é•œåƒæºï¼ˆé»˜è®¤å›½å†… npmmirrorï¼Œå¯æ”¹ä¸º https://registry.npmjs.org/ æˆ–ç”¨å®˜æ–¹æºæ—¶ç•™ç©ºï¼‰
+:: npm ¾µÏñÔ´£¨Ä¬ÈÏ¹úÄÚ npmmirror£¬¿É¸ÄÎª https://registry.npmjs.org/ »òÓÃ¹Ù·½Ô´Ê±Áô¿Õ£©
 set "NPM_REGISTRY=https://registry.npmmirror.com"
 
-:: ---------- 1. æ£€æµ‹ Node.js ----------
+:: ---------- 1. ¼ì²â Node.js ----------
 where node >nul 2>&1
 if errorlevel 1 (
-    echo [é”™è¯¯] æœªæ£€æµ‹åˆ° Node.jsï¼Œè¯·å…ˆå®‰è£… Node.js 18+ï¼ˆhttps://nodejs.org/ï¼‰åŽé‡æ–°è¿è¡Œ
+    echo [´íÎó] Î´¼ì²âµ½ Node.js£¬ÇëÏÈ°²×° Node.js 18+£¨https://nodejs.org/£©ºóÖØÐÂÔËÐÐ
     pause
     exit /b 1
 )
 for /f "delims=" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
 echo [OK] Node.js %NODE_VER%
 
-:: ---------- 2. æ£€æµ‹ MySQL ----------
+:: ---------- 2. ¼ì²â MySQL ----------
 powershell -NoProfile -Command "$ok = Test-NetConnection -ComputerName 127.0.0.1 -Port 3306 -WarningAction SilentlyContinue -InformationLevel Quiet; if (-not $ok) { exit 1 }" >nul 2>&1
 if errorlevel 1 (
-    echo [é”™è¯¯] æœªæ£€æµ‹åˆ° MySQL æœåŠ¡ï¼ˆç«¯å£ 3306ï¼‰
-    echo        è¯·å…ˆå®‰è£…å¹¶å¯åŠ¨ MySQL 5.7+ / 8.0ï¼ˆé»˜è®¤ root è´¦å·ï¼‰ï¼Œç„¶åŽé‡æ–°è¿è¡Œ
+    echo [´íÎó] Î´¼ì²âµ½ MySQL ·þÎñ£¨¶Ë¿Ú 3306£©
+    echo        ÇëÏÈ°²×°²¢Æô¶¯ MySQL 5.7+ / 8.0£¨Ä¬ÈÏ root ÕËºÅ£©£¬È»ºóÖØÐÂÔËÐÐ
     pause
     exit /b 1
 )
-echo [OK] MySQL æœåŠ¡å·²è¿žæŽ¥ï¼ˆ3306ï¼‰
+echo [OK] MySQL ·þÎñÒÑÁ¬½Ó£¨3306£©
 
-:: ---------- 3. æ•°æ®åº“åˆå§‹åŒ–ï¼ˆå¹‚ç­‰ï¼Œå·²åˆå§‹åŒ–åˆ™è·³è¿‡ï¼‰ ----------
-echo [æ£€æŸ¥] æ•°æ®åº“åˆå§‹åŒ–çŠ¶æ€...
+:: ---------- 3. Êý¾Ý¿â³õÊ¼»¯£¨ÃÝµÈ£¬ÒÑ³õÊ¼»¯ÔòÌø¹ý£© ----------
+echo [¼ì²é] Êý¾Ý¿â³õÊ¼»¯×´Ì¬...
 node backend/scripts/init_db.js --db-password=%DB_PASSWORD%
 if errorlevel 1 (
-    echo [é”™è¯¯] æ•°æ®åº“åˆå§‹åŒ–å¤±è´¥ï¼Œè¯·æ£€æŸ¥ä¸Šæ–¹æç¤ºåŽé‡è¯•
+    echo [´íÎó] Êý¾Ý¿â³õÊ¼»¯Ê§°Ü£¬Çë¼ì²éÉÏ·½ÌáÊ¾ºóÖØÊÔ
     pause
     exit /b 1
 )
 
-:: ---------- 4. åŽç«¯ä¾èµ–å®‰è£… ----------
+:: ---------- 4. ºó¶ËÒÀÀµ°²×° ----------
 if not exist "backend\node_modules" (
-    echo [å®‰è£…] åŽç«¯ä¾èµ–ï¼ˆé¦–æ¬¡è¿è¡Œï¼Œéœ€å‡ åˆ†é’Ÿï¼‰...
+    echo [°²×°] ºó¶ËÒÀÀµ£¨Ê×´ÎÔËÐÐ£¬Ðè¼¸·ÖÖÓ£©...
     pushd backend
     if defined NPM_REGISTRY (
         call npm install --registry=%NPM_REGISTRY%
@@ -60,18 +59,18 @@ if not exist "backend\node_modules" (
         call npm install
     )
     if errorlevel 1 (
-        echo [é”™è¯¯] åŽç«¯ä¾èµ–å®‰è£…å¤±è´¥
+        echo [´íÎó] ºó¶ËÒÀÀµ°²×°Ê§°Ü
         popd
         pause
         exit /b 1
     )
     popd
 )
-echo [OK] åŽç«¯ä¾èµ–å°±ç»ª
+echo [OK] ºó¶ËÒÀÀµ¾ÍÐ÷
 
-:: ---------- 5. å‰ç«¯ä¾èµ–å®‰è£… ----------
+:: ---------- 5. Ç°¶ËÒÀÀµ°²×° ----------
 if not exist "frontend\node_modules" (
-    echo [å®‰è£…] å‰ç«¯ä¾èµ–ï¼ˆé¦–æ¬¡è¿è¡Œï¼Œéœ€å‡ åˆ†é’Ÿï¼‰...
+    echo [°²×°] Ç°¶ËÒÀÀµ£¨Ê×´ÎÔËÐÐ£¬Ðè¼¸·ÖÖÓ£©...
     pushd frontend
     if defined NPM_REGISTRY (
         call npm install --registry=%NPM_REGISTRY%
@@ -79,39 +78,39 @@ if not exist "frontend\node_modules" (
         call npm install
     )
     if errorlevel 1 (
-        echo [é”™è¯¯] å‰ç«¯ä¾èµ–å®‰è£…å¤±è´¥
+        echo [´íÎó] Ç°¶ËÒÀÀµ°²×°Ê§°Ü
         popd
         pause
         exit /b 1
     )
     popd
 )
-echo [OK] å‰ç«¯ä¾èµ–å°±ç»ª
+echo [OK] Ç°¶ËÒÀÀµ¾ÍÐ÷
 
-:: ---------- 6. ç¡®ä¿ backend/.env ----------
+:: ---------- 6. È·±£ backend/.env ----------
 if not exist "backend\.env" (
     copy "backend\.env.example" "backend\.env" >nul
-    echo [æç¤º] å·²ç”Ÿæˆ backend\.envï¼›å¦‚ MySQL å¯†ç éžç©ºï¼Œè¯·ä¿®æ”¹å…¶ä¸­ DB_PASSWORD åŽé‡å¯
+    echo [ÌáÊ¾] ÒÑÉú³É backend\.env£»Èç MySQL ÃÜÂë·Ç¿Õ£¬ÇëÐÞ¸ÄÆäÖÐ DB_PASSWORD ºóÖØÆô
 )
 
-:: ---------- 7. å¯åŠ¨æœåŠ¡ ----------
-echo [å¯åŠ¨] åŽç«¯æœåŠ¡ï¼ˆç«¯å£ 3000ï¼‰...
-start "å†œå¯ŒåŽç«¯-3000" cmd /k "cd /d %~dp0backend && node src/app.js"
+:: ---------- 7. Æô¶¯·þÎñ ----------
+echo [Æô¶¯] ºó¶Ë·þÎñ£¨¶Ë¿Ú 3000£©...
+start "Å©¸»ºó¶Ë-3000" cmd /k "cd /d %~dp0backend && node src/app.js"
 
-echo [å¯åŠ¨] å‰ç«¯æœåŠ¡ï¼ˆç«¯å£ 5173ï¼‰...
-start "å†œå¯Œå‰ç«¯-5173" cmd /k "cd /d %~dp0frontend && node node_modules/vite/bin/vite.js"
+echo [Æô¶¯] Ç°¶Ë·þÎñ£¨¶Ë¿Ú 5173£©...
+start "Å©¸»Ç°¶Ë-5173" cmd /k "cd /d %~dp0frontend && node node_modules/vite/bin/vite.js"
 
-:: ç­‰å¾…æœåŠ¡å¯åŠ¨åŽæ‰“å¼€æµè§ˆå™¨
-echo [ç­‰å¾…] æœåŠ¡å¯åŠ¨ä¸­ï¼Œç¨åŽè‡ªåŠ¨æ‰“å¼€å‰ç«¯é¡µé¢...
+:: µÈ´ý·þÎñÆô¶¯ºó´ò¿ªä¯ÀÀÆ÷
+echo [µÈ´ý] ·þÎñÆô¶¯ÖÐ£¬ÉÔºó×Ô¶¯´ò¿ªÇ°¶ËÒ³Ãæ...
 timeout /t 6 >nul
 start "" http://localhost:5173/
 
 echo.
 echo ============================================
-echo   å¯åŠ¨å®Œæˆï¼
-echo   å‰ç«¯åœ°å€: http://localhost:5173
-echo   åŽç«¯åœ°å€: http://localhost:3000
-echo   é»˜è®¤è´¦å·: admin / å¯†ç è§ backend/.env æˆ–æ•°æ®åº“ users è¡¨
-echo   è¯´æ˜Ž: æ¯ä¸ªæœåŠ¡ç‹¬ç«‹çª—å£ï¼Œå…³é—­å¯¹åº”çª—å£å³åœæ­¢æœåŠ¡
+echo   Æô¶¯Íê³É£¡
+echo   Ç°¶ËµØÖ·: http://localhost:5173
+echo   ºó¶ËµØÖ·: http://localhost:3000
+echo   Ä¬ÈÏÕËºÅ: admin / ÃÜÂë¼û backend/.env »òÊý¾Ý¿â users ±í
+echo   ËµÃ÷: Ã¿¸ö·þÎñ¶ÀÁ¢´°¿Ú£¬¹Ø±Õ¶ÔÓ¦´°¿Ú¼´Í£Ö¹·þÎñ
 echo ============================================
 pause
