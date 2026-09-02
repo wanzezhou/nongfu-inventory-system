@@ -35,6 +35,18 @@ const routes = [
         meta: { title: '直营水站成本统计', icon: 'OfficeBuilding', requiresAuth: true }
       },
       {
+        path: 'cost/summary',
+        name: 'CostSummary',
+        component: () => import('@/views/cost/CostSummary.vue'),
+        meta: { title: '成本汇总', icon: 'TrendCharts', requiresAuth: true }
+      },
+      {
+        path: 'cost/expenses',
+        name: 'OtherExpenses',
+        component: () => import('@/views/cost/OtherExpenses.vue'),
+        meta: { title: '其他支出', icon: 'Wallet', requiresAuth: true }
+      },
+      {
         path: 'product',
         name: 'Product',
         component: () => import('@/views/product/ProductList.vue'),

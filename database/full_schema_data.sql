@@ -1,7 +1,7 @@
 -- ============================================================
 -- 农富库存管理系统 - 全量数据库（结构 + 数据）
 -- 由 backend/scripts/export_dump.js 自动导出
--- 共 27 张表
+-- 共 28 张表
 -- ============================================================
 CREATE DATABASE IF NOT EXISTS nongfu_inventory DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_unicode_ci;
 USE nongfu_inventory;
@@ -76,6 +76,11 @@ CREATE TABLE `finance_accounts` (
   KEY `idx_account_name` (`account_name`),
   KEY `idx_account_type` (`account_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='账户管理表';
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_OTHER', '其他', 4, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:55:37.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SGS', '水公社公户', 2, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:50:03.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:52:26.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:52:26.000');
+-- 4 行
 
 -- ----------------------------
 -- 表结构: finance_transactions
@@ -513,6 +518,27 @@ INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order
 INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026082700002', 1, '4', NULL, NULL, NULL, '11', '11', '11', NULL, '30.00', '0.00', '30.00', 1, 'W004', 0, '0.00', 'W004', NULL, NULL, '2026-08-27 22:14:29.000', '2026-08-27 22:14:29.000');
 INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026082800001', 2, NULL, NULL, 'ST001', NULL, '江宁水站', '13900000001', '南京市江宁区东山街道', '周老板', '18.00', '0.00', '18.00', 2, 'W004', 0, '0.00', 'W004', NULL, NULL, '2026-08-28 21:41:43.000', '2026-08-28 21:41:43.000');
 -- 13 行
+
+-- ----------------------------
+-- 表结构: other_expenses
+-- ----------------------------
+DROP TABLE IF EXISTS `other_expenses`;
+CREATE TABLE `other_expenses` (
+  `expense_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '支出ID',
+  `expense_name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '支出名称',
+  `category` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '支出类别',
+  `amount` decimal(12,2) NOT NULL COMMENT '支出金额（>0）',
+  `expense_date` date NOT NULL COMMENT '支出日期',
+  `account_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '支出账户',
+  `account_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '账户快照',
+  `remark` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '备注',
+  `created_by` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '录入人',
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`expense_id`),
+  KEY `idx_expense_date` (`expense_date`),
+  KEY `idx_category` (`category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='其他支出（手动录入，纳入成本汇总）';
 
 -- ----------------------------
 -- 表结构: products
