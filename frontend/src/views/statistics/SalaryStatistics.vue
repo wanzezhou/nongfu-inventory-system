@@ -55,18 +55,91 @@
         <el-table-column prop="deliveryFee" label="配送费" width="120" align="right">
           <template #default="{ row }">
             <span class="fee-text">¥{{ fmtMoney(row.deliveryFee) }}</span>
+            <el-tooltip v-if="row.paid" :content="`发放锁定金额（发放时快照）`" placement="top">
+              <el-icon class="lock-icon"><Lock /></el-icon>
+            </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="90" align="center">
+        <el-table-column label="发放状态" width="200">
+          <template #default="{ row }">
+            <template v-if="!row.paid">
+              <el-tag type="warning" size="small">未发放</el-tag>
+            </template>
+            <template v-else>
+              <el-tooltip placement="top" :content="`账户：${row.paidAccount || '-'}｜时间：${formatTime(row.paidAt)}${row.payRemark ? '｜备注：' + row.payRemark : ''}`">
+                <el-tag type="success" size="small">已发放</el-tag>
+              </el-tooltip>
+              <div class="paid-info">¥{{ fmtMoney(row.paidAmount) }} · {{ row.paidAccount }}<br>{{ formatTime(row.paidAt) }}</div>
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200" align="center">
           <template #default="{ row }">
             <el-button type="primary" link @click="viewDetail(row)">
               <el-icon><View /></el-icon>
               明细
             </el-button>
+            <el-button v-if="!row.paid" type="success" link @click="openPayDialog(row)">
+              <el-icon><Money /></el-icon>
+              确认发放
+            </el-button>
+            <el-button v-else type="danger" link @click="handleRevoke(row)">
+              <el-icon><RefreshLeft /></el-icon>
+              撤销发放
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <!-- 确认发放弹窗 -->
+    <el-dialog
+      v-model="payVisible"
+      title="确认发放工资"
+      :width="dialogWidth"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-alert
+        v-if="payForm.checked"
+        :title="'该员工 ' + payForm.month + ' 工资已发放，不能重复发放'"
+        type="warning"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 10px;"
+      />
+      <el-form ref="payFormRef" :model="payForm" :rules="payRules" label-width="100px">
+        <el-form-item label="员工">
+          <span class="worker-name">{{ currentWorker?.workerName || '' }}</span>
+        </el-form-item>
+        <el-form-item label="发放月份" prop="month">
+          <el-date-picker v-model="payForm.month" type="month" value-format="YYYY-MM" format="YYYY年MM月" style="width: 100%;" @change="onPayMonthChange" />
+        </el-form-item>
+        <el-form-item label="发放金额">
+          <span class="amount-big">¥{{ fmtMoney(payForm.amount) }}</span>
+          <span v-if="payForm.calcFee >= 0" class="calc-tip">（{{ payForm.month }} 实时配送费合计）</span>
+        </el-form-item>
+        <el-form-item label="发放账户" prop="accountId">
+          <el-select v-model="payForm.accountId" filterable placeholder="选择发放账户（将产生公司账户支出）" style="width: 100%;">
+            <el-option
+              v-for="a in accounts"
+              :key="a.accountId"
+              :label="`${a.accountName}（可用 ¥${fmtMoney(a.currentBalance)}）`"
+              :value="a.accountId"
+              :disabled="a.currentBalance < payForm.amount"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="payForm.remark" type="textarea" :rows="2" maxlength="200" placeholder="发放备注（可选）" />
+        </el-form-item>
+      </el-form>
+      <div class="pay-hint">确认后将：① 记录该员工 {{ payForm.month }} 工资发放；② 从所选账户扣减 ¥{{ fmtMoney(payForm.amount) }} 并记一笔公司支出。</div>
+      <template #footer>
+        <el-button @click="payVisible = false">取消</el-button>
+        <el-button type="success" :loading="saving" :disabled="payForm.checked || !payForm.amount" @click="submitPay">确认发放</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 员工订单明细弹窗 -->
     <el-dialog
@@ -138,9 +211,10 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Search, User, Money, List, View } from '@element-plus/icons-vue'
-import { getSalarySummary, getSalaryOrders, getSalaryOrderItems } from '@/api/salary'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, User, Money, List, View, Lock, RefreshLeft } from '@element-plus/icons-vue'
+import { getSalarySummary, getSalaryOrders, getSalaryOrderItems, getWorkerSalarySummary, payWorkerSalary, revokeSalaryPayment } from '@/api/salary'
+import { getFinanceAccounts } from '@/api/expense'
 
 const loading = ref(false)
 const month = ref('')
@@ -197,6 +271,100 @@ const handleSearch = () => {
   fetchSummary()
 }
 
+// ---- 工资发放 ----
+const saving = ref(false)
+const payVisible = ref(false)
+const payFormRef = ref(null)
+const payForm = reactive({ month: '', amount: 0, calcFee: -1, accountId: '', remark: '', checked: false })
+const accounts = ref([])
+const payRules = {
+  month: [{ required: true, message: '请选择发放月份', trigger: 'change' }],
+  accountId: [{ required: true, message: '请选择发放账户', trigger: 'change' }]
+}
+
+const loadAccounts = async () => {
+  try {
+    const res = await getFinanceAccounts()
+    accounts.value = (res.data?.list || []).filter((a) => a.status)
+  } catch (e) {
+    console.error('账户加载失败:', e)
+  }
+}
+
+// 打开发放弹窗：默认当前查看月份，加载该员工当月状态与金额
+const openPayDialog = async (row) => {
+  currentWorker.value = row
+  payForm.month = month.value || ''
+  payForm.amount = row.calcFee || row.deliveryFee || 0
+  payForm.calcFee = -1
+  payForm.accountId = ''
+  payForm.remark = ''
+  payForm.checked = false
+  payVisible.value = true
+  await refreshPayWorker(row.workerId)
+}
+
+const refreshPayWorker = async (workerId) => {
+  try {
+    const res = await getWorkerSalarySummary({ month: payForm.month, workerId: workerId || currentWorker.value?.workerId })
+    const d = res.data || {}
+    payForm.amount = d.paid ? d.deliveryFee : d.calcFee
+    payForm.calcFee = d.calcFee
+    payForm.checked = !!d.paid // 该员工该月已发放 → 弹窗提示并禁用确认
+  } catch (e) {
+    console.error('工资状态获取失败:', e)
+  }
+}
+
+const onPayMonthChange = () => {
+  refreshPayWorker()
+}
+
+const submitPay = async () => {
+  try {
+    await payFormRef.value.validate()
+  } catch {
+    return
+  }
+  if (payForm.checked) { ElMessage.warning('该员工该月已发放'); return }
+  saving.value = true
+  try {
+    const res = await payWorkerSalary({
+      workerId: currentWorker.value.workerId,
+      month: payForm.month,
+      accountId: payForm.accountId,
+      remark: payForm.remark
+    })
+    ElMessage.success(`发放成功（¥${fmtMoney(res.data?.amount || payForm.amount)}）`)
+    payVisible.value = false
+    fetchSummary()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '发放失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+// 撤销发放
+const handleRevoke = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定撤销「${row.workerName}」${month.value} 工资发放（¥${fmtMoney(row.paidAmount)}）？账户余额将回补，状态回到未发放。`,
+      '撤销发放确认',
+      { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await revokeSalaryPayment(row.paymentId)
+    ElMessage.success('已撤销发放，余额已回补')
+    fetchSummary()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '撤销失败')
+  }
+}
+
 const viewDetail = async (row) => {
   currentWorker.value = row
   detailVisible.value = true
@@ -233,6 +401,7 @@ const viewOrderItems = async (row) => {
 onMounted(() => {
   const now = new Date()
   month.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  loadAccounts()
   fetchSummary()
 })
 </script>
@@ -319,5 +488,39 @@ onMounted(() => {
   margin-top: 12px;
   text-align: right;
   font-size: 14px;
+}
+.lock-icon {
+  margin-left: 4px;
+  vertical-align: -1px;
+  color: #a0a4ab;
+}
+.paid-info {
+  font-size: 11px;
+  color: #909399;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.worker-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+.amount-big {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f56c6c;
+}
+.calc-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 6px;
+}
+.pay-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+  background: #f4f4f5;
+  border-radius: 6px;
+  padding: 8px 10px;
 }
 </style>

@@ -45,24 +45,38 @@ async function getSalarySummary(req, res) {
       `SELECT w.worker_id, w.worker_name, w.phone,
               COUNT(DISTINCT o.order_id) AS order_count,
               SUM(oi.quantity) AS total_qty,
-              ROUND(SUM(${feeExpr} * oi.quantity), 2) AS delivery_fee_total
+              ROUND(SUM(${feeExpr} * oi.quantity), 2) AS calc_fee,
+              p.payment_id AS payment_id, p.amount AS paid_amount,
+              p.account_name AS paid_account, p.paid_at AS paid_at, p.remark AS pay_remark
        FROM orders o
        JOIN order_items oi ON o.order_id = oi.order_id
        JOIN workers w ON w.worker_id = o.worker_id
+       LEFT JOIN salary_payments p ON p.worker_id = w.worker_id AND p.salary_month = ?
        WHERE ${commonWhere(month)}
-       GROUP BY w.worker_id, w.worker_name, w.phone
-       ORDER BY delivery_fee_total DESC`,
-      [month]
+       GROUP BY w.worker_id, w.worker_name, w.phone, p.payment_id, p.amount, p.account_name, p.paid_at, p.remark
+       ORDER BY calc_fee DESC`,
+      [month, month]
     );
 
-    const list = rows.map((r) => ({
-      workerId: r.worker_id,
-      workerName: r.worker_name,
-      phone: r.phone || '',
-      orderCount: Number(r.order_count) || 0,
-      totalQty: Number(r.total_qty) || 0,
-      deliveryFee: Number(r.delivery_fee_total) || 0
-    }));
+    const list = rows.map((r) => {
+      const paid = !!r.payment_id;
+      return {
+        workerId: r.worker_id,
+        workerName: r.worker_name,
+        phone: r.phone || '',
+        orderCount: Number(r.order_count) || 0,
+        totalQty: Number(r.total_qty) || 0,
+        calcFee: Number(r.calc_fee) || 0,
+        // 已发放行锁定为发放记录金额，未发放行显示当月实时汇总
+        deliveryFee: paid ? Number(r.paid_amount) || 0 : Number(r.calc_fee) || 0,
+        paid,
+        paymentId: r.payment_id || null,
+        paidAmount: paid ? Number(r.paid_amount) || 0 : null,
+        paidAccount: r.paid_account || '',
+        paidAt: r.paid_at || null,
+        payRemark: r.pay_remark || ''
+      };
+    });
 
     const summary = {
       totalDeliveryFee: Math.round(list.reduce((s, x) => s + x.deliveryFee, 0) * 100) / 100,
@@ -184,4 +198,159 @@ async function getSalaryOrderItems(req, res) {
   }
 }
 
-module.exports = { getSalarySummary, getSalaryOrders, getSalaryOrderItems };
+// ==================== 工资发放管理 ====================
+
+function genPaymentId() {
+  return 'PAY' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 1000).toString(36).toUpperCase();
+}
+function genTxNo() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return 'TX' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+}
+function genTxId() {
+  return 'TX' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 10000).toString(36).toUpperCase();
+}
+function isMonth(m) {
+  return m && /^\d{4}-\d{2}$/.test(m);
+}
+
+// 员工当月实时配送费（共享计算）
+async function calcWorkerFee(conn, workerId, month) {
+  const feeExpr = deliveryFeeExpr();
+  const [rows] = await conn.execute(
+    `SELECT ROUND(SUM(${feeExpr} * oi.quantity), 2) AS calc_fee
+     FROM orders o
+     JOIN order_items oi ON o.order_id = oi.order_id
+     WHERE o.worker_id = ? AND ${commonWhere(month)}`,
+    [workerId, month]
+  );
+  return Number(rows[0].calc_fee) || 0;
+}
+
+// 单员工：当月实时配送费 + 发放状态（发放弹窗月份变更时刷新）
+async function getWorkerSummary(req, res) {
+  try {
+    const { month, workerId } = req.query;
+    if (!isMonth(month) || !workerId) return error(res, '缺少月份或员工', 400);
+    const fee = await calcWorkerFee(pool, workerId, month);
+    const [p] = await pool.query(
+      'SELECT payment_id, amount, account_name, paid_at, remark FROM salary_payments WHERE worker_id = ? AND salary_month = ?',
+      [workerId, month]
+    );
+    const rec = p[0] || null;
+    return success(res, {
+      calcFee: fee,
+      paid: !!rec,
+      deliveryFee: rec ? Number(rec.amount) || 0 : fee,
+      payment: rec
+        ? {
+            paymentId: rec.payment_id, amount: Number(rec.amount) || 0,
+            accountName: rec.account_name || '', paidAt: rec.paid_at, remark: rec.remark || ''
+          }
+        : null
+    });
+  } catch (e) {
+    console.error('getWorkerSummary error:', e);
+    return error(res, '查询失败', 500);
+  }
+}
+
+// 确认发放：事务——唯一校验 + 记发放 + 公司账户扣款 + 支出流水
+async function paySalary(req, res) {
+  try {
+    const { workerId, month, accountId, remark } = req.body;
+    if (!workerId) return error(res, '请选择员工', 400);
+    if (!isMonth(month)) return error(res, '发放月份格式应为 YYYY-MM', 400);
+    if (!accountId) return error(res, '请选择发放账户', 400);
+    const user = (req.user && (req.user.username || req.user.id)) || null;
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      // 员工
+      const [wk] = await conn.query('SELECT worker_id, worker_name FROM workers WHERE worker_id = ? AND status = 1', [workerId]);
+      if (!wk.length) { await conn.rollback(); return error(res, '员工不存在或已离职', 400); }
+      // 该月未发放（唯一）
+      const [dup] = await conn.query('SELECT payment_id FROM salary_payments WHERE worker_id = ? AND salary_month = ?', [workerId, month]);
+      if (dup.length) { await conn.rollback(); return error(res, '该员工该月工资已发放，请勿重复操作', 400); }
+      // 实时配送费（发放金额）
+      const fee = await calcWorkerFee(conn, workerId, month);
+      if (fee <= 0) { await conn.rollback(); return error(res, '该员工该月无配送费，无需发放', 400); }
+      // 发放账户（启用，余额充足）
+      const [acc] = await conn.query('SELECT * FROM finance_accounts WHERE account_id = ? FOR UPDATE', [accountId]);
+      if (!acc.length || Number(acc[0].status) !== 1) { await conn.rollback(); return error(res, '发放账户不存在或已停用', 400); }
+      if (Number(acc[0].current_balance) < fee) { await conn.rollback(); return error(res, '发放账户可用余额不足', 400); }
+      const balance = Number(acc[0].current_balance);
+      // 记发放
+      const paymentId = genPaymentId();
+      await conn.query(
+        `INSERT INTO salary_payments (payment_id, worker_id, worker_name, salary_month, amount, account_id, account_name, paid_at, remark, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW(), NOW())`,
+        [paymentId, workerId, wk[0].worker_name, month, fee, accountId, acc[0].account_name, remark || null, user]
+      );
+      // 公司账户扣款 + 支出流水
+      await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [balance - fee, accountId]);
+      await conn.query(
+        `INSERT INTO finance_transactions
+           (tx_id, tx_no, account_id, account_name, tx_type, tx_category, amount, balance_before, balance_after,
+            related_module, related_id, tx_date, handler, counterparty, remark, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, NOW())`,
+        [
+          genTxId(), genTxNo(), accountId, acc[0].account_name, 2, '工资发放', fee,
+          balance, balance - fee, 'salary_payment', paymentId, user || null, wk[0].worker_name, remark || null
+        ]
+      );
+      await conn.commit();
+      return success(res, { paymentId, amount: fee, month }, '工资发放成功');
+    } catch (e) {
+      await conn.rollback();
+      throw e;
+    } finally {
+      conn.release();
+    }
+  } catch (e) {
+    console.error('paySalary error:', e);
+    return error(res, e.message.includes('余额') || e.message.includes('已发放') || e.message.includes('配送费') ? e.message : '工资发放失败', 400);
+  }
+}
+
+// 撤销发放：回补公司账户 + 删流水 + 删发放记录（状态回到未发放）
+async function revokeSalaryPayment(req, res) {
+  try {
+    const { id } = req.params;
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [p] = await conn.query('SELECT * FROM salary_payments WHERE payment_id = ? FOR UPDATE', [id]);
+      if (!p.length) { await conn.rollback(); return error(res, '发放记录不存在', 404); }
+      const rec = p[0];
+      // 撤销关联支出流水并回补余额
+      const [txs] = await conn.query(
+        'SELECT tx_id, account_id, amount FROM finance_transactions WHERE related_module = ? AND related_id = ?',
+        ['salary_payment', id]
+      );
+      for (const tx of txs) {
+        await conn.query('UPDATE finance_accounts SET current_balance = current_balance + ?, updated_at = NOW() WHERE account_id = ?', [tx.amount, tx.account_id]);
+        await conn.query('DELETE FROM finance_transactions WHERE tx_id = ?', [tx.tx_id]);
+      }
+      await conn.query('DELETE FROM salary_payments WHERE payment_id = ?', [id]);
+      await conn.commit();
+      return success(res, null, '已撤销发放，账户余额已回补');
+    } catch (e) {
+      await conn.rollback();
+      throw e;
+    } finally {
+      conn.release();
+    }
+  } catch (e) {
+    console.error('revokeSalaryPayment error:', e);
+    return error(res, '撤销发放失败', 500);
+  }
+}
+
+module.exports = {
+  getSalarySummary, getSalaryOrders, getSalaryOrderItems,
+  getWorkerSummary, paySalary, revokeSalaryPayment
+};
+
+

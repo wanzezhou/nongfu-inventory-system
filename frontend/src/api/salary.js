@@ -26,3 +26,29 @@ export function getSalaryOrderItems(params) {
     params
   })
 }
+
+// 单员工当月配送费与发放状态
+export function getWorkerSalarySummary(params) {
+  return request({
+    url: '/salary/worker-summary',
+    method: 'get',
+    params
+  })
+}
+
+// 确认发放（记录发放 + 公司账户支出）
+export function payWorkerSalary(data) {
+  return request({
+    url: '/salary/pay',
+    method: 'post',
+    data
+  })
+}
+
+// 撤销发放（回补账户余额）
+export function revokeSalaryPayment(id) {
+  return request({
+    url: `/salary/payments/${id}`,
+    method: 'delete'
+  })
+}

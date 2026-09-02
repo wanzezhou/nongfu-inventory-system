@@ -1,7 +1,7 @@
 -- ============================================================
 -- 农富库存管理系统 - 全量数据库（结构 + 数据）
 -- 由 backend/scripts/export_dump.js 自动导出
--- 共 28 张表
+-- 共 29 张表
 -- ============================================================
 CREATE DATABASE IF NOT EXISTS nongfu_inventory DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_unicode_ci;
 USE nongfu_inventory;
@@ -81,7 +81,7 @@ INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `b
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_FEE', '自有费用余额', 7, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义）', 1, '2026-09-02 21:09:28.000', '2026-09-02 21:09:28.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_OTHER', '其他', 4, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:55:37.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SGS', '水公社公户', 2, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:50:03.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 21:10:23.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 22:00:25.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, NULL, NULL, '0.00', '0.00', NULL, 1, '2026-09-02 20:50:03.000', '2026-09-02 21:10:23.000');
 -- 7 行
 
@@ -797,6 +797,29 @@ CREATE TABLE `reimbursements` (
   KEY `idx_applicant` (`applicant_id`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------
+-- 表结构: salary_payments
+-- ----------------------------
+DROP TABLE IF EXISTS `salary_payments`;
+CREATE TABLE `salary_payments` (
+  `payment_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '发放ID',
+  `worker_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '员工ID',
+  `worker_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '员工姓名快照',
+  `salary_month` varchar(7) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '工资归属月份 YYYY-MM',
+  `amount` decimal(12,2) NOT NULL COMMENT '发放金额（当月配送费快照）',
+  `account_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '发放账户',
+  `account_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '发放账户快照',
+  `paid_at` datetime DEFAULT NULL COMMENT '发放时间',
+  `remark` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '备注',
+  `created_by` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '操作人',
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`payment_id`),
+  UNIQUE KEY `uk_worker_month` (`worker_id`,`salary_month`),
+  KEY `idx_month` (`salary_month`),
+  KEY `idx_account` (`account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='员工工资发放记录（员工+月份唯一）';
 
 -- ----------------------------
 -- 表结构: salesmen
