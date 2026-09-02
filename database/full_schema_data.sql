@@ -76,11 +76,14 @@ CREATE TABLE `finance_accounts` (
   KEY `idx_account_name` (`account_name`),
   KEY `idx_account_type` (`account_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='账户管理表';
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_CREDIT', '可上单信用余额', 5, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义）', 1, '2026-09-02 21:09:28.000', '2026-09-02 21:10:23.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_DISCOUNT', '可上单折扣余额', 6, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义）', 1, '2026-09-02 21:09:28.000', '2026-09-02 21:09:28.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_FEE', '自有费用余额', 7, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义）', 1, '2026-09-02 21:09:28.000', '2026-09-02 21:09:28.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_OTHER', '其他', 4, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:55:37.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SGS', '水公社公户', 2, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:50:03.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:52:26.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:52:26.000');
--- 4 行
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 21:10:23.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, NULL, NULL, '0.00', '0.00', NULL, 1, '2026-09-02 20:50:03.000', '2026-09-02 21:10:23.000');
+-- 7 行
 
 -- ----------------------------
 -- 表结构: finance_transactions

@@ -103,6 +103,12 @@ const routes = [
         meta: { title: '业务员管理', icon: 'Avatar', requiresAuth: true }
       },
       {
+        path: 'accounts',
+        name: 'CompanyAccounts',
+        component: () => import('@/views/account/CompanyAccounts.vue'),
+        meta: { title: '公司账户管理', icon: 'Wallet', requiresAuth: true }
+      },
+      {
         path: 'statistics/product-sales',
         name: 'ProductSales',
         component: () => import('@/views/statistics/ProductSales.vue'),
