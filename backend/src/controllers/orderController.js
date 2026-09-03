@@ -2,6 +2,8 @@ const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
 const { VALID_ORDER_TYPES } = require('../constants/order');
 const { parsePage } = require('../utils/pagination');
+// 营收口径唯一来源（A6）：与财务模块共用同一表达式，前端只展示
+const { itemRevenueExpr } = require('../utils/revenueExpr');
 const {
   normalizeOrderPayload, fetchProductMap, buildOrderItems,
   writeOffTickets, restoreWrittenOffTickets, deductInventoryForSale,
@@ -182,9 +184,24 @@ async function getOrderById(req, res) {
       subtotal: Number(item.subtotal) || 0
     }));
 
+    // 营收口径唯一归后端（A6，2026-08-28）：与财务汇总/明细同一 itemRevenueExpr；
+    // 类型4/6 商品明细不计营收（营收按机台销量 machine_sales 统计，此处为 0 属预期）
+    const [revRows] = await pool.execute(
+      `SELECT ROUND(SUM(${itemRevenueExpr()}), 2) AS revenue
+       FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
+       WHERE o.order_id = ?`,
+      [id]
+    );
+    const revenue = Number(revRows[0]?.revenue) || 0;
+    // deliveryFeePart 仅为详情弹窗展示拆分（营收 - 商品金额），非独立口径
+    const deliveryFeePart = Math.round((revenue - (Number(orderRows[0].order_amount) || 0)) * 100) / 100;
+
     const order = {
       ...formatOrder(orderRows[0]),
-      items: formattedItems
+      items: formattedItems,
+      // 营收与配送费拆分由后端计算，前端不再有 calcOrderRevenue 实现
+      revenue,
+      deliveryFeePart
     };
 
     return success(res, order);

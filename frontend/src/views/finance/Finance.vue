@@ -248,11 +248,11 @@
           </div>
           <div class="amount-row">
             <span>总包配送费（按商品）：</span>
-            <span>¥{{ fmtMoney(calcOrderRevenue(currentOrder) - currentOrder.orderAmount) }}</span>
+            <span>¥{{ fmtMoney(currentOrder.deliveryFeePart) }}</span>
           </div>
           <div class="amount-row total">
             <span>应收总额：</span>
-            <span>¥{{ fmtMoney(calcOrderRevenue(currentOrder)) }}</span>
+            <span>¥{{ fmtMoney(currentOrder.revenue) }}</span>
           </div>
         </div>
       </div>
@@ -559,7 +559,10 @@ const handleViewOrder = async (row) => {
       createTime: d.createTime,
       items: d.items || [],
       orderAmount: d.orderAmount,
-      deliveryFee: d.deliveryFee
+      deliveryFee: d.deliveryFee,
+      // 营收口径唯一归后端（A6）：详情营收与配送费拆分均由后端计算返回
+      revenue: d.revenue,
+      deliveryFeePart: d.deliveryFeePart
     }
     detailVisible.value = true
   } catch (error) {
@@ -568,33 +571,8 @@ const handleViewOrder = async (row) => {
   }
 }
 
-// 按营收统计口径计算订单应收（与财务列表营收一致，2026-08-27）：
-//   类型1 = Σ((进货价+总包配送费)×数量)
-//   类型2 = Σ(分销价×非抵扣件数) + Σ((进货价+总包配送费)×抵扣件数)，旧整单抵扣按 (进货价+总包配送费)×数量
-//   类型3 = Σ(零售价×数量)；类型4/6 = Σ(进货价×数量)
-const calcOrderRevenue = (order) => {
-  const t = Number(order.orderType)
-  let total = 0
-  for (const it of order.items || []) {
-    const q = Number(it.quantity) || 0
-    const pp = Number(it.purchasePrice) || 0
-    const wp = Number(it.wholesalePrice) || 0
-    const rp = Number(it.retailPrice) || 0
-    const df = Number(it.totalDeliveryFee) || 0
-    const tq = Number(it.ticketQty) || 0
-    if (t === 1) {
-      total += (pp + df) * q
-    } else if (t === 2) {
-      if (tq > 0) total += (pp + df) * tq + wp * (q - tq)
-      else if (Number(it.pricingType) === 2) total += (pp + df) * q
-      else total += wp * q
-    } else if (t === 3) {
-      total += rp * q
-    }
-    // 类型4/6 机台供货：不计算商品价格，营收按机台销量统计
-  }
-  return Math.round(total * 100) / 100
-}
+// 订单详情的营收/配送费拆分已改为后端计算返回（A6 营收口径唯一化）：
+// 前端原 calcOrderRevenue 双实现已删除，口径唯一来源为 backend/src/utils/revenueExpr.js
 
 const handleDelete = (row) => {
   ElMessageBox.confirm(`确认删除该条销量记录（${row.stationName} - ${row.productName}）？`, '删除确认', {

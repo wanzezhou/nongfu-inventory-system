@@ -3,6 +3,8 @@ const { success, error } = require('../utils/response');
 const { ORDER_TYPES } = require('../constants/order');
 const { parsePage } = require('../utils/pagination');
 const { writeWorkbook } = require('../utils/excel');
+// 营收口径唯一来源（A6）：表达式抽到共享工具，订单详情接口（orderController）也使用同一口径
+const { itemRevenueExpr } = require('../utils/revenueExpr');
 
 // 机台类型映射（machine_stations.machine_type）
 const MACHINE_TYPES = { 1: '量贩机', 2: '零售机' };
@@ -57,25 +59,7 @@ function resolveDateRange(range, startDate, endDate) {
   }
 }
 
-// 订单类营收表达式（2026-08-27 确认口径）：
-//   总包配送费按商品算：商品档案 total_delivery_fee × 数量（订单 delivery_fee 已停用为 0，不作为营收配送费来源）
-//   类型1 官方平台销售：营收 = Σ((进货价 + 总包配送费) × 数量)
-//   类型2 直营水站销售：分销价件数按分销价；水票抵扣件数按 (进货价 + 总包配送费)；
-//       行内混合 ticket_qty>0 -> (进货价+配送费)×抵扣件数 + 分销价×剩余件数
-//       旧整单抵扣数据（ticket_qty=0 且 pricing_type=2）-> 全量按 (进货价 + 总包配送费)
-//   类型3 线下零售：营收 = Σ(零售价 × 数量)
-//   类型4/6 机台：营收 = Σ(进货价 × 数量)（机台配送费不计入）
-function itemRevenueExpr() {
-  return `(CASE o.order_type
-      WHEN 1 THEN (oi.purchase_price + oi.total_delivery_fee) * oi.quantity
-      WHEN 2 THEN IF(oi.ticket_qty > 0,
-                     (oi.purchase_price + oi.total_delivery_fee) * oi.ticket_qty + oi.wholesale_price * (oi.quantity - oi.ticket_qty),
-                     IF(oi.pricing_type = 2, (oi.purchase_price + oi.total_delivery_fee), oi.wholesale_price) * oi.quantity)
-      WHEN 3 THEN oi.retail_price * oi.quantity
-      WHEN 4 THEN 0 -- 量贩机供货：不计算商品价格，营收按机台销量统计（2026-08-27）
-      WHEN 6 THEN 0 -- 零售机供货：不计算商品价格，营收按机台销量统计（2026-08-27）
-      ELSE 0 END)`;
-}
+// itemRevenueExpr 已抽至 src/utils/revenueExpr.js（A6 营收口径唯一化），口径注释见该文件
 
 // 订单类营收明细列表（分页；支持按订单类型 1-6 过滤，4/6 为量贩机/零售机供货订单）
 async function getFinanceOrders(req, res) {
