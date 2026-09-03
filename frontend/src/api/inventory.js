@@ -30,3 +30,21 @@ export function stockOut(data) {
     data
   })
 }
+
+// 入库记录列表
+export function getPurchaseRecords(params) {
+  return request({
+    url: '/inventory/purchases',
+    method: 'get',
+    params
+  })
+}
+
+// 作废入库单（回退库存 + 原路退回）
+export function voidPurchaseRecord(purchaseId, data) {
+  return request({
+    url: `/inventory/purchases/${purchaseId}/void`,
+    method: 'post',
+    data
+  })
+}

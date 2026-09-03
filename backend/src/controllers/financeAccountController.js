@@ -245,5 +245,6 @@ async function getTransactions(req, res) {
 
 module.exports = {
   getAccounts, createAccount, updateAccount, deleteAccount,
-  adjustBalance, transferBetween, getTransactions, ACCOUNT_TYPES
+  adjustBalance, transferBetween, getTransactions, ACCOUNT_TYPES,
+  genTxId, genTxNo
 };

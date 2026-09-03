@@ -1,5 +1,6 @@
 const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
+const { genTxId, genTxNo } = require('./financeAccountController');
 
 // 生成进货记录ID：PR + 时间戳 + 4位随机数
 function generatePurchaseId() {
@@ -7,6 +8,22 @@ function generatePurchaseId() {
   const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
   return `PR${timestamp}${random}`;
 }
+
+// 金额两位小数，避免浮点误差
+function round2(n) {
+  return Math.round(Number(n || 0) * 100) / 100;
+}
+
+// 业务校验失败：标记后由 catch 统一 rollback 并返回 400
+function bizFail(message) {
+  const e = new Error(message);
+  e.business = true;
+  return e;
+}
+
+// 入库单号 -> 资金流水关联模块
+const TX_MODULE_PURCHASE = 'purchase';        // 入库扣款（支出）
+const TX_MODULE_PURCHASE_VOID = 'purchase_void'; // 入库作废退回（收入）
 
 // 格式化库存数据，转成前端需要的驼峰命名
 function formatInventory(item, baseUrl) {
@@ -171,7 +188,10 @@ async function stockIn(req, res) {
     const quantity = req.body.quantity;
     const unit_price = req.body.unit_price ?? req.body.unitPrice ?? 0;
     const supplier_id = req.body.supplier_id || req.body.supplierId;
+    const account_id = req.body.account_id || req.body.accountId;
     const remark = req.body.remark;
+    const handler = (req.user && (req.user.username || req.user.id)) || null;
+    const unitPrice = Number(unit_price) || 0;
 
     // 校验必填字段
     if (!product_id || !quantity) {
@@ -184,8 +204,17 @@ async function stockIn(req, res) {
       return error(res, '入库数量必须为正数', 400);
     }
 
+    if (unitPrice < 0) {
+      return error(res, '入库单价不能为负数', 400);
+    }
+
+    // 付款账户必选（扣款与入库在同一事务，不允许"已入库未扣款"）
+    if (!account_id) {
+      return error(res, '请选择付款公司账户', 400);
+    }
+
     // 检查商品是否存在
-    const [productRows] = await connection.execute('SELECT product_id FROM products WHERE product_id = ?', [product_id]);
+    const [productRows] = await connection.execute('SELECT product_id, product_name FROM products WHERE product_id = ?', [product_id]);
     if (productRows.length === 0) {
       return error(res, '商品不存在', 404);
     }
@@ -194,6 +223,29 @@ async function stockIn(req, res) {
     await connection.beginTransaction();
 
     const now = new Date();
+    const totalAmount = round2(unitPrice * qty);
+
+    // 校验付款账户（行锁，防并发超扣）
+    const [accRows] = await connection.query(
+      'SELECT account_id, account_name, current_balance FROM finance_accounts WHERE account_id = ? AND status = 1 FOR UPDATE',
+      [account_id]
+    );
+    if (accRows.length === 0) {
+      throw bizFail('付款账户不存在或已停用');
+    }
+    const account = accRows[0];
+    const balanceBefore = Number(account.current_balance);
+    if (balanceBefore + 1e-9 < totalAmount) {
+      throw bizFail(`账户「${account.account_name}」余额不足，当前余额 ¥${balanceBefore.toFixed(2)}，本次需扣款 ¥${totalAmount.toFixed(2)}`);
+    }
+    const balanceAfter = round2(balanceBefore - totalAmount);
+
+    // 供应商名称（流水对手方）
+    let counterparty = null;
+    if (supplier_id) {
+      const [supRows] = await connection.query('SELECT supplier_name FROM suppliers WHERE supplier_id = ?', [supplier_id]);
+      counterparty = supRows.length ? supRows[0].supplier_name : null;
+    }
 
     // 检查库存记录是否存在
     const [inventoryRows] = await connection.execute(
@@ -221,21 +273,45 @@ async function stockIn(req, res) {
     // 生成进货记录ID
     const purchase_id = generatePurchaseId();
 
-    // 新增进货记录
+    // 新增进货记录（含付款账户与实付金额快照）
     await connection.execute(
       `INSERT INTO purchase_records (
-        purchase_id, product_id, quantity, unit_price, supplier_id, 
-        total_amount, remark, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        purchase_id, product_id, quantity, unit_price, supplier_id, account_id, account_name,
+        total_amount, paid_amount, payment_status, status, payment_date, remark, handler, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?, ?)`,
       [
         purchase_id,
         product_id,
         qty,
-        unit_price || 0,
+        unitPrice,
         supplier_id || null,
-        (unit_price || 0) * qty,
+        account.account_id,
+        account.account_name,
+        totalAmount,
+        totalAmount,
+        now,
         remark || null,
+        handler,
         now
+      ]
+    );
+
+    // 账户扣款
+    await connection.execute(
+      'UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?',
+      [balanceAfter, account.account_id]
+    );
+
+    // 资金流水（related_id = 入库单号，便于对账追溯）
+    await connection.execute(
+      `INSERT INTO finance_transactions
+         (tx_id, tx_no, account_id, account_name, tx_type, tx_category, amount, balance_before, balance_after,
+          related_module, related_id, tx_date, handler, counterparty, remark, created_at)
+       VALUES (?, ?, ?, ?, 2, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, NOW())`,
+      [
+        genTxId(), genTxNo(), account.account_id, account.account_name, '采购入库', totalAmount,
+        balanceBefore, balanceAfter, TX_MODULE_PURCHASE, purchase_id, handler, counterparty,
+        remark || `入库单 ${purchase_id} 采购付款`
       ]
     );
 
@@ -258,14 +334,182 @@ async function stockIn(req, res) {
       [product_id]
     );
 
-    return success(res, resultRows[0], '入库成功');
+    return success(res, {
+      ...resultRows[0],
+      purchaseId: purchase_id,
+      accountId: account.account_id,
+      accountName: account.account_name,
+      paidAmount: totalAmount,
+      balanceAfter
+    }, '入库成功');
   } catch (err) {
-    // 回滚事务
+    // 回滚事务：入库、扣款、流水一并撤销
     await connection.rollback();
+    if (err.business) {
+      return error(res, err.message, 400);
+    }
     console.error('入库操作失败:', err);
     return error(res, '入库操作失败: ' + err.message);
   } finally {
     // 释放连接
+    connection.release();
+  }
+}
+
+// 入库记录列表（筛选：商品/供应商/账户/状态/日期范围，分页）
+async function getPurchaseRecords(req, res) {
+  try {
+    const { keyword, productId, supplierId, accountId, status, startDate, endDate, page = 1, pageSize = 10 } = req.query;
+    const p = Math.max(1, parseInt(page) || 1);
+    const size = Math.min(200, Math.max(1, parseInt(pageSize) || 10));
+    const offset = (p - 1) * size;
+
+    const parts = [];
+    const params = [];
+    if (keyword) {
+      parts.push('(pr.purchase_id LIKE ? OR p.product_name LIKE ?)');
+      params.push(`%${keyword}%`, `%${keyword}%`);
+    }
+    if (productId) { parts.push('pr.product_id = ?'); params.push(productId); }
+    if (supplierId) { parts.push('pr.supplier_id = ?'); params.push(supplierId); }
+    if (accountId) { parts.push('pr.account_id = ?'); params.push(accountId); }
+    if (status !== undefined && status !== '') { parts.push('pr.status = ?'); params.push(Number(status)); }
+    if (startDate) { parts.push('DATE(pr.created_at) >= ?'); params.push(startDate); }
+    if (endDate) { parts.push('DATE(pr.created_at) <= ?'); params.push(endDate); }
+    const where = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
+
+    const [rows] = await pool.query(
+      `SELECT pr.*, p.product_name, p.product_code, p.specification, p.unit, s.supplier_name
+       FROM purchase_records pr
+       LEFT JOIN products p ON pr.product_id = p.product_id
+       LEFT JOIN suppliers s ON pr.supplier_id = s.supplier_id
+       ${where}
+       ORDER BY pr.created_at DESC
+       LIMIT ${size} OFFSET ${offset}`,
+      params
+    );
+    const [cnt] = await pool.query(
+      `SELECT COUNT(*) n FROM purchase_records pr
+       LEFT JOIN products p ON pr.product_id = p.product_id
+       ${where}`,
+      params
+    );
+
+    return success(res, {
+      list: rows.map((r) => ({
+        purchaseId: r.purchase_id,
+        productId: r.product_id,
+        productName: r.product_name || '',
+        productCode: r.product_code || '',
+        spec: r.specification || '',
+        unit: r.unit || '',
+        supplierId: r.supplier_id,
+        supplierName: r.supplier_name || '',
+        accountId: r.account_id,
+        accountName: r.account_name || '',
+        quantity: Number(r.quantity) || 0,
+        unitPrice: Number(r.unit_price) || 0,
+        totalAmount: Number(r.total_amount) || 0,
+        paidAmount: Number(r.paid_amount) || 0,
+        paymentStatus: Number(r.payment_status) || 0,
+        status: Number(r.status) || 1,
+        voidAt: r.void_at,
+        voidBy: r.void_by || '',
+        voidReason: r.void_reason || '',
+        handler: r.handler || '',
+        remark: r.remark || '',
+        createdAt: r.created_at
+      })),
+      total: cnt[0].n,
+      page: p, pageSize: size
+    });
+  } catch (err) {
+    console.error('获取入库记录失败:', err);
+    return error(res, '获取入库记录失败: ' + err.message);
+  }
+}
+
+// 作废入库单：回退库存 + 账户原路退回 + 反向流水（全部同一事务）
+async function voidPurchaseRecord(req, res) {
+  const connection = await pool.getConnection();
+  try {
+    const purchase_id = req.params.purchaseId || req.body.purchase_id || req.body.purchaseId;
+    const reason = req.body.reason || req.body.voidReason;
+    const handler = (req.user && (req.user.username || req.user.id)) || null;
+
+    if (!purchase_id) return error(res, '入库单号不能为空', 400);
+
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      'SELECT * FROM purchase_records WHERE purchase_id = ? FOR UPDATE',
+      [purchase_id]
+    );
+    if (rows.length === 0) throw bizFail('入库单不存在');
+    const pr = rows[0];
+    if (Number(pr.status) === 2) throw bizFail('该入库单已作废，无法重复操作');
+
+    const qty = Number(pr.quantity) || 0;
+    const refundAmount = round2(pr.paid_amount || 0);
+
+    // 1. 回退库存（扣减入库数量）
+    const [invRows] = await connection.query(
+      'SELECT inventory_id, quantity FROM inventory WHERE product_id = ? FOR UPDATE',
+      [pr.product_id]
+    );
+    if (invRows.length === 0) throw bizFail('库存记录不存在，无法作废');
+    const stock = Number(invRows[0].quantity) || 0;
+    if (stock < qty) {
+      throw bizFail(`库存不足，无法回退：当前库存 ${stock}，需回退 ${qty}`);
+    }
+    await connection.execute(
+      'UPDATE inventory SET quantity = ?, updated_at = NOW() WHERE product_id = ?',
+      [stock - qty, pr.product_id]
+    );
+
+    // 2. 账户原路退回
+    let balanceAfter = null;
+    if (pr.account_id) {
+      const [accRows] = await connection.query(
+        'SELECT account_id, account_name, current_balance FROM finance_accounts WHERE account_id = ? FOR UPDATE',
+        [pr.account_id]
+      );
+      if (accRows.length === 0) throw bizFail('原付款账户不存在，无法原路退回');
+      const acc = accRows[0];
+      const balanceBefore = Number(acc.current_balance);
+      balanceAfter = round2(balanceBefore + refundAmount);
+      await connection.execute(
+        'UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?',
+        [balanceAfter, acc.account_id]
+      );
+      await connection.execute(
+        `INSERT INTO finance_transactions
+           (tx_id, tx_no, account_id, account_name, tx_type, tx_category, amount, balance_before, balance_after,
+            related_module, related_id, tx_date, handler, counterparty, remark, created_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, NOW())`,
+        [
+          genTxId(), genTxNo(), acc.account_id, acc.account_name, '入库退回', refundAmount,
+          balanceBefore, balanceAfter, TX_MODULE_PURCHASE_VOID, purchase_id, handler,
+          pr.account_name || null, reason || `入库单 ${purchase_id} 作废退回`
+        ]
+      );
+    }
+
+    // 3. 标记作废
+    await connection.execute(
+      `UPDATE purchase_records SET status = 2, void_at = NOW(), void_by = ?, void_reason = ?, payment_status = 0
+       WHERE purchase_id = ?`,
+      [handler, reason || null, purchase_id]
+    );
+
+    await connection.commit();
+    return success(res, { purchaseId: purchase_id, refundAmount, balanceAfter }, '入库单已作废，款项原路退回');
+  } catch (err) {
+    await connection.rollback();
+    if (err.business) return error(res, err.message, 400);
+    console.error('作废入库单失败:', err);
+    return error(res, '作废入库单失败: ' + err.message);
+  } finally {
     connection.release();
   }
 }
@@ -356,5 +600,7 @@ module.exports = {
   getInventoryList,
   getInventoryByProductId,
   stockIn,
-  stockOut
+  stockOut,
+  getPurchaseRecords,
+  voidPurchaseRecord
 };

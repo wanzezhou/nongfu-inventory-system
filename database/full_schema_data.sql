@@ -81,7 +81,7 @@ INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `b
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_FEE', '自有费用余额', 7, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义）', 1, '2026-09-02 21:09:28.000', '2026-09-02 21:09:28.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_OTHER', '其他', 4, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:55:37.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SGS', '水公社公户', 2, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:50:03.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 22:00:25.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-03 21:05:04.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, NULL, NULL, '0.00', '0.00', NULL, 1, '2026-09-02 20:50:03.000', '2026-09-02 21:10:23.000');
 -- 7 行
 
@@ -180,7 +180,7 @@ CREATE TABLE `inventory` (
   UNIQUE KEY `uk_product` (`product_id`),
   CONSTRAINT `fk_inventory_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=160 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='总仓库库存表';
-INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (1, 'Pmrf3fgpqDNVO8Q', 10, '2026-07-12 22:56:36.000', '2026-08-28 21:41:43.000', '2026-08-28 21:41:57.000');
+INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (1, 'Pmrf3fgpqDNVO8Q', 10, '2026-09-03 21:04:29.000', '2026-08-28 21:41:43.000', '2026-09-03 21:04:28.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (2, 'Pmrf3fgpzF5XO8D', 40, '2026-07-29 22:02:33.000', '2026-08-27 21:40:12.000', '2026-08-27 22:47:17.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (3, 'Pmrf3fgq30J6ZV3', 60, '2026-07-29 22:02:33.000', '2026-07-29 21:54:05.000', '2026-08-11 20:41:48.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (4, 'Pmrf3fgq6AASZ1I', 0, NULL, NULL, '2026-07-10 23:31:26.000');
@@ -741,25 +741,35 @@ CREATE TABLE `purchase_records` (
   `purchase_id` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '进货单号，主键',
   `product_id` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '商品ID，外键关联products表',
   `supplier_id` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '供应商ID，外键关联suppliers表',
+  `account_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '付款账户ID',
+  `account_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '付款账户名称（快照）',
   `quantity` int NOT NULL COMMENT '进货数量',
   `unit_price` decimal(10,2) NOT NULL COMMENT '进货单价（实际结算价格）',
   `total_amount` decimal(12,2) NOT NULL COMMENT '总金额',
+  `paid_amount` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '实际扣款金额',
   `payment_status` tinyint(1) NOT NULL DEFAULT '0' COMMENT '付款状态：0-未付款，1-已付款',
+  `status` tinyint(1) NOT NULL DEFAULT '1' COMMENT '状态：1-正常 2-已作废',
+  `void_at` datetime DEFAULT NULL COMMENT '作废时间',
+  `void_by` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '作废操作人',
+  `void_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '作废原因',
   `payment_date` datetime DEFAULT NULL COMMENT '付款日期',
   `remark` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '备注',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `handler` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '经手人',
   PRIMARY KEY (`purchase_id`),
   KEY `idx_product` (`product_id`),
   KEY `idx_supplier` (`supplier_id`),
   KEY `idx_payment_status` (`payment_status`),
   KEY `idx_created_at` (`created_at`),
+  KEY `idx_purchase_account` (`account_id`),
+  KEY `idx_purchase_status` (`status`),
   CONSTRAINT `fk_purchase_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_purchase_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`supplier_id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='进货记录表';
-INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `quantity`, `unit_price`, `total_amount`, `payment_status`, `payment_date`, `remark`, `created_at`) VALUES ('PR17838681960791626', 'Pmrf3fgpqDNVO8Q', NULL, 10, '0.50', '5.00', 0, NULL, NULL, '2026-07-12 22:56:36.000');
-INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `quantity`, `unit_price`, `total_amount`, `payment_status`, `payment_date`, `remark`, `created_at`) VALUES ('PR17841202674530279', 'Pmrf3fgpzF5XO8D', NULL, 40, '0.00', '0.00', 0, NULL, '盘库增加: 其他原因，', '2026-07-15 20:57:47.000');
-INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `quantity`, `unit_price`, `total_amount`, `payment_status`, `payment_date`, `remark`, `created_at`) VALUES ('PR17853297486786992', 'Pmrf3fgq30J6ZV3', NULL, 60, '0.00', '0.00', 0, NULL, '盘库增加: 盘点差异，', '2026-07-29 20:55:49.000');
-INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `quantity`, `unit_price`, `total_amount`, `payment_status`, `payment_date`, `remark`, `created_at`) VALUES ('PR17876727510008777', 'Pmrf3fgteHHV9KX', NULL, 30, '0.00', '0.00', 0, NULL, '盘库增加: 盘点差异，', '2026-08-25 23:45:51.000');
+INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17838681960791626', 'Pmrf3fgpqDNVO8Q', NULL, NULL, NULL, 10, '0.50', '5.00', '0.00', 0, 1, NULL, NULL, NULL, NULL, NULL, '2026-07-12 22:56:36.000', NULL);
+INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17841202674530279', 'Pmrf3fgpzF5XO8D', NULL, NULL, NULL, 40, '0.00', '0.00', '0.00', 0, 1, NULL, NULL, NULL, NULL, '盘库增加: 其他原因，', '2026-07-15 20:57:47.000', NULL);
+INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17853297486786992', 'Pmrf3fgq30J6ZV3', NULL, NULL, NULL, 60, '0.00', '0.00', '0.00', 0, 1, NULL, NULL, NULL, NULL, '盘库增加: 盘点差异，', '2026-07-29 20:55:49.000', NULL);
+INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17876727510008777', 'Pmrf3fgteHHV9KX', NULL, NULL, NULL, 30, '0.00', '0.00', '0.00', 0, 1, NULL, NULL, NULL, NULL, '盘库增加: 盘点差异，', '2026-08-25 23:45:51.000', NULL);
 -- 4 行
 
 -- ----------------------------

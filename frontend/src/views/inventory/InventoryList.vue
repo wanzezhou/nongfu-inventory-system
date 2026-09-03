@@ -49,6 +49,10 @@
             <el-icon><Minus /></el-icon>
             出库
           </el-button>
+          <el-button @click="openPurchaseRecordsDialog">
+            <el-icon><Tickets /></el-icon>
+            入库记录
+          </el-button>
           <el-button @click="handleExport" :loading="exporting">
             <el-icon><Download /></el-icon>
             导出
@@ -200,7 +204,36 @@
             合计：<span class="total-text">¥{{ stockInTotal.toFixed(2) }}</span>
           </div>
         </el-card>
-        <el-form-item label="供应商" prop="supplierId" style="margin-top: 16px;">
+        <el-form-item label="付款账户" prop="accountId" style="margin-top: 16px;">
+          <el-select
+            v-model="stockInForm.accountId"
+            placeholder="请选择付款公司账户"
+            filterable
+            style="width: 100%"
+            @change="onAccountChange"
+          >
+            <el-option
+              v-for="a in enabledAccounts"
+              :key="a.accountId"
+              :label="`${a.accountName}（可用余额 ¥${formatMoney(a.currentBalance)}）`"
+              :value="a.accountId"
+              :disabled="a.currentBalance < stockInTotal"
+            />
+          </el-select>
+          <div v-if="stockInForm.accountId" class="account-tip" :class="{ 'is-danger': !isBalanceEnough }">
+            <template v-if="isBalanceEnough">
+              本次扣款 ¥{{ stockInTotal.toFixed(2) }}，扣款后余额 ¥{{ formatMoney(selectedBalance - stockInTotal) }}
+            </template>
+            <template v-else>
+              <el-icon><WarningFilled /></el-icon>
+              账户余额不足，当前可用 ¥{{ formatMoney(selectedBalance) }}，需扣款 ¥{{ stockInTotal.toFixed(2) }}
+            </template>
+          </div>
+          <div v-else class="account-tip is-muted">
+            入库金额将从所选公司账户实时扣除，并生成资金流水
+          </div>
+        </el-form-item>
+        <el-form-item label="供应商" prop="supplierId">
           <el-select
             v-model="stockInForm.supplierId"
             placeholder="请选择供应商"
@@ -347,6 +380,21 @@
             <el-option label="其他原因" value="其他原因" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="stockDiff > 0" label="付款账户" prop="accountId">
+          <el-select
+            v-model="checkStockForm.accountId"
+            placeholder="请选择付款公司账户（盘库增加按 0 元入库）"
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="a in enabledAccounts"
+              :key="a.accountId"
+              :label="`${a.accountName}（可用余额 ¥${formatMoney(a.currentBalance)}）`"
+              :value="a.accountId"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="checkStockForm.remark" type="textarea" :rows="2" placeholder="请输入备注" />
         </el-form-item>
@@ -357,6 +405,86 @@
       </template>
     </el-dialog>
 
+    <!-- 入库记录对话框 -->
+    <el-dialog
+      v-model="purchaseVisible"
+      title="入库记录"
+      width="1000px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form :inline="true" :model="purchaseQuery" class="filter-form">
+        <el-form-item label="关键词">
+          <el-input
+            v-model="purchaseQuery.keyword"
+            placeholder="入库单号 / 商品名称"
+            clearable
+            style="width: 200px"
+            @keyup.enter="fetchPurchaseRecords"
+          />
+        </el-form-item>
+        <el-form-item label="付款账户">
+          <el-select v-model="purchaseQuery.accountId" placeholder="全部" clearable style="width: 180px">
+            <el-option v-for="a in accountOptions" :key="a.accountId" :label="a.accountName" :value="a.accountId" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="purchaseQuery.status" placeholder="全部" clearable style="width: 120px">
+            <el-option label="正常" :value="1" />
+            <el-option label="已作废" :value="2" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="fetchPurchaseRecords">
+            <el-icon><Search /></el-icon>
+            搜索
+          </el-button>
+        </el-form-item>
+      </el-form>
+
+      <el-table :data="purchaseList" border size="small" v-loading="purchaseLoading" max-height="420">
+        <el-table-column prop="purchaseId" label="入库单号" width="190" />
+        <el-table-column prop="productName" label="商品" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="quantity" label="数量" width="80" align="center" />
+        <el-table-column label="单价" width="100" align="right">
+          <template #default="{ row }">¥{{ formatMoney(row.unitPrice) }}</template>
+        </el-table-column>
+        <el-table-column label="扣款金额" width="110" align="right">
+          <template #default="{ row }">
+            <span class="price-text">¥{{ formatMoney(row.paidAmount) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="accountName" label="付款账户" width="140" show-overflow-tooltip />
+        <el-table-column label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 2 ? 'danger' : 'success'" size="small">
+              {{ row.status === 2 ? '已作废' : '正常' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="handler" label="经手人" width="90" align="center" />
+        <el-table-column prop="createdAt" label="入库时间" width="160" />
+        <el-table-column label="操作" width="80" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="row.status !== 2" type="danger" link @click="handleVoidPurchase(row)">作废</el-button>
+            <span v-else class="void-text">—</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pagination-wrapper">
+        <el-pagination
+          v-model:current-page="purchasePagination.page"
+          v-model:page-size="purchasePagination.pageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="purchasePagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="fetchPurchaseRecords"
+          @current-change="fetchPurchaseRecords"
+        />
+      </div>
+    </el-dialog>
+
     <ImportDialog v-model="importDialogVisible" module="inventory" matchFieldText="商品编码" @success="fetchData" />
   </div>
 </template>
@@ -364,8 +492,12 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Plus, Minus, Edit, Picture, Download, Upload, Wallet } from '@element-plus/icons-vue'
-import { getInventoryList, stockIn, stockOut } from '@/api/inventory'
+import {
+  Search, Refresh, Plus, Minus, Edit, Picture, Download, Upload, Wallet, Tickets, WarningFilled
+} from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
+import { getInventoryList, stockIn, stockOut, getPurchaseRecords, voidPurchaseRecord } from '@/api/inventory'
+import { getAccounts } from '@/api/account'
 import { getProductList, getCategoryList } from '@/api/product'
 import { getAllSuppliers } from '@/api/supplier'
 import { exportData, downloadBlob } from '@/api/excel'
@@ -417,6 +549,19 @@ const categoryList = ref([])
 const productOptions = ref([])
 const supplierOptions = ref([])
 const inventorySummary = ref({ totalValue: 0 })
+const accountOptions = ref([])
+
+// 启用的公司账户（入库付款账户候选）
+const enabledAccounts = computed(() => accountOptions.value.filter(a => a.status))
+
+const fetchAccountOptions = async () => {
+  try {
+    const res = await getAccounts()
+    accountOptions.value = res.data?.list || []
+  } catch (e) {
+    console.error('获取公司账户失败:', e)
+  }
+}
 
 const formatMoney = (val) => {
   const num = Number(val) || 0
@@ -427,6 +572,7 @@ const stockInForm = reactive({
   productId: null,
   items: [],
   supplierId: null,
+  accountId: null,
   remark: ''
 })
 
@@ -443,11 +589,16 @@ const checkStockForm = reactive({
   currentStock: 0,
   newStock: 0,
   reason: '',
+  accountId: null,
   remark: ''
 })
 
 const stockInRules = {
-  items: [{ required: true, message: '请至少添加一个商品', trigger: 'change' }]
+  items: [{ required: true, message: '请至少添加一个商品', trigger: 'change' }],
+  accountId: [
+    { required: true, message: '请选择付款公司账户', trigger: 'change' },
+    { validator: validateAccountBalance, trigger: 'change' }
+  ]
 }
 
 const stockOutRules = {
@@ -456,7 +607,16 @@ const stockOutRules = {
 
 const checkStockRules = {
   newStock: [{ required: true, message: '请输入调整后库存', trigger: 'blur' }],
-  reason: [{ required: true, message: '请选择调整原因', trigger: 'change' }]
+  reason: [{ required: true, message: '请选择调整原因', trigger: 'change' }],
+  accountId: [{ validator: validateCheckStockAccount, trigger: 'change' }]
+}
+
+// 盘库增加计入入库（0 元），同样要求指定付款账户
+function validateCheckStockAccount(rule, value, callback) {
+  if (stockDiff.value > 0 && !value) {
+    return callback(new Error('盘库增加需选择付款公司账户'))
+  }
+  callback()
 }
 
 const stockDiff = computed(() => {
@@ -464,8 +624,24 @@ const stockDiff = computed(() => {
 })
 
 const stockInTotal = computed(() => {
-  return stockInForm.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
+  return stockInForm.items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0)
 })
+
+// 所选账户的可用余额 / 余额是否覆盖本次扣款
+const selectedBalance = computed(() => {
+  const acc = enabledAccounts.value.find(a => a.accountId === stockInForm.accountId)
+  return acc ? Number(acc.currentBalance) || 0 : 0
+})
+
+const isBalanceEnough = computed(() => selectedBalance.value + 1e-9 >= stockInTotal.value)
+
+function validateAccountBalance(rule, value, callback) {
+  if (!value) return callback()
+  if (!isBalanceEnough.value) {
+    return callback(new Error(`账户余额不足，可用 ¥${formatMoney(selectedBalance.value)}，需扣款 ¥${stockInTotal.value.toFixed(2)}`))
+  }
+  callback()
+}
 
 const getStockClass = (stock) => {
   const s = Number(stock) || 0
@@ -626,8 +802,15 @@ const openStockInDialog = () => {
   stockInForm.productId = null
   stockInForm.items = []
   stockInForm.supplierId = supplierOptions.value.length > 0 ? (supplierOptions.value[0].id || supplierOptions.value[0].supplierId) : null
+  stockInForm.accountId = null
   stockInForm.remark = ''
   stockInVisible.value = true
+  fetchAccountOptions()
+  stockInFormRef.value?.clearValidate()
+}
+
+const onAccountChange = () => {
+  stockInFormRef.value?.validateField('accountId')
 }
 
 const addStockInItem = () => {
@@ -658,24 +841,37 @@ const handleStockInSubmit = async () => {
     ElMessage.warning('请至少添加一个商品')
     return
   }
-  stockInLoading.value = true
   try {
+    await stockInFormRef.value?.validate()
+  } catch (error) {
+    return
+  }
+  if (!isBalanceEnough.value) {
+    ElMessage.error(`账户余额不足，可用 ¥${formatMoney(selectedBalance.value)}，需扣款 ¥${stockInTotal.value.toFixed(2)}`)
+    return
+  }
+
+  stockInLoading.value = true
+  const doneItems = []
+  try {
+    // 逐条入库：单条失败即中止，已成功的部分保留（每条独立事务，各自对应扣款与流水）
     for (const item of stockInForm.items) {
       await stockIn({
         productId: item.productId,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         supplierId: stockInForm.supplierId,
+        accountId: stockInForm.accountId,
         remark: stockInForm.remark
       })
+      doneItems.push(item.productId)
     }
-    ElMessage.success('入库成功')
+    ElMessage.success(`入库成功，共 ${doneItems.length} 条，扣款 ¥${stockInTotal.value.toFixed(2)}`)
     stockInVisible.value = false
     fetchData()
   } catch (error) {
     console.error('入库失败:', error)
-    ElMessage.success('入库成功')
-    stockInVisible.value = false
+    ElMessage.error((error?.response?.data?.message) || `入库失败：已完成 ${doneItems.length} 条后中断`)
     fetchData()
   } finally {
     stockInLoading.value = false
@@ -754,8 +950,11 @@ const handleCheckStock = (row) => {
   checkStockForm.currentStock = row.stock || 0
   checkStockForm.newStock = row.stock || 0
   checkStockForm.reason = ''
+  checkStockForm.accountId = enabledAccounts.value.length > 0 ? enabledAccounts.value[0].accountId : null
   checkStockForm.remark = ''
   checkStockVisible.value = true
+  fetchAccountOptions()
+  checkStockFormRef.value?.clearValidate()
 }
 
 const handleCheckStockSubmit = async () => {
@@ -773,6 +972,7 @@ const handleCheckStockSubmit = async () => {
         quantity: diff,
         unitPrice: 0,
         supplier: '盘库调整',
+        accountId: checkStockForm.accountId,
         remark: `盘库增加: ${checkStockForm.reason}，${checkStockForm.remark || ''}`
       })
     } else if (diff < 0) {
@@ -788,11 +988,78 @@ const handleCheckStockSubmit = async () => {
     fetchData()
   } catch (error) {
     console.error('库存调整失败:', error)
-    ElMessage.success('库存调整成功')
-    checkStockVisible.value = false
-    fetchData()
+    ElMessage.error((error?.response?.data?.message) || '库存调整失败')
   } finally {
     checkStockLoading.value = false
+  }
+}
+
+// 入库记录（列表 + 作废）
+const purchaseVisible = ref(false)
+const purchaseLoading = ref(false)
+const purchaseList = ref([])
+const purchaseQuery = reactive({
+  keyword: '',
+  accountId: null,
+  status: null
+})
+const purchasePagination = reactive({
+  page: 1,
+  pageSize: 10,
+  total: 0
+})
+
+const openPurchaseRecordsDialog = () => {
+  purchaseQuery.keyword = ''
+  purchaseQuery.accountId = null
+  purchaseQuery.status = null
+  purchasePagination.page = 1
+  purchaseVisible.value = true
+  fetchAccountOptions()
+  fetchPurchaseRecords()
+}
+
+const fetchPurchaseRecords = async () => {
+  purchaseLoading.value = true
+  try {
+    const res = await getPurchaseRecords({
+      keyword: purchaseQuery.keyword || undefined,
+      accountId: purchaseQuery.accountId || undefined,
+      status: purchaseQuery.status ?? undefined,
+      page: purchasePagination.page,
+      pageSize: purchasePagination.pageSize
+    })
+    purchaseList.value = res.data?.list || []
+    purchasePagination.total = res.data?.total || 0
+  } catch (error) {
+    console.error('获取入库记录失败:', error)
+    ElMessage.error('获取入库记录失败')
+  } finally {
+    purchaseLoading.value = false
+  }
+}
+
+const handleVoidPurchase = async (row) => {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `作废后将回退库存 ${row.quantity}，并从「${row.accountName || '—'}」原路退回 ¥${formatMoney(row.paidAmount)}，操作不可撤销。`,
+      '作废入库单',
+      {
+        confirmButtonText: '确认作废',
+        cancelButtonText: '取消',
+        inputPlaceholder: '请输入作废原因',
+        inputValidator: (v) => (v && String(v).trim() ? true : '作废原因不能为空'),
+        type: 'warning'
+      }
+    )
+    await voidPurchaseRecord(row.purchaseId, { reason: String(value).trim() })
+    ElMessage.success('入库单已作废，款项原路退回')
+    fetchPurchaseRecords()
+    fetchData()
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    console.error('作废入库单失败:', error)
+    ElMessage.error((error?.response?.data?.message) || '作废入库单失败')
   }
 }
 
@@ -800,6 +1067,7 @@ onMounted(() => {
   fetchCategories()
   fetchProductOptions()
   fetchSupplierOptions()
+  fetchAccountOptions()
   fetchData()
 })
 </script>
@@ -914,6 +1182,31 @@ onMounted(() => {
 .form-text {
   color: #303133;
   font-size: 14px;
+}
+
+.account-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #67c23a;
+}
+
+.account-tip.is-danger {
+  color: #f56c6c;
+}
+
+.account-tip.is-muted {
+  color: #909399;
+}
+
+.void-text {
+  color: #c0c4cc;
+}
+
+@media (max-width: 768px) {
+  .filter-form :deep(.el-form-item) {
+    margin-right: 0;
+  }
 }
 
 .stock-diff {
