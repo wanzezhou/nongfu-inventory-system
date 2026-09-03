@@ -3,8 +3,21 @@ const { success, error } = require('../utils/response');
 const XLSX = require('xlsx');
 const multer = require('multer');
 
-// 文件上传中间件（内存存储）
-const upload = multer({ storage: multer.memoryStorage() });
+// 文件上传中间件（内存存储）：限制大小 5MB、仅允许 Excel/CSV，防大文件打爆内存
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter(req, file, cb) {
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel',                                          // .xls
+      'text/csv',
+      'application/octet-stream' // 部分浏览器对 .csv 的兜底类型
+    ];
+    if (allowed.includes(file.mimetype)) return cb(null, true);
+    return cb(new Error('仅支持上传 .xlsx / .xls / .csv 文件'));
+  }
+});
 
 // ===== 各模块字段配置 =====
 const MODULE_CONFIG = {
@@ -268,6 +281,11 @@ async function importData(req, res) {
 
     if (jsonData.length === 0) {
       return error(res, 'Excel文件中没有数据', 400);
+    }
+
+    // 防配方炸弹/超大文件拖垮服务：单次导入上限 5000 行
+    if (jsonData.length > 5000) {
+      return error(res, '单次导入不能超过 5000 行，请分批导入', 400);
     }
 
     // 特殊处理订单模块

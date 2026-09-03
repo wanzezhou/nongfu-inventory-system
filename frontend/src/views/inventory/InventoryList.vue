@@ -935,9 +935,7 @@ const handleStockOutSubmit = async () => {
     fetchData()
   } catch (error) {
     console.error('出库失败:', error)
-    ElMessage.success('出库成功')
-    stockOutVisible.value = false
-    fetchData()
+    ElMessage.error(error.message || '出库失败，请检查库存后重试')
   } finally {
     stockOutLoading.value = false
   }
