@@ -1,21 +1,22 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
-const XLSX = require('xlsx');
+const { writeWorkbook, parseTable } = require('../utils/excel');
 const multer = require('multer');
 
-// 文件上传中间件（内存存储）：限制大小 5MB、仅允许 Excel/CSV，防大文件打爆内存
+// 文件上传中间件（内存存储）：限制大小 5MB、仅允许 xlsx/CSV，防大文件打爆内存
+// 注：exceljs 不支持旧版二进制 .xls（BIFF），如需读取请先另存为 .xlsx
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter(req, file, cb) {
     const allowed = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-      'application/vnd.ms-excel',                                          // .xls
       'text/csv',
-      'application/octet-stream' // 部分浏览器对 .csv 的兜底类型
+      'application/octet-stream', // 部分浏览器对 .csv 的兜底类型
+      'application/vnd.ms-excel'  // 兼容部分环境把 .csv 识别为此类型
     ];
     if (allowed.includes(file.mimetype)) return cb(null, true);
-    return cb(new Error('仅支持上传 .xlsx / .xls / .csv 文件'));
+    return cb(new Error('仅支持上传 .xlsx / .csv 文件'));
   }
 });
 
@@ -144,10 +145,7 @@ async function exportData(req, res) {
       const headers = ['商品编码', '商品名称', '规格', '单位', '库存数量', '分类'];
       const data = rows.map(r => [r.product_code, r.product_name, r.specification, r.unit, Number(r.quantity), r.category]);
       const aoa = [headers, ...data];
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '库存数据');
-      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      const buffer = await writeWorkbook([{ name: '库存数据', data: aoa, width: 15 }]);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename=inventory_${Date.now()}.xlsx`);
       return res.send(buffer);
@@ -226,11 +224,7 @@ async function exportData(req, res) {
         }
       }
       const aoa = [headers, ...data];
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = headers.map(() => ({ wch: 15 }));
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '订单数据');
-      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      const buffer = await writeWorkbook([{ name: '订单数据', data: aoa, width: 15 }]);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename=orders_${Date.now()}.xlsx`);
       return res.send(buffer);
@@ -245,11 +239,7 @@ async function exportData(req, res) {
       return val !== null && val !== undefined ? val : '';
     }));
     const aoa = [headers, ...data];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = config.columns.map(() => ({ wch: 15 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '数据');
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeWorkbook([{ name: '数据', data: aoa, width: 15 }]);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=${moduleName}_${Date.now()}.xlsx`);
     return res.send(buffer);
@@ -277,10 +267,8 @@ async function importData(req, res) {
   let connection = null;
 
   try {
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    // 按文件名自动分流 .csv / .xlsx（含表头行 → 对象数组，空缺补 ''）
+    const jsonData = await parseTable(req.file.buffer, req.file.originalname || '');
 
     if (jsonData.length === 0) {
       return error(res, 'Excel文件中没有数据', 400);
@@ -537,11 +525,7 @@ async function downloadTemplate(req, res) {
     const headers = ['商品编码', '商品名称', '规格', '单位', '库存数量', '分类'];
     const sample = ['SPBM001', '农夫山泉饮用天然水', '550ml', '瓶', 100, '饮用水'];
     const aoa = [headers, sample];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = headers.map(() => ({ wch: 15 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '导入模板');
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeWorkbook([{ name: '导入模板', data: aoa, width: 15 }]);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=template_${moduleName}.xlsx`);
     return res.send(buffer);
@@ -552,11 +536,7 @@ async function downloadTemplate(req, res) {
     const headers = ['订单号', '订单类型', '客户姓名', '客户电话', '客户地址', '订单金额', '配送费', '应收总额', '配送方式', '备注', '创建人'];
     const sample = ['', '官方平台销售', '张三', '13800138000', '南京市XX区XX路', 100.00, 10.00, 110.00, '自有员工配送', '备注信息', '管理员'];
     const aoa = [headers, sample];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = headers.map(() => ({ wch: 15 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '导入模板');
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeWorkbook([{ name: '导入模板', data: aoa, width: 15 }]);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=template_${moduleName}.xlsx`);
     return res.send(buffer);
@@ -573,11 +553,7 @@ async function downloadTemplate(req, res) {
     return '';
   });
   const aoa = [headers, sample];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = config.columns.map(() => ({ wch: 15 }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '导入模板');
-  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const buffer = await writeWorkbook([{ name: '导入模板', data: aoa, width: 15 }]);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename=template_${moduleName}.xlsx`);
   return res.send(buffer);

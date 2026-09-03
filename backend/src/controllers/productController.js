@@ -98,21 +98,22 @@ async function getProductById(req, res) {
 async function createProduct(req, res) {
   try {
     const body = req.body;
-    const product_code = body.product_code || body.code;
-    const product_name = body.product_name || body.name;
+    // 字段名经 normalizeBody 中间件归一为驼峰；code/name/spec 等短别名保留兼容
+    const product_code = body.productCode || body.code;
+    const product_name = body.productName || body.name;
     const specification = body.specification || body.spec;
     const unit = body.unit;
-    const purchase_price = body.purchase_price ?? body.purchasePrice;
-    const wholesale_price = body.wholesale_price ?? body.wholesalePrice;
-    const retail_price = body.retail_price ?? body.retailPrice;
-    const machine_price = body.machine_price ?? body.vendingPrice;
-    const total_delivery_fee = body.total_delivery_fee ?? body.totalDeliveryFee;
-    const distribution_delivery_fee = body.distribution_delivery_fee ?? body.distributionDeliveryFee;
-    const worker_retail_delivery_fee = body.worker_retail_delivery_fee ?? body.workerRetailDeliveryFee;
-    const worker_wholesale_delivery_fee = body.worker_wholesale_delivery_fee ?? body.workerStationDeliveryFee;
-    const worker_machine_delivery_fee = body.worker_machine_delivery_fee ?? body.workerVendingDeliveryFee;
+    const purchase_price = body.purchasePrice;
+    const wholesale_price = body.wholesalePrice;
+    const retail_price = body.retailPrice;
+    const machine_price = body.machinePrice ?? body.vendingPrice;
+    const total_delivery_fee = body.totalDeliveryFee;
+    const distribution_delivery_fee = body.distributionDeliveryFee;
+    const worker_retail_delivery_fee = body.workerRetailDeliveryFee;
+    const worker_wholesale_delivery_fee = body.workerWholesaleDeliveryFee ?? body.workerStationDeliveryFee;
+    const worker_machine_delivery_fee = body.workerMachineDeliveryFee ?? body.workerVendingDeliveryFee;
     const category = body.category || body.categoryId;
-    const image_url = body.image_url || body.image;
+    const image_url = body.imageUrl || body.image;
     const status = body.status !== undefined ? body.status : 1;
 
     if (!product_code || !product_name) {
@@ -172,21 +173,21 @@ async function updateProduct(req, res) {
     const { id } = req.params;
     const body = req.body;
 
-    const product_code = body.product_code || body.code;
-    const product_name = body.product_name || body.name;
+    const product_code = body.productCode || body.code;
+    const product_name = body.productName || body.name;
     const specification = body.specification !== undefined ? body.specification : body.spec;
     const unit = body.unit;
-    const purchase_price = body.purchase_price ?? body.purchasePrice;
-    const wholesale_price = body.wholesale_price ?? body.wholesalePrice;
-    const retail_price = body.retail_price ?? body.retailPrice;
-    const machine_price = body.machine_price ?? body.vendingPrice;
-    const total_delivery_fee = body.total_delivery_fee ?? body.totalDeliveryFee;
-    const distribution_delivery_fee = body.distribution_delivery_fee ?? body.distributionDeliveryFee;
-    const worker_retail_delivery_fee = body.worker_retail_delivery_fee ?? body.workerRetailDeliveryFee;
-    const worker_wholesale_delivery_fee = body.worker_wholesale_delivery_fee ?? body.workerStationDeliveryFee;
-    const worker_machine_delivery_fee = body.worker_machine_delivery_fee ?? body.workerVendingDeliveryFee;
+    const purchase_price = body.purchasePrice;
+    const wholesale_price = body.wholesalePrice;
+    const retail_price = body.retailPrice;
+    const machine_price = body.machinePrice ?? body.vendingPrice;
+    const total_delivery_fee = body.totalDeliveryFee;
+    const distribution_delivery_fee = body.distributionDeliveryFee;
+    const worker_retail_delivery_fee = body.workerRetailDeliveryFee;
+    const worker_wholesale_delivery_fee = body.workerWholesaleDeliveryFee ?? body.workerStationDeliveryFee;
+    const worker_machine_delivery_fee = body.workerMachineDeliveryFee ?? body.workerVendingDeliveryFee;
     const category = body.category || body.categoryId;
-    const image_url = body.image_url !== undefined ? body.image_url : body.image;
+    const image_url = body.imageUrl !== undefined ? body.imageUrl : body.image;
     const status = body.status;
 
     const [existing] = await pool.execute('SELECT product_id FROM products WHERE product_id = ?', [id]);

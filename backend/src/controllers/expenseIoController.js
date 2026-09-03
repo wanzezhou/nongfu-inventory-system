@@ -1,5 +1,5 @@
-// 其他支出：导入 / 导出 / 模板（依赖 xlsx 与 multer）
-const XLSX = require('xlsx');
+// 其他支出：导入 / 导出 / 模板（依赖 exceljs 与 multer）
+const { writeWorkbook, readSheetJson, readCsvAoa } = require('../utils/excel');
 const multer = require('multer');
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
@@ -17,10 +17,7 @@ function normalizeKey(k) {
 // 模板下载（xlsx）
 async function downloadTemplate(req, res) {
   try {
-    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, TEMPLATE_EXAMPLE]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '其他支出模板');
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buf = await writeWorkbook([{ name: '其他支出模板', data: [TEMPLATE_HEADERS, TEMPLATE_EXAMPLE] }]);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="other_expenses_template.xlsx"');
     return res.send(buf);
@@ -35,16 +32,15 @@ async function importExpenses(req, res) {
   const file = req.file;
   if (!file) return error(res, '请上传文件', 400);
   try {
-    let wb;
+    let raw;
     const fname = String(file.originalname || '').toLowerCase();
     if (fname.endsWith('.csv')) {
-      const text = file.buffer.toString('utf8');
-      wb = XLSX.read(text, { type: 'string' });
+      raw = readCsvAoa(file.buffer.toString('utf8'));
     } else {
-      wb = XLSX.read(file.buffer, { type: 'buffer' });
+      // sheet_to_json({ header: 1, defval: '' }) 等价物：直接取 AOA，空缺补 ''
+      const wbRows = await readSheetJson(file.buffer);
+      raw = wbRows.length ? [Object.keys(wbRows[0]), ...wbRows.map((o) => Object.values(o))] : [];
     }
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
     if (!raw.length) return error(res, '文件内容为空', 400);
 
     // 表头（首行非空行）
@@ -162,10 +158,7 @@ async function exportExpenses(req, res) {
       res.setHeader('Content-Disposition', 'attachment; filename="other_expenses.csv"');
       return res.send('\ufeff' + csv); // BOM 保证 Excel 打开中文正常
     }
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '其他支出');
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buf = await writeWorkbook([{ name: '其他支出', data: aoa }]);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="other_expenses.xlsx"');
     return res.send(buf);

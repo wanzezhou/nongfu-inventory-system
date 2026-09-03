@@ -11,17 +11,18 @@ const { success, error } = require('../utils/response');
 async function issueTickets(req, res) {
   let connection;
   try {
-    const { stationId, station_id, month, remark, items } = req.body || {};
-    const actualStationId = stationId || station_id;
+    const { stationId, month, remark, items } = req.body || {};
+    const actualStationId = stationId;
     const actualMonth = month || new Date().toISOString().slice(0, 7);
     const operator = (req.user && (req.user.username || req.user.id)) || null;
 
     if (!actualStationId) return error(res, '请选择水站', 400);
     if (!Array.isArray(items) || items.length === 0) return error(res, '请至少填写一条返货商品', 400);
+    // 字段名经 normalizeBody 中间件归一为驼峰
     const cleanItems = items.map((it) => ({
-      productId: it.productId || it.product_id,
+      productId: it.productId,
       quantity: Number(it.quantity),
-      distributionDeliveryFee: Number(it.distributionDeliveryFee !== undefined ? it.distributionDeliveryFee : (it.distribution_delivery_fee !== undefined ? it.distribution_delivery_fee : 0))
+      distributionDeliveryFee: Number(it.distributionDeliveryFee !== undefined ? it.distributionDeliveryFee : 0)
     }));
     const invalid = cleanItems.some((it) => !it.productId || isNaN(it.quantity) || it.quantity <= 0 || isNaN(it.distributionDeliveryFee) || it.distributionDeliveryFee < 0);
     if (invalid) return error(res, '每条需填写商品、数量（>0）与返货配送费（≥0）', 400);
@@ -272,7 +273,7 @@ async function updateIssuance(req, res) {
   let connection;
   try {
     const { id } = req.params;
-    const { quantity, distributionDeliveryFee, distribution_delivery_fee, month, remark } = req.body || {};
+    const { quantity, distributionDeliveryFee, month, remark } = req.body || {};
     const operator = (req.user && (req.user.username || req.user.id)) || null;
 
     const [exist] = await pool.execute('SELECT * FROM water_ticket_issuance WHERE issuance_id = ?', [id]);
@@ -281,7 +282,7 @@ async function updateIssuance(req, res) {
 
     const newQuantity = quantity !== undefined && quantity !== '' ? Number(quantity) : Number(old.quantity);
     if (isNaN(newQuantity) || newQuantity <= 0) return error(res, '数量必须大于0', 400);
-    const newFee = (distributionDeliveryFee !== undefined ? Number(distributionDeliveryFee) : (distribution_delivery_fee !== undefined ? Number(distribution_delivery_fee) : Number(old.distribution_delivery_fee)));
+    const newFee = distributionDeliveryFee !== undefined ? Number(distributionDeliveryFee) : Number(old.distribution_delivery_fee);
     if (isNaN(newFee) || newFee < 0) return error(res, '分销配送费必须大于等于0', 400);
     const newMonth = month || old.month;
 
@@ -340,9 +341,9 @@ async function updateIssuance(req, res) {
 async function adjustBalance(req, res) {
   let connection;
   try {
-    const { stationId, station_id, productId, product_id, targetQuantity } = req.body || {};
-    const actualStationId = stationId || station_id;
-    const actualProductId = productId || product_id;
+    const { stationId, productId, targetQuantity } = req.body || {};
+    const actualStationId = stationId;
+    const actualProductId = productId;
     const target = Number(targetQuantity);
     const operator = (req.user && (req.user.username || req.user.id)) || null;
 
@@ -411,9 +412,9 @@ async function adjustBalance(req, res) {
 async function adjustDeliveryFee(req, res) {
   let connection;
   try {
-    const { stationId, station_id, productId, product_id, targetFee } = req.body || {};
-    const actualStationId = stationId || station_id;
-    const actualProductId = productId || product_id;
+    const { stationId, productId, targetFee } = req.body || {};
+    const actualStationId = stationId;
+    const actualProductId = productId;
     const target = Number(targetFee);
     if (!actualStationId) return error(res, '请选择水站', 400);
     if (!actualProductId) return error(res, '请选择商品', 400);

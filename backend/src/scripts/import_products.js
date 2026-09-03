@@ -1,4 +1,4 @@
-const XLSX = require('xlsx');
+const { readSheetAoa } = require('../utils/excel');
 const path = require('path');
 const fs = require('fs');
 const { pool } = require('../config/db');
@@ -67,10 +67,7 @@ async function importProducts() {
     }
 
     console.log('1. 读取Excel文件...');
-    const workbook = XLSX.readFile(excelPath, { cellFormula: true, cellHTML: false, cellNF: true });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
+    const data = await readSheetAoa(excelPath);
 
     console.log(`   共读取到 ${data.length - 1} 条商品记录\n`);
 

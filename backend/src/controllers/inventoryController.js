@@ -182,12 +182,12 @@ async function getInventoryByProductId(req, res) {
 async function stockIn(req, res) {
   const connection = await pool.getConnection();
   try {
-    // 兼容驼峰和蛇形命名
-    const product_id = req.body.product_id || req.body.productId;
+    // 字段名经 normalizeBody 中间件归一为驼峰
+    const product_id = req.body.productId;
     const quantity = req.body.quantity;
-    const unit_price = req.body.unit_price ?? req.body.unitPrice ?? 0;
-    const supplier_id = req.body.supplier_id || req.body.supplierId;
-    const account_id = req.body.account_id || req.body.accountId;
+    const unit_price = req.body.unitPrice ?? 0;
+    const supplier_id = req.body.supplierId;
+    const account_id = req.body.accountId;
     const remark = req.body.remark;
     const handler = (req.user && (req.user.username || req.user.id)) || null;
     const unitPrice = Number(unit_price) || 0;
@@ -253,12 +253,11 @@ async function stockIn(req, res) {
     );
 
     if (inventoryRows.length === 0) {
-      // 库存记录不存在，创建新记录
-      const inventoryId = generateId('INV');
+      // 库存记录不存在，创建新记录（inventory_id 为 INT 自增，不手填）
       await connection.execute(
-        `INSERT INTO inventory (inventory_id, product_id, quantity, last_in_time, updated_at) 
-         VALUES (?, ?, ?, ?, ?)`,
-        [inventoryId, product_id, qty, now, now]
+        `INSERT INTO inventory (product_id, quantity, last_in_time, updated_at) 
+         VALUES (?, ?, ?, ?)`,
+        [product_id, qty, now, now]
       );
     } else {
       // 库存记录存在，增加数量
@@ -430,7 +429,7 @@ async function getPurchaseRecords(req, res) {
 async function voidPurchaseRecord(req, res) {
   const connection = await pool.getConnection();
   try {
-    const purchase_id = req.params.purchaseId || req.body.purchase_id || req.body.purchaseId;
+    const purchase_id = req.params.purchaseId || req.body.purchaseId;
     const reason = req.body.reason || req.body.voidReason;
     const handler = (req.user && (req.user.username || req.user.id)) || null;
 
@@ -515,10 +514,10 @@ async function voidPurchaseRecord(req, res) {
 async function stockOut(req, res) {
   const connection = await pool.getConnection();
   try {
-    // 兼容驼峰和蛇形命名
-    const product_id = req.body.product_id || req.body.productId;
+    // 字段名经 normalizeBody 中间件归一为驼峰
+    const product_id = req.body.productId;
     const quantity = req.body.quantity;
-    const out_type = req.body.out_type || req.body.type || 1;
+    const out_type = req.body.outType || req.body.type || 1;
     const remark = req.body.remark;
 
     // 校验必填字段

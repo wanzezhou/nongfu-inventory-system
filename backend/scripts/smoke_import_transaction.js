@@ -6,7 +6,7 @@
  */
 process.env.TZ = 'Asia/Shanghai';
 const BASE = 'http://localhost:3000/api';
-const XLSX = require('xlsx');
+const { writeWorkbook } = require('../src/utils/excel');
 
 async function call(method, path, body, token) {
   const res = await fetch(BASE + path, {
@@ -26,12 +26,9 @@ const assert = (cond, name) => {
   else { fail++; console.log(`  ❌ ${name}`); }
 };
 
-function buildWorkbookBuffer(rows) {
+async function buildWorkbookBuffer(rows) {
   const headers = ['商品编码', '库存数量'];
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '导入模板');
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  return writeWorkbook([{ name: '导入模板', data: [headers, ...rows] }]);
 }
 
 async function upload(path, token, buffer) {
@@ -56,7 +53,7 @@ async function upload(path, token, buffer) {
   console.log(`测试商品 ${p.product_code}，当前库存 ${invBefore.quantity}`);
 
   // 场景1：1 行有效 + 1 行编码不存在 → 整体回滚
-  const badBuf = buildWorkbookBuffer([
+  const badBuf = await buildWorkbookBuffer([
     [p.product_code, 123],
     ['NOT_EXIST_CODE_XYZ', 999]
   ]);
@@ -69,7 +66,7 @@ async function upload(path, token, buffer) {
   assert(ghostRows.length === 0, '无效编码未入库');
 
   // 场景2：全有效文件 → 正常提交
-  const goodBuf = buildWorkbookBuffer([
+  const goodBuf = await buildWorkbookBuffer([
     [p.product_code, invBefore.quantity + 7]
   ]);
   const goodRes = await upload('/excel/inventory/import', token, goodBuf);

@@ -2,7 +2,7 @@ const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 const { ORDER_TYPES } = require('../constants/order');
 const { parsePage } = require('../utils/pagination');
-const XLSX = require('xlsx');
+const { writeWorkbook } = require('../utils/excel');
 
 // 机台类型映射（machine_stations.machine_type）
 const MACHINE_TYPES = { 1: '量贩机', 2: '零售机' };
@@ -367,10 +367,11 @@ async function createMachineSale(req, res) {
       return error(res, '至少需要一条商品明细', 400);
     }
 
+    // 字段名经 normalizeBody 中间件归一为驼峰
     const cleanItems = list.map((it) => ({
-      productId: it.productId || it.product_id,
+      productId: it.productId,
       quantity: Number(it.quantity),
-      salePrice: Number(it.salePrice !== undefined ? it.salePrice : it.sale_price)
+      salePrice: Number(it.salePrice !== undefined ? it.salePrice : 0)
     }));
     const invalid = cleanItems.some((it) => !it.productId || isNaN(it.quantity) || it.quantity <= 0 || isNaN(it.salePrice) || it.salePrice < 0);
     if (invalid) {
@@ -506,15 +507,15 @@ async function exportFinance(req, res) {
       备注: r.remark || ''
     }));
 
-    const wb = XLSX.utils.book_new();
     // 订单类型页面：只导订单；机台类型页面：机台销量 + 供货订单；无类型：订单 + 机台全部
+    const sheets = [];
     if (!isMachineType) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orderSheet), isOrderType ? `订单明细(${ORDER_TYPES[wantType]})` : '订单营收明细');
+      sheets.push({ name: isOrderType ? `订单明细(${ORDER_TYPES[wantType]})` : '订单营收明细', data: orderSheet });
     }
     if (!isOrderType) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(machineSheet), isMachineType ? `机台销量明细(${ORDER_TYPES[wantType]})` : '机台销量明细');
+      sheets.push({ name: isMachineType ? `机台销量明细(${ORDER_TYPES[wantType]})` : '机台销量明细', data: machineSheet });
     }
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeWorkbook(sheets);
 
     const typeTag = wantType ? ORDER_TYPES[wantType] : '全部';
     const fileName = `营收_${typeTag}_${start}_${end}.xlsx`;

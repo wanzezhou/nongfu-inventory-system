@@ -1,6 +1,6 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
-const XLSX = require('xlsx');
+const { writeWorkbook } = require('../utils/excel');
 
 // 配送方式映射
 const DELIVERY_TYPES = {
@@ -221,15 +221,11 @@ async function exportProductSales(req, res) {
       订单数: Number(r.orderCount) || 0
     }));
 
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(list);
-    // 设置列宽
-    ws['!cols'] = [
-      { wch: 6 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 10 }, { wch: 6 }, { wch: 10 }, { wch: 8 }
-    ];
-    XLSX.utils.book_append_sheet(wb, ws, '商品销售统计');
-
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeWorkbook([{
+      name: '商品销售统计',
+      data: list,
+      widths: [6, 18, 24, 14, 10, 6, 10, 8]
+    }]);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=product_sales_${Date.now()}.xlsx`);
     res.send(buffer);

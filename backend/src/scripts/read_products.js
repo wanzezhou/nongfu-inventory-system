@@ -1,12 +1,10 @@
-const XLSX = require('xlsx');
+const { readSheetAoa } = require('../utils/excel');
 const path = require('path');
 
 const excelPath = path.join(__dirname, '../../../商品档案/(商品档案)表格视图.xlsx');
 
-const workbook = XLSX.readFile(excelPath, { cellFormula: true, cellHTML: false, cellNF: true });
-const sheetName = workbook.SheetNames[0];
-const worksheet = workbook.Sheets[sheetName];
-const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
+(async () => {
+const data = await readSheetAoa(excelPath);
 
 console.log('商品总数:', data.length - 1);
 console.log('\n表头:', JSON.stringify(data[0]));
@@ -42,3 +40,4 @@ console.log('\n\n===== 查看最后10行 =====');
 for (let i = Math.max(1, data.length - 10); i < data.length; i++) {
   console.log(`行${i}: ${JSON.stringify(data[i])}`);
 }
+})();

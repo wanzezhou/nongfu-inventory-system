@@ -69,6 +69,9 @@ const apiLimiter = rateLimit({
 // 中间件
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// 请求体命名归一化：蛇形键统一转驼峰（controller 内只读驼峰）
+const normalizeBody = require('./middleware/normalizeBody');
+app.use(normalizeBody);
 
 // 静态文件服务 - 商品图片
 app.use('/product_images', express.static(path.join(__dirname, '../../商品档案/商品图片')));
