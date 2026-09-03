@@ -1,12 +1,10 @@
 const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
+const { parsePage } = require('../utils/pagination');
+const { generateId } = require('../utils/idGen');
 
 // 生成水站ID：S + 时间戳 + 4位随机数
-function generateStationId() {
-  const timestamp = Date.now().toString();
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `S${timestamp}${random}`;
-}
+const generateStationId = () => generateId('S');
 
 // 获取水站列表
 async function getStationList(req, res) {
@@ -40,9 +38,7 @@ async function getStationList(req, res) {
     const total = countResult[0].total;
 
     // 分页查询
-    const currentPage = parseInt(page) || 1;
-    const size = parseInt(pageSize) || 10;
-    const offset = (currentPage - 1) * size;
+    const { page: currentPage, size, offset } = parsePage({ page, pageSize });
 
     const listSql = `SELECT * FROM sub_stations ${whereClause} ORDER BY created_at DESC LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`;
     const [list] = await pool.execute(listSql, params);

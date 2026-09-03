@@ -405,14 +405,16 @@
       </template>
     </el-dialog>
 
-    <!-- 入库记录对话框 -->
+    <!-- 出入库记录对话框 -->
     <el-dialog
       v-model="purchaseVisible"
-      title="入库记录"
+      title="出入库记录"
       width="1000px"
       :close-on-click-modal="false"
       destroy-on-close
     >
+      <el-tabs v-model="recordTab" @tab-change="handleRecordTabChange">
+      <el-tab-pane label="入库记录" name="in">
       <el-form :inline="true" :model="purchaseQuery" class="filter-form">
         <el-form-item label="关键词">
           <el-input
@@ -483,6 +485,64 @@
           @current-change="fetchPurchaseRecords"
         />
       </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="出库记录" name="out">
+        <el-form :inline="true" :model="outQuery" class="filter-form">
+          <el-form-item label="关键词">
+            <el-input
+              v-model="outQuery.keyword"
+              placeholder="出库单号 / 商品名称"
+              clearable
+              style="width: 200px"
+              @keyup.enter="fetchOutRecords"
+            />
+          </el-form-item>
+          <el-form-item label="出库类型">
+            <el-select v-model="outQuery.outType" placeholder="全部" clearable style="width: 140px">
+              <el-option label="销售出库" :value="1" />
+              <el-option label="调拨出库" :value="2" />
+              <el-option label="其他" :value="3" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="fetchOutRecords">
+              <el-icon><Search /></el-icon>
+              搜索
+            </el-button>
+          </el-form-item>
+        </el-form>
+
+        <el-table :data="outList" border size="small" v-loading="outLoading" max-height="420">
+          <el-table-column prop="recordId" label="出库单号" width="190" />
+          <el-table-column prop="productName" label="商品" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="quantity" label="数量" width="80" align="center" />
+          <el-table-column label="出库类型" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.outType === 1 ? 'warning' : 'info'">
+                {{ { 1: '销售出库', 2: '调拨出库', 3: '其他' }[row.outType] || '未知' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="stockAfter" label="出库后库存" width="100" align="center" />
+          <el-table-column prop="handler" label="经手人" width="90" align="center" />
+          <el-table-column prop="createdAt" label="出库时间" width="160" />
+          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+        </el-table>
+
+        <div class="pagination-wrapper">
+          <el-pagination
+            v-model:current-page="outPagination.page"
+            v-model:page-size="outPagination.pageSize"
+            :page-sizes="[10, 20, 50]"
+            :total="outPagination.total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="fetchOutRecords"
+            @current-change="fetchOutRecords"
+          />
+        </div>
+      </el-tab-pane>
+      </el-tabs>
     </el-dialog>
 
     <ImportDialog v-model="importDialogVisible" module="inventory" matchFieldText="商品编码" @success="fetchData" />
@@ -490,13 +550,14 @@
 </template>
 
 <script setup>
+import { formatMoney } from '@/utils/format'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Search, Refresh, Plus, Minus, Edit, Picture, Download, Upload, Wallet, Tickets, WarningFilled
 } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
-import { getInventoryList, stockIn, stockOut, getPurchaseRecords, voidPurchaseRecord } from '@/api/inventory'
+import { getInventoryList, stockIn, stockOut, getPurchaseRecords, voidPurchaseRecord, getStockOutRecords } from '@/api/inventory'
 import { getAccounts } from '@/api/account'
 import { getProductList, getCategoryList } from '@/api/product'
 import { getAllSuppliers } from '@/api/supplier'
@@ -561,11 +622,6 @@ const fetchAccountOptions = async () => {
   } catch (e) {
     console.error('获取公司账户失败:', e)
   }
-}
-
-const formatMoney = (val) => {
-  const num = Number(val) || 0
-  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 const stockInForm = reactive({
@@ -686,42 +742,13 @@ const fetchData = async () => {
     }
   } catch (error) {
     console.error('获取库存列表失败:', error)
-    tableData.value = generateMockData()
-    pagination.total = 35
+    ElMessage.error(error.message || '获取库存列表失败')
+    tableData.value = []
+    pagination.total = 0
     inventorySummary.value = { totalValue: 0 }
   } finally {
     loading.value = false
   }
-}
-
-const generateMockData = () => {
-  const products = []
-  const names = ['农夫山泉天然水', '农夫山泉矿泉水', '东方树叶', '茶π', '维他命水', '尖叫', 'NFC果汁']
-  const specs = ['550ml', '1.5L', '4L', '19L', '380ml', '2L']
-  for (let i = 1; i <= 10; i++) {
-    const stock = Math.floor(Math.random() * 2000)
-    products.push({
-      id: i,
-      code: `SP${String(i).padStart(6, '0')}`,
-      name: names[i % names.length] + ' ' + specs[i % specs.length],
-      spec: specs[i % specs.length],
-      unit: '瓶',
-      stock: stock,
-      image: '',
-      lastStockInTime: generateRandomDate(),
-      lastStockOutTime: generateRandomDate(),
-      categoryId: (i % 3) + 1
-    })
-  }
-  return products
-}
-
-const generateRandomDate = () => {
-  const date = new Date()
-  date.setDate(date.getDate() - Math.floor(Math.random() * 30))
-  date.setHours(Math.floor(Math.random() * 24))
-  date.setMinutes(Math.floor(Math.random() * 60))
-  return date.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
 }
 
 const fetchCategories = async () => {
@@ -732,11 +759,7 @@ const fetchCategories = async () => {
     }
   } catch (error) {
     console.error('获取分类失败:', error)
-    categoryList.value = [
-      { id: 1, name: '瓶装水' },
-      { id: 2, name: '茶饮' },
-      { id: 3, name: '功能饮料' }
-    ]
+    categoryList.value = []
   }
 }
 
@@ -748,7 +771,7 @@ const fetchProductOptions = async () => {
     }
   } catch (error) {
     console.error('获取商品列表失败:', error)
-    productOptions.value = generateMockData()
+    productOptions.value = []
   }
 }
 
@@ -760,11 +783,7 @@ const fetchSupplierOptions = async () => {
     }
   } catch (error) {
     console.error('获取供应商列表失败:', error)
-    supplierOptions.value = [
-      { id: 'SUP000001', supplierId: 'SUP000001', supplierName: '农夫山泉南京分公司', name: '农夫山泉南京分公司' },
-      { id: 'SUP000002', supplierId: 'SUP000002', supplierName: '怡宝食品饮料', name: '怡宝食品饮料' },
-      { id: 'SUP000003', supplierId: 'SUP000003', supplierName: '娃哈哈集团', name: '娃哈哈集团' }
-    ]
+    supplierOptions.value = []
   }
 }
 
@@ -1007,14 +1026,55 @@ const purchasePagination = reactive({
   total: 0
 })
 
+// 出库台账（出入库记录对话框的「出库记录」Tab）
+const recordTab = ref('in')
+const outList = ref([])
+const outLoading = ref(false)
+const outQuery = reactive({
+  keyword: '',
+  outType: null
+})
+const outPagination = reactive({
+  page: 1,
+  pageSize: 10,
+  total: 0
+})
+
 const openPurchaseRecordsDialog = () => {
   purchaseQuery.keyword = ''
   purchaseQuery.accountId = null
   purchaseQuery.status = null
   purchasePagination.page = 1
+  outQuery.keyword = ''
+  outQuery.outType = null
+  outPagination.page = 1
+  recordTab.value = 'in'
   purchaseVisible.value = true
   fetchAccountOptions()
   fetchPurchaseRecords()
+}
+
+const handleRecordTabChange = (tab) => {
+  if (tab === 'out') fetchOutRecords()
+}
+
+const fetchOutRecords = async () => {
+  outLoading.value = true
+  try {
+    const res = await getStockOutRecords({
+      keyword: outQuery.keyword || undefined,
+      outType: outQuery.outType ?? undefined,
+      page: outPagination.page,
+      pageSize: outPagination.pageSize
+    })
+    outList.value = res.data?.list || []
+    outPagination.total = res.data?.total || 0
+  } catch (error) {
+    console.error('获取出库台账失败:', error)
+    ElMessage.error('获取出库台账失败')
+  } finally {
+    outLoading.value = false
+  }
 }
 
 const fetchPurchaseRecords = async () => {

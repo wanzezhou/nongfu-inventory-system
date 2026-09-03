@@ -2,6 +2,7 @@
 // 语义：账户间相互独立；转账任一转出方/转入方；所有变更事务化并记流水
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
+const { parsePage } = require('../utils/pagination');
 
 const ACCOUNT_TYPES = {
   1: '晟之溪公户', 2: '水公社公户', 3: '微信', 4: '其他',
@@ -202,9 +203,7 @@ async function getTransactions(req, res) {
   try {
     const { id } = req.params;
     const { startDate, endDate, type, page = 1, pageSize = 10 } = req.query;
-    const p = Math.max(1, parseInt(page) || 1);
-    const size = Math.min(200, Math.max(1, parseInt(pageSize) || 10));
-    const offset = (p - 1) * size;
+    const { page: p, size, offset } = parsePage({ page, pageSize });
     const parts = ['account_id = ?'];
     const params = [id];
     if (startDate) { parts.push('tx_date >= ?'); params.push(startDate); }

@@ -1,13 +1,14 @@
 const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
+const { parsePage } = require('../utils/pagination');
 const { genTxId, genTxNo } = require('./financeAccountController');
+const { generateId } = require('../utils/idGen');
 
 // 生成进货记录ID：PR + 时间戳 + 4位随机数
-function generatePurchaseId() {
-  const timestamp = Date.now().toString();
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `PR${timestamp}${random}`;
-}
+const generatePurchaseId = () => generateId('PR');
+
+// 生成出库记录ID：SO + 时间戳 + 4位随机数
+const generateStockOutId = () => generateId('SO');
 
 // 金额两位小数，避免浮点误差
 function round2(n) {
@@ -86,9 +87,7 @@ async function getInventoryList(req, res) {
     const total = countResult[0].total;
 
     // 分页查询
-    const currentPage = parseInt(page) || 1;
-    const size = parseInt(pageSize) || 10;
-    const offset = (currentPage - 1) * size;
+    const { page: currentPage, size, offset } = parsePage({ page, pageSize });
 
     const listSql = `
       SELECT
@@ -255,7 +254,7 @@ async function stockIn(req, res) {
 
     if (inventoryRows.length === 0) {
       // 库存记录不存在，创建新记录
-      const inventoryId = generatePurchaseId().replace('PR', 'INV');
+      const inventoryId = generateId('INV');
       await connection.execute(
         `INSERT INTO inventory (inventory_id, product_id, quantity, last_in_time, updated_at) 
          VALUES (?, ?, ?, ?, ?)`,
@@ -360,9 +359,7 @@ async function stockIn(req, res) {
 async function getPurchaseRecords(req, res) {
   try {
     const { keyword, productId, supplierId, accountId, status, startDate, endDate, page = 1, pageSize = 10 } = req.query;
-    const p = Math.max(1, parseInt(page) || 1);
-    const size = Math.min(200, Math.max(1, parseInt(pageSize) || 10));
-    const offset = (p - 1) * size;
+    const { page: p, size, offset } = parsePage({ page, pageSize });
 
     const parts = [];
     const params = [];
@@ -565,6 +562,30 @@ async function stockOut(req, res) {
       [newQuantity, now, now, product_id]
     );
 
+    // 写出库台账（商品名称/编码快照，F4 修复：此前出库无任何台账记录）
+    const [productRows] = await connection.execute(
+      'SELECT product_name, product_code FROM products WHERE product_id = ?',
+      [product_id]
+    );
+    await connection.execute(
+      `INSERT INTO stock_out_records (
+        record_id, product_id, product_name, product_code,
+        quantity, out_type, stock_after, remark, handler, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        generateStockOutId(),
+        product_id,
+        productRows[0] ? productRows[0].product_name : null,
+        productRows[0] ? productRows[0].product_code : null,
+        qty,
+        Number(out_type) || 1,
+        newQuantity,
+        remark || null,
+        (req.user && (req.user.username || req.user.name)) || null,
+        now
+      ]
+    );
+
     // 提交事务
     await connection.commit();
 
@@ -596,11 +617,79 @@ async function stockOut(req, res) {
   }
 }
 
+// 出库台账列表（分页 + 筛选：关键词/商品/类型/日期区间）
+async function getStockOutRecords(req, res) {
+  try {
+    const { page, size: pageSize, offset } = parsePage(req.query, { maxSize: 100 });
+
+    const conditions = [];
+    const params = [];
+
+    const keyword = (req.query.keyword || '').trim();
+    if (keyword) {
+      conditions.push('(r.product_name LIKE ? OR r.product_code LIKE ? OR r.record_id LIKE ? OR r.remark LIKE ?)');
+      params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+    }
+    const productId = (req.query.productId || '').trim();
+    if (productId) {
+      conditions.push('r.product_id = ?');
+      params.push(productId);
+    }
+    const outType = parseInt(req.query.outType, 10);
+    if (outType) {
+      conditions.push('r.out_type = ?');
+      params.push(outType);
+    }
+    if (req.query.startDate) {
+      conditions.push('r.created_at >= ?');
+      params.push(`${req.query.startDate} 00:00:00`);
+    }
+    if (req.query.endDate) {
+      conditions.push('r.created_at <= ?');
+      params.push(`${req.query.endDate} 23:59:59`);
+    }
+
+    const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [countRows] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM stock_out_records r ${whereSql}`,
+      params
+    );
+    const total = countRows[0].total;
+
+    const [rows] = await pool.execute(
+      `SELECT r.record_id, r.product_id, r.product_name, r.product_code,
+              r.quantity, r.out_type, r.stock_after, r.remark, r.handler, r.created_at
+       FROM stock_out_records r ${whereSql}
+       ORDER BY r.created_at DESC, r.record_id DESC
+       LIMIT ${parseInt(offset, 10)}, ${parseInt(pageSize, 10)}`,
+      params
+    );
+
+    return pagination(res, rows.map(r => ({
+      recordId: r.record_id,
+      productId: r.product_id,
+      productName: r.product_name,
+      productCode: r.product_code,
+      quantity: r.quantity,
+      outType: r.out_type,
+      stockAfter: r.stock_after,
+      remark: r.remark,
+      handler: r.handler,
+      createdAt: r.created_at
+    })), total, page, pageSize);
+  } catch (err) {
+    console.error('获取出库台账失败:', err);
+    return error(res, '获取出库台账失败');
+  }
+}
+
 module.exports = {
   getInventoryList,
   getInventoryByProductId,
   stockIn,
   stockOut,
   getPurchaseRecords,
-  voidPurchaseRecord
+  voidPurchaseRecord,
+  getStockOutRecords
 };

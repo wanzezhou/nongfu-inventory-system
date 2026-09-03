@@ -106,6 +106,7 @@
 </template>
 
 <script setup>
+import { formatMoney } from '@/utils/format'
 import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
@@ -130,11 +131,6 @@ watch(() => props.visible, (val) => {
     printTime.value = now.toISOString().slice(0, 10)
   }
 })
-
-const formatMoney = (value) => {
-  if (!value && value !== 0) return '0.00'
-  return Number(value).toFixed(2)
-}
 
 // 水票抵扣行：直营水站销售(类型2) 且行内使用水票抵扣（pricingType=2 或 ticketQty>0）
 const isTicketItem = (item) => {

@@ -1,12 +1,10 @@
 const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
+const { parsePage } = require('../utils/pagination');
+const { generateId } = require('../utils/idGen');
 
 // machine_type: 1-量贩机, 2-零售机
-function generateMachineId() {
-  const timestamp = Date.now().toString();
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `M${timestamp}${random}`;
-}
+const generateMachineId = () => generateId('M');
 
 // 获取机台列表（支持按类型筛选）
 async function getMachineStationList(req, res) {
@@ -35,9 +33,7 @@ async function getMachineStationList(req, res) {
     const [countResult] = await pool.execute(countSql, params);
     const total = countResult[0].total;
 
-    const currentPage = parseInt(page) || 1;
-    const size = parseInt(pageSize) || 10;
-    const offset = (currentPage - 1) * size;
+    const { page: currentPage, size, offset } = parsePage({ page, pageSize });
 
     const listSql = `SELECT * FROM machine_stations ${whereClause} ORDER BY created_at DESC LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`;
     const [list] = await pool.execute(listSql, params);

@@ -1,6 +1,7 @@
 // 工资统计：根据订单计算每位配送员工的配送费（按订单类型取商品配送费快照 × 数量）
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
+const { ORDER_TYPES } = require('../constants/order');
 
 // 订单类型 -> 员工配送费费率（order_items 创建时快照的商品配送费）
 //   官方平台销售(1) / 线下零售(3)：工人零售配送费
@@ -15,14 +16,6 @@ function deliveryFeeExpr() {
       WHEN 6 THEN oi.worker_machine_delivery_fee
       ELSE 0 END)`;
 }
-
-const ORDER_TYPES = {
-  1: '官方平台销售',
-  2: '直营水站销售',
-  3: '线下零售',
-  4: '量贩机供货',
-  6: '零售机供货'
-};
 
 // 通用过滤：排除已取消、无需配送(delivery_type=3)、未指定员工、非业务订单
 function commonWhere(month) {

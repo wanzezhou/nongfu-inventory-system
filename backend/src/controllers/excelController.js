@@ -273,6 +273,9 @@ async function importData(req, res) {
     return error(res, '请选择要导入的Excel文件', 400);
   }
 
+  // connection 提升到 try 外，保证 catch/finally 可访问
+  let connection = null;
+
   try {
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
@@ -288,6 +291,10 @@ async function importData(req, res) {
       return error(res, '单次导入不能超过 5000 行，请分批导入', 400);
     }
 
+    // 事务化导入（F5 修复）：任一行失败则整体回滚，避免出现半截数据
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
     // 特殊处理订单模块
     if (moduleName === 'orders') {
       const orderTypeMap = { '官方平台销售': 1, '直营水站销售': 2, '线下零售': 3, '量贩机供货': 4, '零售机供货': 6 };
@@ -295,11 +302,14 @@ async function importData(req, res) {
       let inserted = 0;
       let updated = 0;
       let failed = 0;
+      const failedRows = [];
 
-      for (const row of jsonData) {
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        const rowNum = i + 2; // Excel 行号（含表头）
         try {
           const customerName = row['客户姓名'] || '';
-          if (!customerName) { failed++; continue; }
+          if (!customerName) { failed++; failedRows.push({ row: rowNum, reason: '客户姓名为空' }); continue; }
 
           const orderTypeStr = row['订单类型'] || '';
           const orderType = orderTypeMap[orderTypeStr] || Number(orderTypeStr) || 1;
@@ -316,7 +326,7 @@ async function importData(req, res) {
           // 查找创建人ID
           let createdBy = null;
           if (creatorName) {
-            const [workers] = await pool.execute('SELECT worker_id FROM workers WHERE worker_name = ?', [creatorName]);
+            const [workers] = await connection.execute('SELECT worker_id FROM workers WHERE worker_name = ?', [creatorName]);
             if (workers.length > 0) createdBy = workers[0].worker_id;
           }
 
@@ -325,9 +335,9 @@ async function importData(req, res) {
 
           // 检查订单是否已存在
           if (orderId) {
-            const [existing] = await pool.execute('SELECT order_id FROM orders WHERE order_id = ?', [orderId]);
+            const [existing] = await connection.execute('SELECT order_id FROM orders WHERE order_id = ?', [orderId]);
             if (existing.length > 0) {
-              await pool.execute(
+              await connection.execute(
                 `UPDATE orders SET order_type=?, customer_name=?, customer_phone=?, customer_address=?,
                  order_amount=?, delivery_fee=?, total_receivable=?, delivery_type=?, remark=?,
                  created_by=?, updated_at=? WHERE order_id=?`,
@@ -345,7 +355,7 @@ async function importData(req, res) {
           const month = String(now.getMonth() + 1).padStart(2, '0');
           const day = String(now.getDate()).padStart(2, '0');
           const prefix = `SZX${year}${month}${day}`;
-          const [maxRows] = await pool.execute(
+          const [maxRows] = await connection.execute(
             'SELECT order_id FROM orders WHERE order_id LIKE ? ORDER BY order_id DESC LIMIT 1',
             [`${prefix}%`]
           );
@@ -356,7 +366,7 @@ async function importData(req, res) {
           }
           const newOrderId = `${prefix}${String(seq).padStart(5, '0')}`;
 
-          await pool.execute(
+          await connection.execute(
             `INSERT INTO orders (order_id, order_type, customer_name, customer_phone, customer_address,
               order_amount, delivery_fee, total_receivable, delivery_type, remark, created_by, created_at, updated_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -367,8 +377,19 @@ async function importData(req, res) {
         } catch (e) {
           console.error('订单导入行失败:', e.message);
           failed++;
+          failedRows.push({ row: rowNum, reason: e.message });
         }
       }
+
+      if (failed > 0) {
+        await connection.rollback();
+        return res.status(400).json({
+          code: 400,
+          message: `导入失败：第 ${failedRows.map(f => f.row).slice(0, 10).join('、')}${failedRows.length > 10 ? ' 等' : ''} 行有误（共 ${failed} 行），已全部回滚。请修正后重新导入。首条原因：${failedRows[0].reason}`,
+          data: { inserted: 0, updated: 0, failed, total: jsonData.length, failedRows }
+        });
+      }
+      await connection.commit();
       return success(res, { inserted, updated, failed, total: jsonData.length },
         `导入完成：新增${inserted}条，更新${updated}条，失败${failed}条`);
     }
@@ -377,23 +398,43 @@ async function importData(req, res) {
     if (moduleName === 'inventory') {
       let updated = 0;
       let failed = 0;
-      for (const row of jsonData) {
+      const failedRows = [];
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        const rowNum = i + 2;
         const code = row['商品编码'] || row['product_code'];
         const qty = Number(row['库存数量'] || row['quantity']);
-        if (!code || isNaN(qty)) { failed++; continue; }
-        const [products] = await pool.execute('SELECT product_id FROM products WHERE product_code = ?', [code]);
-        if (products.length === 0) { failed++; continue; }
+        if (!code || isNaN(qty)) {
+          failed++;
+          failedRows.push({ row: rowNum, reason: '商品编码为空或库存数量非数字' });
+          continue;
+        }
+        const [products] = await connection.execute('SELECT product_id FROM products WHERE product_code = ?', [code]);
+        if (products.length === 0) {
+          failed++;
+          failedRows.push({ row: rowNum, reason: `商品编码 ${code} 不存在` });
+          continue;
+        }
         const pid = products[0].product_id;
-        const [inv] = await pool.execute('SELECT inventory_id FROM inventory WHERE product_id = ?', [pid]);
+        const [inv] = await connection.execute('SELECT inventory_id FROM inventory WHERE product_id = ?', [pid]);
         const now = new Date();
         if (inv.length === 0) {
           const invId = 'INV' + Date.now() + Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-          await pool.execute('INSERT INTO inventory (inventory_id, product_id, quantity, updated_at) VALUES (?, ?, ?, ?)', [invId, pid, qty, now]);
+          await connection.execute('INSERT INTO inventory (inventory_id, product_id, quantity, updated_at) VALUES (?, ?, ?, ?)', [invId, pid, qty, now]);
         } else {
-          await pool.execute('UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?', [qty, now, pid]);
+          await connection.execute('UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?', [qty, now, pid]);
         }
         updated++;
       }
+      if (failed > 0) {
+        await connection.rollback();
+        return res.status(400).json({
+          code: 400,
+          message: `导入失败：第 ${failedRows.map(f => f.row).slice(0, 10).join('、')}${failedRows.length > 10 ? ' 等' : ''} 行有误（共 ${failed} 行），已全部回滚。请修正后重新导入。首条原因：${failedRows[0].reason}`,
+          data: { updated: 0, failed, total: jsonData.length, failedRows }
+        });
+      }
+      await connection.commit();
       return success(res, { updated, failed, total: jsonData.length }, `导入完成：更新${updated}条，失败${failed}条`);
     }
 
@@ -401,8 +442,11 @@ async function importData(req, res) {
     let inserted = 0;
     let updated = 0;
     let failed = 0;
+    const failedRows = [];
 
-    for (const row of jsonData) {
+    for (let i = 0; i < jsonData.length; i++) {
+      const row = jsonData[i];
+      const rowNum = i + 2;
       try {
         // 构建 fieldValue 映射
         const fieldValueMap = {};
@@ -416,11 +460,11 @@ async function importData(req, res) {
             hasRequired = false;
           }
         }
-        if (!hasRequired) { failed++; continue; }
+        if (!hasRequired) { failed++; failedRows.push({ row: rowNum, reason: '必填字段为空' }); continue; }
 
         // 查找是否已存在（按matchField匹配）
         const matchVal = fieldValueMap[config.matchField];
-        const [existing] = await pool.execute(
+        const [existing] = await connection.execute(
           `SELECT ${config.idField} FROM ${config.table} WHERE ${config.matchField} = ?`,
           [matchVal]
         );
@@ -438,7 +482,7 @@ async function importData(req, res) {
           setClauses.push('updated_at = ?');
           values.push(now);
           values.push(existing[0][config.idField]);
-          await pool.execute(
+          await connection.execute(
             `UPDATE ${config.table} SET ${setClauses.join(', ')} WHERE ${config.idField} = ?`,
             values
           );
@@ -449,7 +493,7 @@ async function importData(req, res) {
           const fields = [config.idField, ...config.columns.map(c => c.db), 'created_at', 'updated_at'];
           const placeholders = fields.map(() => '?').join(', ');
           const values = [id, ...config.columns.map(c => fieldValueMap[c.db]), now, now];
-          await pool.execute(
+          await connection.execute(
             `INSERT INTO ${config.table} (${fields.join(', ')}) VALUES (${placeholders})`,
             values
           );
@@ -458,14 +502,29 @@ async function importData(req, res) {
       } catch (e) {
         console.error('导入行失败:', e.message);
         failed++;
+        failedRows.push({ row: rowNum, reason: e.message });
       }
     }
 
+    if (failed > 0) {
+      await connection.rollback();
+      return res.status(400).json({
+        code: 400,
+        message: `导入失败：第 ${failedRows.map(f => f.row).slice(0, 10).join('、')}${failedRows.length > 10 ? ' 等' : ''} 行有误（共 ${failed} 行），已全部回滚。请修正后重新导入。首条原因：${failedRows[0].reason}`,
+        data: { inserted: 0, updated: 0, failed, total: jsonData.length, failedRows }
+      });
+    }
+
+    await connection.commit();
     return success(res, { inserted, updated, failed, total: jsonData.length },
       `导入完成：新增${inserted}条，更新${updated}条，失败${failed}条`);
   } catch (err) {
+    // 事务化导入：任何未预期异常都回滚
+    try { await connection.rollback(); } catch (_) { /* 忽略回滚异常 */ }
     console.error('导入失败:', err);
     return error(res, '导入失败: ' + err.message);
+  } finally {
+    if (connection) connection.release();
   }
 }
 

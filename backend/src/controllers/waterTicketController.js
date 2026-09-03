@@ -133,9 +133,7 @@ async function getTicketInventory(req, res) {
 async function getTicketList(req, res) {
   try {
     const { stationId, station_id, productId, status, month, page = 1, pageSize = 10 } = req.query;
-    const p = Math.max(1, parseInt(page) || 1);
-    const size = Math.min(100, Math.max(1, parseInt(pageSize) || 10));
-    const offset = (p - 1) * size;
+    const { page: p, size, offset } = parsePage({ page, pageSize }, { maxSize: 100 });
     const where = [];
     const params = [];
     if (stationId || station_id) { where.push('t.station_id = ?'); params.push(stationId || station_id); }
@@ -198,9 +196,7 @@ async function cancelTicket(req, res) {
 async function getIssuanceList(req, res) {
   try {
     const { stationId, station_id, month, page = 1, pageSize = 10 } = req.query;
-    const p = Math.max(1, parseInt(page) || 1);
-    const size = Math.min(100, Math.max(1, parseInt(pageSize) || 10));
-    const offset = (p - 1) * size;
+    const { page: p, size, offset } = parsePage({ page, pageSize }, { maxSize: 100 });
     const where = [];
     const params = [];
     if (stationId || station_id) { where.push('i.station_id = ?'); params.push(stationId || station_id); }

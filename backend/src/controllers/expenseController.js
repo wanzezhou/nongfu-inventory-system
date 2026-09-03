@@ -1,6 +1,7 @@
 // 其他支出管理：CRUD + 账户记账（扣减余额/写流水，事务保证一致）
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
+const { parsePage } = require('../utils/pagination');
 
 // 预置支出类别
 const PRESET_CATEGORIES = ['运输', '仓储', '房租水电', '办公', '维修', '招待', '营销', '其他'];
@@ -68,9 +69,7 @@ function validateBody(body) {
 async function getExpenses(req, res) {
   try {
     const { month, startDate, endDate, category, keyword, page = 1, pageSize = 10 } = req.query;
-    const p = Math.max(1, parseInt(page) || 1);
-    const size = Math.min(200, Math.max(1, parseInt(pageSize) || 10));
-    const offset = (p - 1) * size;
+    const { page: p, size, offset } = parsePage({ page, pageSize });
     const parts = [];
     const params = [];
     if (month && /^\d{4}-\d{2}$/.test(month)) {

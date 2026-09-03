@@ -171,6 +171,7 @@
 </template>
 
 <script setup>
+import { ORDER_TYPE_TEXT as orderTypes } from '@/utils/constants'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
@@ -191,15 +192,6 @@ const stationOptions = ref([])
 const machineOptions = ref([])
 const barChartRef = ref(null)
 let barChart = null
-
-// 订单类型映射（与订单管理一致）
-const orderTypes = {
-  1: '官方平台销售',
-  2: '直营水站销售',
-  3: '线下零售',
-  4: '量贩机供货',
-  6: '零售机供货'
-}
 
 // 配送方式映射
 const deliveryTypes = {

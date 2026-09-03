@@ -291,34 +291,12 @@ const fetchData = async () => {
     }
   } catch (error) {
     console.error('获取供应商列表失败:', error)
-    tableData.value = generateMockData()
-    pagination.total = 12
+    ElMessage.error(error.message || '获取供应商列表失败')
+    tableData.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }
-}
-
-const generateMockData = () => {
-  const suppliers = []
-  const names = ['农夫山泉南京分公司', '怡宝食品饮料', '娃哈哈集团', '康师傅饮品', '统一企业', '可口可乐中国', '百事可乐', '红牛维他命饮料']
-  const contacts = ['张经理', '李总', '王主管', '赵经理', '刘总', '陈主管', '杨经理', '黄总']
-  for (let i = 1; i <= 8; i++) {
-    suppliers.push({
-      supplierId: `SUP${String(i).padStart(6, '0')}`,
-      supplierName: names[i % names.length],
-      contactName: contacts[i % contacts.length],
-      phone: `138${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
-      address: `南京市鼓楼区XX路${100 + i}号`,
-      bankName: '中国工商银行南京分行',
-      bankAccount: `62220212${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
-      accountName: names[i % names.length],
-      taxNumber: `9132010${String(Math.floor(Math.random() * 1000000000)).padStart(9, '0')}`,
-      invoiceTitle: names[i % names.length],
-      status: i % 6 === 0 ? 0 : 1,
-      remark: ''
-    })
-  }
-  return suppliers
 }
 
 const handleSearch = () => {

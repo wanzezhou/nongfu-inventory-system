@@ -404,33 +404,12 @@ const fetchData = async () => {
     }
   } catch (error) {
     console.error('获取商品列表失败:', error)
-    tableData.value = generateMockData()
-    pagination.total = 35
+    ElMessage.error(error.message || '获取商品列表失败')
+    tableData.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }
-}
-
-const generateMockData = () => {
-  const products = []
-  const names = ['农夫山泉天然水', '农夫山泉矿泉水', '东方树叶', '茶π', '维他命水', '尖叫', 'NFC果汁']
-  const specs = ['550ml', '1.5L', '4L', '19L', '380ml', '2L']
-  for (let i = 1; i <= 10; i++) {
-    products.push({
-      id: i,
-      code: `SP${String(i).padStart(6, '0')}`,
-      name: names[i % names.length] + ' ' + specs[i % specs.length],
-      spec: specs[i % specs.length],
-      unit: '瓶',
-      purchasePrice: (Math.random() * 10 + 1).toFixed(2) * 1,
-      wholesalePrice: (Math.random() * 15 + 2).toFixed(2) * 1,
-      retailPrice: (Math.random() * 20 + 3).toFixed(2) * 1,
-      stock: Math.floor(Math.random() * 1000),
-      status: i % 5 === 0 ? 0 : 1,
-      categoryId: (i % 3) + 1
-    })
-  }
-  return products
 }
 
 const fetchCategories = async () => {

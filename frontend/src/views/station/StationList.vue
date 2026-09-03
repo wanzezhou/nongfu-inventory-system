@@ -248,11 +248,6 @@ const basicRules = {
   phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }]
 }
 
-const formatMoney = (value) => {
-  if (!value && value !== 0) return '0.00'
-  return Number(value).toFixed(2)
-}
-
 const fetchData = async () => {
   loading.value = true
   try {
@@ -283,36 +278,12 @@ const fetchData = async () => {
     }
   } catch (error) {
     console.error('获取水站列表失败:', error)
-    tableData.value = generateMockData()
-    pagination.total = 28
+    ElMessage.error(error.message || '获取水站列表失败')
+    tableData.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }
-}
-
-const generateMockData = () => {
-  const stations = []
-  const names = ['朝阳路水站', '中关村水站', '西单水站', '王府井水站', '丰台科技园水站', '通州万达水站']
-  const contacts = ['张三', '李四', '王五', '赵六', '钱七', '孙八']
-  const areas = ['朝阳区', '海淀区', '西城区', '东城区', '丰台区', '通州区']
-  for (let i = 1; i <= 10; i++) {
-    stations.push({
-      id: i,
-      name: names[i % names.length],
-      contact: contacts[i % contacts.length],
-      phone: `138${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
-      address: `北京市${areas[i % areas.length]}某某街道${i}号`,
-      status: i % 5 === 0 ? 0 : 1,
-      bankName: '中国工商银行',
-      bankAccount: '6222021234567890' + i,
-      accountName: names[i % names.length],
-      invoiceTitle: names[i % names.length] + '有限公司',
-      taxNumber: '91110105MA012345' + String(i).padStart(2, '0'),
-      invoiceAddress: `北京市${areas[i % areas.length]}某某路${i}号`,
-      invoicePhone: `010-${String(Math.floor(Math.random() * 10000000)).padStart(7, '0')}`
-    })
-  }
-  return stations
 }
 
 const handleSearch = () => {

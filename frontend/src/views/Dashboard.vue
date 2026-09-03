@@ -42,6 +42,7 @@
 </template>
 
 <script setup>
+import { formatMoney } from '@/utils/format'
 import { ref, onMounted, nextTick, computed } from 'vue'
 import * as echarts from 'echarts'
 import { getDashboardSummary, getDashboardTrend } from '@/api/dashboard'
@@ -103,11 +104,6 @@ const pieData = ref([
   { name: '农夫山泉 19L', value: 1250 },
   { name: '其他产品', value: 890 }
 ])
-
-const formatMoney = (value) => {
-  if (!value) return '0.00'
-  return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
 
 const initTrendChart = () => {
   if (!trendChartRef.value) return

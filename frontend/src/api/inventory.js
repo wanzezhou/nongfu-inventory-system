@@ -48,3 +48,12 @@ export function voidPurchaseRecord(purchaseId, data) {
     data
   })
 }
+
+// 出库台账列表
+export function getStockOutRecords(params) {
+  return request({
+    url: '/inventory/stock-out-records',
+    method: 'get',
+    params
+  })
+}

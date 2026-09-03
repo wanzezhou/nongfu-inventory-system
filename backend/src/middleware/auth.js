@@ -23,4 +23,16 @@ function auth(req, res, next) {
   }
 }
 
+// 管理员角色校验（S4）：必须先经过 auth，req.user.role === 'admin' 才放行
+function requireAdmin(req, res, next) {
+  if (!req.user) {
+    return res.json({ code: 401, message: '未登录，请先登录', data: null });
+  }
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ code: 403, message: '无权限执行此操作，需要管理员角色', data: null });
+  }
+  next();
+}
+
 module.exports = auth;
+module.exports.requireAdmin = requireAdmin;

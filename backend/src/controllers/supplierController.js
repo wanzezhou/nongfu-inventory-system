@@ -1,11 +1,9 @@
 const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
+const { parsePage } = require('../utils/pagination');
+const { generateId } = require('../utils/idGen');
 
-function generateSupplierId() {
-  const timestamp = Date.now().toString();
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `SUP${timestamp}${random}`;
-}
+const generateSupplierId = () => generateId('SUP');
 
 async function getSupplierList(req, res) {
   try {
@@ -28,9 +26,7 @@ async function getSupplierList(req, res) {
     const [countResult] = await pool.execute(countSql, params);
     const total = countResult[0].total;
 
-    const currentPage = parseInt(page) || 1;
-    const size = parseInt(pageSize) || 10;
-    const offset = (currentPage - 1) * size;
+    const { page: currentPage, size, offset } = parsePage({ page, pageSize });
 
     const listSql = `SELECT * FROM suppliers ${whereClause} ORDER BY created_at DESC LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`;
     const [list] = await pool.execute(listSql, params);

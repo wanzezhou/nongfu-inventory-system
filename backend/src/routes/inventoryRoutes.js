@@ -2,12 +2,16 @@ const express = require('express');
 const router = express.Router();
 const inventoryController = require('../controllers/inventoryController');
 const auth = require('../middleware/auth');
+const requireAdmin = auth.requireAdmin;
 
 // 入库记录列表（须定义在 /:productId 之前，避免被通配路由拦截）
 router.get('/purchases', auth, inventoryController.getPurchaseRecords);
 
-// 作废入库单（回退库存 + 原路退回）
-router.post('/purchases/:purchaseId/void', auth, inventoryController.voidPurchaseRecord);
+// 出库台账列表（须定义在 /:productId 之前）
+router.get('/stock-out-records', auth, inventoryController.getStockOutRecords);
+
+// 作废入库单（回退库存 + 原路退回）：仅管理员（S4）
+router.post('/purchases/:purchaseId/void', auth, requireAdmin, inventoryController.voidPurchaseRecord);
 
 // 获取库存列表
 router.get('/', auth, inventoryController.getInventoryList);

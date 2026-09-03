@@ -1,15 +1,8 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
+const { ORDER_TYPES } = require('../constants/order');
+const { parsePage } = require('../utils/pagination');
 const XLSX = require('xlsx');
-
-// 订单类型映射（与订单管理一致；5-线下水站返货 已停用删除，2026-08-25）
-const ORDER_TYPES = {
-  1: '官方平台销售',
-  2: '直营水站销售',
-  3: '线下零售',
-  4: '量贩机供货',
-  6: '零售机供货'
-};
 
 // 机台类型映射（machine_stations.machine_type）
 const MACHINE_TYPES = { 1: '量贩机', 2: '零售机' };
@@ -89,9 +82,7 @@ async function getFinanceOrders(req, res) {
   try {
     const { range = 'month', startDate, endDate, orderType, page = 1, pageSize = 10 } = req.query;
     const { start, end } = resolveDateRange(range, startDate, endDate);
-    const p = Math.max(1, parseInt(page) || 1);
-    const size = Math.min(100, Math.max(1, parseInt(pageSize) || 10));
-    const offset = (p - 1) * size;
+    const { page: p, size, offset } = parsePage({ page, pageSize }, { maxSize: 100 });
 
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
     // 动态构建 WHERE（支持 range=all 无时间过滤）
@@ -293,9 +284,7 @@ async function getMachineSales(req, res) {
   try {
     const { range = 'month', startDate, endDate, machineType, page = 1, pageSize = 10 } = req.query;
     const { start, end } = resolveDateRange(range, startDate, endDate);
-    const p = Math.max(1, parseInt(page) || 1);
-    const size = Math.min(100, Math.max(1, parseInt(pageSize) || 10));
-    const offset = (p - 1) * size;
+    const { page: p, size, offset } = parsePage({ page, pageSize }, { maxSize: 100 });
 
     const parts = [];
     const params = [];

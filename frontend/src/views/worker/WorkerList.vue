@@ -291,28 +291,12 @@ const fetchData = async () => {
     }
   } catch (error) {
     console.error('获取员工列表失败:', error)
-    tableData.value = generateMockData()
-    pagination.total = 8
+    ElMessage.error(error.message || '获取员工列表失败')
+    tableData.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }
-}
-
-const generateMockData = () => {
-  const workers = []
-  const names = ['张三', '李四', '王五', '赵六', '钱七', '孙八', '周九', '吴十']
-  for (let i = 1; i <= 8; i++) {
-    workers.push({
-      workerId: `W${String(i).padStart(3, '0')}`,
-      workerName: names[i % names.length],
-      phone: `139${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
-      vehicleType: i % 2 === 0 ? 1 : 2,
-      bankName: i % 2 === 0 ? '中国工商银行' : '中国建设银行',
-      bankAccount: `62220212${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
-      status: i % 7 === 0 ? 0 : 1
-    })
-  }
-  return workers
 }
 
 const handleSearch = () => {

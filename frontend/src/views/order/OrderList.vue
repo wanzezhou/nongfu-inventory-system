@@ -570,6 +570,7 @@
 </template>
 
 <script setup>
+import { ORDER_TYPE_TEXT } from '@/utils/constants'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Delete, View, Close, Edit, Download, Upload } from '@element-plus/icons-vue'
@@ -706,16 +707,7 @@ const formatMoney = (value) => {
   return Number(value).toFixed(2)
 }
 
-const getOrderTypeText = (type) => {
-  const map = {
-    1: '官方平台销售',
-    2: '直营水站销售',
-    3: '线下零售',
-    4: '量贩机供货',
-    6: '零售机供货'
-  }
-  return map[type] || '未知'
-}
+const getOrderTypeText = (type) => ORDER_TYPE_TEXT[type] || '未知'
 
 const getOrderTypeTagType = (type) => {
   const map = {
@@ -758,56 +750,12 @@ const fetchData = async () => {
     }
   } catch (error) {
     console.error('获取订单列表失败:', error)
-    tableData.value = generateMockData()
-    pagination.total = 42
+    ElMessage.error(error.message || '获取订单列表失败')
+    tableData.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }
-}
-
-const generateMockData = () => {
-  const orders = []
-  const customerNames = ['张三', '李四', '王五', '赵六', '朝阳路水站', '中关村水站', '西单水站']
-  for (let i = 1; i <= 10; i++) {
-    const orderAmount = (Math.floor(Math.random() * 200) + 50) * 1
-    const deliveryFee = (Math.floor(Math.random() * 10) + 5) * 1
-    orders.push({
-      id: i,
-      orderNo: `DD${new Date().getFullYear()}${String(i).padStart(6, '0')}`,
-      orderType: (i % 4) + 1,
-      customerName: customerNames[i % customerNames.length],
-      customerPhone: `138${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
-      customerAddress: '北京市朝阳区某某街道某某小区',
-      orderAmount: orderAmount,
-      deliveryFee: deliveryFee,
-      totalAmount: orderAmount + deliveryFee,
-      createTime: generateRandomDate(),
-      deliveryMethod: (i % 3) + 1,
-      deliveryStaff: '张配送',
-      remark: i % 3 === 0 ? '请尽快送达' : '',
-      items: [
-        {
-          id: 1,
-          productId: 1,
-          productName: '农夫山泉天然水 550ml',
-          spec: '550ml',
-          quantity: Math.floor(Math.random() * 10) + 1,
-          unitPrice: 2.5,
-          subtotal: 0
-        }
-      ]
-    })
-    orders[i - 1].items[0].subtotal = orders[i - 1].items[0].quantity * orders[i - 1].items[0].unitPrice
-  }
-  return orders
-}
-
-const generateRandomDate = () => {
-  const date = new Date()
-  date.setDate(date.getDate() - Math.floor(Math.random() * 30))
-  date.setHours(Math.floor(Math.random() * 24))
-  date.setMinutes(Math.floor(Math.random() * 60))
-  return date.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
 }
 
 const fetchProductOptions = async () => {

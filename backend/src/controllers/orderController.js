@@ -1,5 +1,7 @@
 const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
+const { VALID_ORDER_TYPES } = require('../constants/order');
+const { parsePage } = require('../utils/pagination');
 
 // 生成订单ID：SZX + 年月日 + 5位序号（每天从00001开始递增）
 async function generateOrderId(connection) {
@@ -102,9 +104,7 @@ async function getOrderList(req, res) {
     const total = countResult[0].total;
 
     // 分页查询（LEFT JOIN workers 获取创建人姓名）
-    const currentPage = parseInt(page) || 1;
-    const size = parseInt(pageSize) || 10;
-    const offset = (currentPage - 1) * size;
+    const { page: currentPage, size, offset } = parsePage({ page, pageSize });
 
     const listSql = `SELECT o.*, w.worker_name AS creator_name
       FROM orders o
@@ -230,8 +230,7 @@ async function createOrder(req, res) {
     }
 
     // 校验订单类型（5-线下水站返货 已停用删除，2026-08-25）
-    const validOrderTypes = [1, 2, 3, 4, 6];
-    if (!validOrderTypes.includes(Number(actualOrderType))) {
+    if (!VALID_ORDER_TYPES.includes(Number(actualOrderType))) {
       return error(res, '订单类型无效', 400);
     }
 
@@ -604,6 +603,12 @@ async function deleteOrder(req, res) {
       }
     }
 
+    // 还原该订单核销的水票（status 2→1，清空核销关联），避免取消订单永久损失水票
+    await connection.execute(
+      'UPDATE water_tickets SET status = 1, used_at = NULL, order_id = NULL WHERE order_id = ? AND status = 2',
+      [id]
+    );
+
     // 更新订单状态为已取消
     const updateSql = 'UPDATE orders SET canceled_at = ?, updated_at = ? WHERE order_id = ?';
     await connection.execute(updateSql, [new Date(), new Date(), id]);
@@ -683,6 +688,12 @@ async function hardDeleteOrder(req, res) {
       }
     }
 
+    // 还原该订单核销的水票（status 2→1），必须在删除订单前执行（依赖 order_id 关联）
+    await connection.execute(
+      'UPDATE water_tickets SET status = 1, used_at = NULL, order_id = NULL WHERE order_id = ? AND status = 2',
+      [id]
+    );
+
     // 物理删除订单明细
     await connection.execute('DELETE FROM order_items WHERE order_id = ?', [id]);
 
@@ -734,10 +745,9 @@ async function updateOrder(req, res) {
     const actualItems = items || [];
 
     // 校验订单类型（5-线下水站返货 已停用删除，2026-08-25）
+    // 注意：此时尚未 beginTransaction，不能调用 rollback（A3 修复）
     if (actualOrderType !== undefined && actualOrderType !== null) {
-      const validOrderTypes = [1, 2, 3, 4, 6];
-      if (!validOrderTypes.includes(Number(actualOrderType))) {
-        await connection.rollback();
+        if (!VALID_ORDER_TYPES.includes(Number(actualOrderType))) {
         return error(res, '订单类型无效', 400);
       }
     }
@@ -776,6 +786,12 @@ async function updateOrder(req, res) {
         await connection.execute('UPDATE sub_stations SET current_debt = ?, updated_at = ? WHERE station_id = ?', [Math.max(0, Number(stRows[0].current_debt) - Number(orderRows[0].order_amount)), new Date(), orderRows[0].station_id]);
       }
     }
+
+    // 还原旧订单核销的水票（status 2→1）：先全部释放，新明细核销在下方按新票量重新执行（F3 修复）
+    await connection.execute(
+      'UPDATE water_tickets SET status = 1, used_at = NULL, order_id = NULL WHERE order_id = ? AND status = 2',
+      [id]
+    );
 
     // 查询新商品价格
     const productIds = actualItems.map(item => item.product_id || item.productId);
@@ -857,6 +873,31 @@ async function updateOrder(req, res) {
       
       // 库存处理（销售扣减，允许负数）
       await connection.execute('UPDATE inventory SET quantity = ?, last_out_time = ?, updated_at = ? WHERE product_id = ?', [invRows[0].quantity - item.quantity, new Date(), new Date(), item.product_id]);
+    }
+
+    // 直营水站销售：按新明细重新核销水票（与 createOrder 同规则，F3 修复）
+    if (Number(actualOrderType) === 2 && actualStationId && hasTicketDeduct) {
+      const ticketDemand = {};
+      for (const item of orderItems) {
+        if (item.pricing_type === 2 && item.ticket_qty > 0) {
+          ticketDemand[item.product_id] = (ticketDemand[item.product_id] || 0) + item.ticket_qty;
+        }
+      }
+      for (const [pid, need] of Object.entries(ticketDemand)) {
+        const [tickets] = await connection.execute(
+          `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
+          [actualStationId, pid]
+        );
+        if (tickets.length < need) {
+          await connection.rollback();
+          return error(res, `水站水票不足：商品「${productMap[pid].product_name}」需抵扣 ${need} 张，可用 ${tickets.length} 张（剩余数量按分销价计价）`, 400);
+        }
+        const placeholders = tickets.map(() => '?').join(',');
+        await connection.execute(
+          `UPDATE water_tickets SET status = 2, used_at = ?, order_id = ? WHERE ticket_id IN (${placeholders})`,
+          [new Date(), id, ...tickets.map(t => t.ticket_id)]
+        );
+      }
     }
 
     // 如果是水站订单，增加新欠款
