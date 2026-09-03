@@ -570,6 +570,7 @@
 </template>
 
 <script setup>
+import { usePagination } from '@/composables/usePagination'
 import { ORDER_TYPE_TEXT } from '@/utils/constants'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -622,11 +623,7 @@ const queryForm = reactive({
   dateRange: []
 })
 
-const pagination = reactive({
-  page: 1,
-  pageSize: 10,
-  total: 0
-})
+const { pagination, handleSizeChange, handleCurrentChange } = usePagination(() => fetchData())
 
 const tableData = ref([])
 const productOptions = ref([])
@@ -965,17 +962,6 @@ const handleReset = () => {
   queryForm.orderType = null
   queryForm.dateRange = []
   pagination.page = 1
-  fetchData()
-}
-
-const handleSizeChange = (size) => {
-  pagination.pageSize = size
-  pagination.page = 1
-  fetchData()
-}
-
-const handleCurrentChange = (page) => {
-  pagination.page = page
   fetchData()
 }
 

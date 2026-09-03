@@ -76,6 +76,7 @@ import { useRouter } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { login } from '@/api/auth'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const formRef = ref()
@@ -98,8 +99,7 @@ async function handleLogin() {
 
     const res = await login(form)
 
-    localStorage.setItem('token', res.data.token)
-    localStorage.setItem('userInfo', JSON.stringify(res.data.user))
+    useAuthStore().setAuth(res.data.token, res.data.user)
 
     ElMessage.success('登录成功')
     router.push('/dashboard')

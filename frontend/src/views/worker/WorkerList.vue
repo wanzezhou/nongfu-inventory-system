@@ -203,6 +203,7 @@
 </template>
 
 <script setup>
+import { usePagination } from '@/composables/usePagination'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete, Download, Upload } from '@element-plus/icons-vue'
@@ -251,11 +252,7 @@ const queryForm = reactive({
   status: null
 })
 
-const pagination = reactive({
-  page: 1,
-  pageSize: 10,
-  total: 0
-})
+const { pagination, handleSizeChange, handleCurrentChange } = usePagination(() => fetchData())
 
 const tableData = ref([])
 
@@ -310,17 +307,6 @@ const handleReset = () => {
   queryForm.vehicleType = null
   queryForm.status = null
   pagination.page = 1
-  fetchData()
-}
-
-const handleSizeChange = (size) => {
-  pagination.pageSize = size
-  pagination.page = 1
-  fetchData()
-}
-
-const handleCurrentChange = (page) => {
-  pagination.page = page
   fetchData()
 }
 

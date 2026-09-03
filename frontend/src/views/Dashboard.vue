@@ -44,7 +44,7 @@
 <script setup>
 import { formatMoney } from '@/utils/format'
 import { ref, onMounted, nextTick, computed } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { getDashboardSummary, getDashboardTrend } from '@/api/dashboard'
 import { Box, DataLine, Wallet, Clock } from '@element-plus/icons-vue'
 

@@ -173,7 +173,7 @@
 <script setup>
 import { ORDER_TYPE_TEXT as orderTypes } from '@/utils/constants'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Download, Box, DataLine, ShoppingCart, TrendCharts } from '@element-plus/icons-vue'
 import { getProductSales, exportProductSales } from '@/api/statistics'

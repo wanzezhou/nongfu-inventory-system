@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
+import { useAuthStore } from '@/stores/auth'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api',
@@ -9,9 +10,10 @@ const request = axios.create({
 
 request.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers['Authorization'] = `Bearer ${token}`
+    // 运行时惰性取 store（此时 Pinia 已安装）
+    const auth = useAuthStore()
+    if (auth.token) {
+      config.headers['Authorization'] = `Bearer ${auth.token}`
     }
     return config
   },
@@ -30,8 +32,7 @@ request.interceptors.response.use(
     const res = response.data
     if (res.code !== undefined && res.code !== 200) {
       if (res.code === 401) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('userInfo')
+        useAuthStore().clear()
         router.push('/login')
       }
       ElMessage.error(res.message || '请求失败')

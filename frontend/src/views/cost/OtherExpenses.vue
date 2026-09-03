@@ -126,9 +126,13 @@
           </el-select>
         </el-form-item>
         <el-form-item label="支出账户">
-          <el-select v-model="form.accountId" clearable placeholder="可选：选择后将扣减账户余额并记流水" style="width: 100%;">
-            <el-option v-for="a in accounts" :key="a.accountId" :label="`${a.accountName}（余额 ¥${fmtMoney(a.currentBalance)}）`" :value="a.accountId" />
-          </el-select>
+          <AccountSelect
+            v-model="form.accountId"
+            :accounts="accounts"
+            clearable
+            balance-label="余额"
+            placeholder="可选：选择后将扣减账户余额并记流水"
+          />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" />
@@ -169,6 +173,8 @@ import {
   downloadExpenseTemplate, exportExpenses, importExpenses, getFinanceAccounts
 } from '@/api/expense'
 import { downloadBlob } from '@/api/excel'
+import { formatMoney as fmtMoney } from '@/utils/format'
+import AccountSelect from '@/components/AccountSelect.vue'
 
 const loading = ref(false)
 const rows = ref([])
@@ -201,7 +207,6 @@ const rules = {
   category: [{ required: true, message: '请选择或输入类别', trigger: 'change' }]
 }
 
-const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const tagTypes = ['danger', 'warning', 'info', 'success', 'primary', 'danger', 'warning']
 const tagType = (c) => {

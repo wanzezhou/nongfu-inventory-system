@@ -120,15 +120,13 @@
           <span v-if="payForm.calcFee >= 0" class="calc-tip">（{{ payForm.month }} 实时配送费合计）</span>
         </el-form-item>
         <el-form-item label="发放账户" prop="accountId">
-          <el-select v-model="payForm.accountId" filterable placeholder="选择发放账户（将产生公司账户支出）" style="width: 100%;">
-            <el-option
-              v-for="a in accounts"
-              :key="a.accountId"
-              :label="`${a.accountName}（可用 ¥${fmtMoney(a.currentBalance)}）`"
-              :value="a.accountId"
-              :disabled="a.currentBalance < payForm.amount"
-            />
-          </el-select>
+          <AccountSelect
+            v-model="payForm.accountId"
+            :accounts="accounts"
+            placeholder="选择发放账户（将产生公司账户支出）"
+            balance-label="可用"
+            :is-disabled="(a) => a.currentBalance < payForm.amount"
+          />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="payForm.remark" type="textarea" :rows="2" maxlength="200" placeholder="发放备注（可选）" />
@@ -215,6 +213,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, User, Money, List, View, Lock, RefreshLeft } from '@element-plus/icons-vue'
 import { getSalarySummary, getSalaryOrders, getSalaryOrderItems, getWorkerSalarySummary, payWorkerSalary, revokeSalaryPayment } from '@/api/salary'
 import { getFinanceAccounts } from '@/api/expense'
+import { formatMoney as fmtMoney } from '@/utils/format'
+import AccountSelect from '@/components/AccountSelect.vue'
 
 const loading = ref(false)
 const month = ref('')
@@ -234,7 +234,6 @@ const currentOrder = ref(null)
 
 const dialogWidth = computed(() => (window.innerWidth <= 768 ? '94vw' : '720px'))
 
-const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const formatTime = (t) => {
   if (!t) return '-'

@@ -210,6 +210,7 @@ import { ref, computed, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { changePassword } from '@/api/auth'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -220,13 +221,7 @@ const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta.title || '农夫山泉进销存管理系统')
 
 // 用户信息
-const userInfo = computed(() => {
-  try {
-    return JSON.parse(localStorage.getItem('userInfo') || '{}')
-  } catch {
-    return {}
-  }
-})
+const userInfo = computed(() => useAuthStore().user)
 
 const userDisplayName = computed(() => userInfo.value.displayName || '用户')
 const userInitial = computed(() => {
@@ -273,8 +268,7 @@ const handleLogout = () => {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('userInfo')
+    useAuthStore().clear()
     ElMessage.success('已退出登录')
     router.push('/login')
   }).catch(() => {})
@@ -296,8 +290,7 @@ const handlePasswordSubmit = async () => {
     })
     ElMessage.success('密码修改成功，请重新登录')
     passwordDialog.value = false
-    localStorage.removeItem('token')
-    localStorage.removeItem('userInfo')
+    useAuthStore().clear()
     router.push('/login')
   } catch (error) {
     // 错误已由拦截器处理

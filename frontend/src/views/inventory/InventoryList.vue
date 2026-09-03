@@ -205,21 +205,13 @@
           </div>
         </el-card>
         <el-form-item label="付款账户" prop="accountId" style="margin-top: 16px;">
-          <el-select
+          <AccountSelect
             v-model="stockInForm.accountId"
+            :accounts="enabledAccounts"
             placeholder="请选择付款公司账户"
-            filterable
-            style="width: 100%"
+            :is-disabled="(a) => a.currentBalance < stockInTotal"
             @change="onAccountChange"
-          >
-            <el-option
-              v-for="a in enabledAccounts"
-              :key="a.accountId"
-              :label="`${a.accountName}（可用余额 ¥${formatMoney(a.currentBalance)}）`"
-              :value="a.accountId"
-              :disabled="a.currentBalance < stockInTotal"
-            />
-          </el-select>
+          />
           <div v-if="stockInForm.accountId" class="account-tip" :class="{ 'is-danger': !isBalanceEnough }">
             <template v-if="isBalanceEnough">
               本次扣款 ¥{{ stockInTotal.toFixed(2) }}，扣款后余额 ¥{{ formatMoney(selectedBalance - stockInTotal) }}
@@ -381,19 +373,11 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="stockDiff > 0" label="付款账户" prop="accountId">
-          <el-select
+          <AccountSelect
             v-model="checkStockForm.accountId"
+            :accounts="enabledAccounts"
             placeholder="请选择付款公司账户（盘库增加按 0 元入库）"
-            filterable
-            style="width: 100%"
-          >
-            <el-option
-              v-for="a in enabledAccounts"
-              :key="a.accountId"
-              :label="`${a.accountName}（可用余额 ¥${formatMoney(a.currentBalance)}）`"
-              :value="a.accountId"
-            />
-          </el-select>
+          />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="checkStockForm.remark" type="textarea" :rows="2" placeholder="请输入备注" />
@@ -550,6 +534,8 @@
 </template>
 
 <script setup>
+import { usePagination } from '@/composables/usePagination'
+import AccountSelect from '@/components/AccountSelect.vue'
 import { formatMoney } from '@/utils/format'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -594,11 +580,7 @@ const queryForm = reactive({
   categoryId: null
 })
 
-const pagination = reactive({
-  page: 1,
-  pageSize: 10,
-  total: 0
-})
+const { pagination, handleSizeChange, handleCurrentChange } = usePagination(() => fetchData())
 
 const sortInfo = reactive({
   prop: '',
@@ -802,17 +784,6 @@ const handleReset = () => {
 const handleSortChange = ({ prop, order }) => {
   sortInfo.prop = prop
   sortInfo.order = order
-  fetchData()
-}
-
-const handleSizeChange = (size) => {
-  pagination.pageSize = size
-  pagination.page = 1
-  fetchData()
-}
-
-const handleCurrentChange = (page) => {
-  pagination.page = page
   fetchData()
 }
 
