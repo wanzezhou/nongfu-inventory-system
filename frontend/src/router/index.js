@@ -1,6 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '@/layout/MainLayout.vue'
 import { useAuthStore } from '@/stores/auth'
+import { MENU_TITLES } from '@/layout/menuConfig'
+
+// 菜单标题单一数据源：meta.title 从 layout/menuConfig.js 导入（A8），
+// 新增页面只需在 menuConfig 里登记一处。meta.icon 已无消费方，随之移除。
+const t = (key) => MENU_TITLES[`/${key}`]
 
 const routes = [
   {
@@ -21,99 +26,99 @@ const routes = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/Dashboard.vue'),
-        meta: { title: '仪表盘', icon: 'HomeFilled', requiresAuth: true }
+        meta: { title: t('dashboard'), requiresAuth: true }
       },
       {
         path: 'salary',
         name: 'SalaryStatistics',
         component: () => import('@/views/statistics/SalaryStatistics.vue'),
-        meta: { title: '工资统计', icon: 'Money', requiresAuth: true }
+        meta: { title: t('salary'), requiresAuth: true }
       },
       {
         path: 'cost/station',
         name: 'StationCost',
         component: () => import('@/views/cost/StationCost.vue'),
-        meta: { title: '直营水站成本统计', icon: 'OfficeBuilding', requiresAuth: true }
+        meta: { title: t('cost/station'), requiresAuth: true }
       },
       {
         path: 'cost/summary',
         name: 'CostSummary',
         component: () => import('@/views/cost/CostSummary.vue'),
-        meta: { title: '成本汇总', icon: 'TrendCharts', requiresAuth: true }
+        meta: { title: t('cost/summary'), requiresAuth: true }
       },
       {
         path: 'cost/expenses',
         name: 'OtherExpenses',
         component: () => import('@/views/cost/OtherExpenses.vue'),
-        meta: { title: '其他支出', icon: 'Wallet', requiresAuth: true }
+        meta: { title: t('cost/expenses'), requiresAuth: true }
       },
       {
         path: 'product',
         name: 'Product',
         component: () => import('@/views/product/ProductList.vue'),
-        meta: { title: '商品管理', icon: 'Goods', requiresAuth: true }
+        meta: { title: t('product'), requiresAuth: true }
       },
       {
         path: 'inventory',
         name: 'Inventory',
         component: () => import('@/views/inventory/InventoryList.vue'),
-        meta: { title: '库存管理', icon: 'Box', requiresAuth: true }
+        meta: { title: t('inventory'), requiresAuth: true }
       },
       {
         path: 'order',
         name: 'Order',
         component: () => import('@/views/order/OrderList.vue'),
-        meta: { title: '订单管理', icon: 'Document', requiresAuth: true }
+        meta: { title: t('order'), requiresAuth: true }
       },
       {
         path: 'station',
         name: 'Station',
         component: () => import('@/views/station/StationList.vue'),
-        meta: { title: '水站管理', icon: 'Shop', requiresAuth: true }
+        meta: { title: t('station'), requiresAuth: true }
       },
       {
         path: 'bulk-machine',
         name: 'BulkMachine',
         component: () => import('@/views/machine/MachineStationList.vue'),
         props: () => ({ machineType: 1, moduleTitle: '量贩机' }),
-        meta: { title: '量贩机管理', icon: 'Shop', requiresAuth: true }
+        meta: { title: t('bulk-machine'), requiresAuth: true }
       },
       {
         path: 'retail-machine',
         name: 'RetailMachine',
         component: () => import('@/views/machine/MachineStationList.vue'),
         props: () => ({ machineType: 2, moduleTitle: '零售机' }),
-        meta: { title: '零售机管理', icon: 'Shop', requiresAuth: true }
+        meta: { title: t('retail-machine'), requiresAuth: true }
       },
       {
         path: 'supplier',
         name: 'Supplier',
         component: () => import('@/views/supplier/SupplierList.vue'),
-        meta: { title: '供应商管理', icon: 'OfficeBuilding', requiresAuth: true }
+        meta: { title: t('supplier'), requiresAuth: true }
       },
       {
         path: 'worker',
         name: 'Worker',
         component: () => import('@/views/worker/WorkerList.vue'),
-        meta: { title: '员工管理', icon: 'User', requiresAuth: true }
+        meta: { title: t('worker'), requiresAuth: true }
       },
       {
         path: 'salesman',
         name: 'Salesman',
         component: () => import('@/views/salesman/SalesmanList.vue'),
-        meta: { title: '业务员管理', icon: 'Avatar', requiresAuth: true }
+        meta: { title: t('salesman'), requiresAuth: true }
       },
       {
         path: 'accounts',
         name: 'CompanyAccounts',
         component: () => import('@/views/account/CompanyAccounts.vue'),
-        meta: { title: '公司账户管理', icon: 'Wallet', requiresAuth: true }
+        meta: { title: t('accounts'), requiresAuth: true }
       },
       {
         path: 'statistics/product-sales',
         name: 'ProductSales',
         component: () => import('@/views/statistics/ProductSales.vue'),
-        meta: { title: '商品销售统计', icon: 'TrendCharts', requiresAuth: true }
+        meta: { title: t('statistics/product-sales'), requiresAuth: true }
       },
       {
         path: 'finance',
@@ -124,41 +129,41 @@ const routes = [
         name: 'FinancePlatform',
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 1 },
-        meta: { title: '官方平台销售营收', icon: 'Van', requiresAuth: true }
+        meta: { title: t('finance/platform'), requiresAuth: true }
       },
       {
         path: 'finance/distribution',
         name: 'FinanceDistribution',
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 2 },
-        meta: { title: '直营水站销售营收', icon: 'Goods', requiresAuth: true }
+        meta: { title: t('finance/distribution'), requiresAuth: true }
       },
       {
         path: 'finance/retail',
         name: 'FinanceRetail',
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 3 },
-        meta: { title: '线下零售营收', icon: 'ShoppingCart', requiresAuth: true }
+        meta: { title: t('finance/retail'), requiresAuth: true }
       },
       {
         path: 'finance/bulk-machine',
         name: 'FinanceBulkMachine',
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 4 },
-        meta: { title: '量贩机营收', icon: 'Wallet', requiresAuth: true }
+        meta: { title: t('finance/bulk-machine'), requiresAuth: true }
       },
       {
         path: 'finance/retail-machine',
         name: 'FinanceRetailMachine',
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 6 },
-        meta: { title: '零售机营收', icon: 'Van', requiresAuth: true }
+        meta: { title: t('finance/retail-machine'), requiresAuth: true }
       },
       {
         path: 'water-tickets',
         name: 'WaterTicketManage',
         component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
-        meta: { title: '水站账户管理', icon: 'Ticket', requiresAuth: true }
+        meta: { title: t('water-tickets'), requiresAuth: true }
       }
     ]
   }
