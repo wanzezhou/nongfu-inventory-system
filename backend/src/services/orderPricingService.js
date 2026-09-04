@@ -13,6 +13,8 @@
  *   类型4/6 机台供货   → 不计商品价格（价格在机台销量录入）
  *   delivery_fee 恒为 0
  */
+const { TICKET_STATUS } = require('../constants/waterTicket');
+
 const bizFail = (message) => {
   const e = new Error(message);
   e.business = true;
@@ -152,29 +154,29 @@ function buildOrderItems({ orderType, items, productMap }) {
   return { orderItems, orderAmount, hasTicketDeduct, ticketDemand };
 }
 
-/** 直营水站销售：聚合校验并核销水票（status 1→2，关联订单）；票不足 bizFail（调用方回滚） */
+/** 直营水站销售：聚合校验并核销水票（status 未用→已核销，关联订单）；票不足 bizFail（调用方回滚） */
 async function writeOffTickets(connection, stationId, ticketDemand, orderId, productMap, now = new Date()) {
   for (const [pid, need] of Object.entries(ticketDemand)) {
     const [tickets] = await connection.execute(
-      `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
-      [stationId, pid]
+      `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = ? ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
+      [stationId, pid, TICKET_STATUS.UNUSED]
     );
     if (tickets.length < need) {
       throw bizFail(`水站水票不足：商品「${productMap[pid].product_name}」需抵扣 ${need} 张，可用 ${tickets.length} 张（剩余数量按分销价计价）`);
     }
     const placeholders = tickets.map(() => '?').join(',');
     await connection.execute(
-      `UPDATE water_tickets SET status = 2, used_at = ?, order_id = ? WHERE ticket_id IN (${placeholders})`,
-      [now, orderId, ...tickets.map(t => t.ticket_id)]
+      `UPDATE water_tickets SET status = ?, used_at = ?, order_id = ? WHERE ticket_id IN (${placeholders})`,
+      [TICKET_STATUS.USED, now, orderId, ...tickets.map(t => t.ticket_id)]
     );
   }
 }
 
-/** 还原该订单核销的水票（status 2→1，清空核销关联），避免取消/改单/硬删永久损失水票 */
+/** 还原该订单核销的水票（status 已核销→未用，清空核销关联），避免取消/改单/硬删永久损失水票 */
 async function restoreWrittenOffTickets(connection, orderId) {
   await connection.execute(
-    'UPDATE water_tickets SET status = 1, used_at = NULL, order_id = NULL WHERE order_id = ? AND status = 2',
-    [orderId]
+    'UPDATE water_tickets SET status = ?, used_at = NULL, order_id = NULL WHERE order_id = ? AND status = ?',
+    [TICKET_STATUS.UNUSED, orderId, TICKET_STATUS.USED]
   );
 }
 
@@ -194,9 +196,9 @@ async function deductInventoryForSale(connection, productId, quantity, now = new
 
 /**
  * 恢复订单的销售副作用：恢复库存 + 扣减水站欠款（deleteOrder/hardDeleteOrder/updateOrder 旧数据共用）
- * @param {string} mode 'sale'=恢复销售扣减（库存+数量、欠款-金额）；'return'=旧返货单（库存-数量）
+ * 注：原 mode='return'（旧返货单 type5 反向恢复库存）已随 type5 停用（2026-08-25）移除，恢复方向恒为"退回库存"
  */
-async function restoreSalesEffects(connection, order, items, { mode = 'sale' } = {}) {
+async function restoreSalesEffects(connection, order, items) {
   const now = new Date();
   for (const item of items) {
     const [invRows] = await connection.execute(
@@ -205,9 +207,7 @@ async function restoreSalesEffects(connection, order, items, { mode = 'sale' } =
     );
     if (invRows.length > 0) {
       const q = Number(invRows[0].quantity);
-      const newQty = mode === 'return'
-        ? Math.max(0, q - Number(item.quantity))
-        : q + Number(item.quantity);
+      const newQty = q + Number(item.quantity);
       await connection.execute(
         'UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?',
         [newQty, now, item.product_id]

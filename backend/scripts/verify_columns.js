@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { pool } = require('../config/db');
+const { pool } = require('../src/config/db');
 (async () => {
   const [cols] = await pool.query('DESCRIBE mini_accounts');
   console.log('=== mini_accounts columns ===');

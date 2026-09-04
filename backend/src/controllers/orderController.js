@@ -77,36 +77,36 @@ async function getOrderList(req, res) {
     // 兼容驼峰和蛇形命名
     const actualOrderType = order_type !== undefined ? order_type : orderType;
 
-    // 构建查询条件
+    // 构建查询条件（统一带 o. 别名，计数与列表两条 SQL 共用同一份条件，不再做字符串替换）
     let whereClause = 'WHERE 1=1';
     const params = [];
 
     // 关键词模糊搜索（订单号或客户名）
     if (keyword) {
-      whereClause += ' AND (order_id LIKE ? OR customer_name LIKE ?)';
+      whereClause += ' AND (o.order_id LIKE ? OR o.customer_name LIKE ?)';
       params.push(`%${keyword}%`, `%${keyword}%`);
     }
 
     // 订单类型筛选
     if (actualOrderType !== undefined && actualOrderType !== '' && actualOrderType !== null) {
-      whereClause += ' AND order_type = ?';
+      whereClause += ' AND o.order_type = ?';
       params.push(Number(actualOrderType));
     }
 
     // 开始日期筛选
     if (startDate) {
-      whereClause += ' AND DATE(created_at) >= ?';
+      whereClause += ' AND DATE(o.created_at) >= ?';
       params.push(startDate);
     }
 
     // 结束日期筛选
     if (endDate) {
-      whereClause += ' AND DATE(created_at) <= ?';
+      whereClause += ' AND DATE(o.created_at) <= ?';
       params.push(endDate);
     }
 
     // 计算总数
-    const countSql = `SELECT COUNT(*) as total FROM orders ${whereClause}`;
+    const countSql = `SELECT COUNT(*) as total FROM orders o ${whereClause}`;
     const [countResult] = await pool.execute(countSql, params);
     const total = countResult[0].total;
 
@@ -116,7 +116,7 @@ async function getOrderList(req, res) {
     const listSql = `SELECT o.*, w.worker_name AS creator_name
       FROM orders o
       LEFT JOIN workers w ON o.created_by = w.worker_id
-      ${whereClause.replace(/\border_id\b/g, 'o.order_id').replace(/\bcustomer_name\b/g, 'o.customer_name').replace(/\border_type\b/g, 'o.order_type').replace(/\bcreated_at\b/g, 'o.created_at')}
+      ${whereClause}
       ORDER BY o.created_at DESC LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`;
     const [list] = await pool.execute(listSql, params);
 
@@ -508,11 +508,10 @@ async function updateOrder(req, res) {
     }
 
     const oldOrder = orderRows[0];
-    const oldOrderType = Number(oldOrder.order_type);
 
-    // 恢复旧商品的库存 + 扣减旧水站欠款（先查旧明细；旧返货单按返货方向恢复）
+    // 恢复旧商品的库存 + 扣减旧水站欠款（先查旧明细；返货单类型5 已于 2026-08-25 停用、库内无残留，恢复方向恒为"退回库存"）
     const [oldItems] = await connection.execute('SELECT * FROM order_items WHERE order_id = ?', [id]);
-    await restoreSalesEffects(connection, oldOrder, oldItems, { mode: oldOrderType === 5 ? 'return' : 'sale' });
+    await restoreSalesEffects(connection, oldOrder, oldItems);
 
     // 还原旧订单核销的水票（status 2→1）：先全部释放，新明细核销在下方按新票量重新执行（F3 修复）
     await restoreWrittenOffTickets(connection, id);

@@ -1,7 +1,7 @@
 // 验证小程序订单接口链路：detail 结构 + create 校验（无副作用）
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const { pool } = require('../config/db');
+const { pool } = require('../src/config/db');
 const http = require('http');
 
 function httpReq(path, method, data, token) {

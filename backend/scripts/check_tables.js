@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { pool } = require('../config/db');
+const { pool } = require('../src/config/db');
 (async () => {
   const [r1] = await pool.query("SHOW TABLES LIKE 'barrel_deposits'");
   const [r2] = await pool.query("SHOW TABLES LIKE 'reimbursements'");

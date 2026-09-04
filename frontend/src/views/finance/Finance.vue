@@ -268,7 +268,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Download, Plus, Delete, View,
-  Van, Goods, ShoppingCart, Coin, Wallet, Money, Histogram, Ticket
+  Van, Goods, ShoppingCart, Coin, Wallet, Money, Ticket
 } from '@element-plus/icons-vue'
 import { getFinanceSummary, getFinanceOrders, getMachineSales, createMachineSale, deleteMachineSale, exportFinance } from '@/api/finance'
 import { getProductList } from '@/api/product'

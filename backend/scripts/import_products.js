@@ -1,7 +1,7 @@
-const { readSheetAoa } = require('../utils/excel');
+const { readSheetAoa } = require('../src/utils/excel');
 const path = require('path');
 const fs = require('fs');
-const { pool } = require('../config/db');
+const { pool } = require('../src/config/db');
 
 const excelPath = path.join(__dirname, '../../../商品档案/(商品档案)表格视图.xlsx');
 const imageFolder = path.join(__dirname, '../../../商品档案/商品图片');

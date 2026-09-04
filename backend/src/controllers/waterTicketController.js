@@ -1,10 +1,11 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
+const { TICKET_STATUS, TICKET_STATUS_NAMES } = require('../constants/waterTicket');
 
 // ---------------------------------------------------------------------------
 // 水站返货管理（水票系统）
 // 一张水票 = 一件对应商品（价值=进货价）；发行 = 每月返货清单录入
-// water_tickets.status: 1-未用 2-已核销 3-作废
+// water_tickets.status 语义见 constants/waterTicket.js（1-未用 / 2-已核销 / 3-作废）
 // ---------------------------------------------------------------------------
 
 // 返货清单录入/发行：生成发行记录 + 等量水票（每商品一条发行记录，含返货配送费）
@@ -61,7 +62,7 @@ async function issueTickets(req, res) {
       const ticketValues = [];
       for (let i = 0; i < it.quantity; i++) {
         const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
-        ticketValues.push([ticketId, it.productId, actualStationId, 1, actualMonth, issuanceId, now, operator, null, null, null]);
+        ticketValues.push([ticketId, it.productId, actualStationId, TICKET_STATUS.UNUSED, actualMonth, issuanceId, now, operator, null, null, null]);
       }
       if (ticketValues.length) {
         await connection.query(
@@ -92,7 +93,8 @@ async function getTicketInventory(req, res) {
     if (stationId || station_id) { where.push('t.station_id = ?'); params.push(stationId || station_id); }
     if (month) { where.push('t.month = ?'); params.push(month); }
     if (productId) { where.push('t.product_id = ?'); params.push(productId); }
-    where.push('t.status = 1');
+    where.push('t.status = ?');
+    params.push(TICKET_STATUS.UNUSED);
     const whereSql = 'WHERE ' + where.join(' AND ');
 
     const [rows] = await pool.execute(
@@ -163,7 +165,7 @@ async function getTicketList(req, res) {
       stationId: r.station_id,
       stationName: r.station_name || r.station_id,
       status: Number(r.status),
-      statusName: { 1: '未用', 2: '已核销', 3: '作废' }[Number(r.status)] || '未知',
+      statusName: TICKET_STATUS_NAMES[Number(r.status)] || '未知',
       month: r.month,
       issuedAt: r.issued_at,
       issuedBy: r.issued_by || '',
@@ -182,8 +184,8 @@ async function cancelTicket(req, res) {
   try {
     const { id } = req.params;
     const [result] = await pool.execute(
-      `UPDATE water_tickets SET status = 3 WHERE ticket_id = ? AND status = 1`,
-      [id]
+      `UPDATE water_tickets SET status = ? WHERE ticket_id = ? AND status = ?`,
+      [TICKET_STATUS.VOID, id, TICKET_STATUS.UNUSED]
     );
     if (result.affectedRows === 0) return error(res, '水票不存在或已不可作废', 400);
     return success(res, null, '已作废');
@@ -297,7 +299,7 @@ async function updateIssuance(req, res) {
       const values = [];
       for (let i = 0; i < diff; i++) {
         const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
-        values.push([ticketId, old.product_id, old.station_id, 1, newMonth, id, now, operator, null, null, null]);
+        values.push([ticketId, old.product_id, old.station_id, TICKET_STATUS.UNUSED, newMonth, id, now, operator, null, null, null]);
       }
       await connection.query(
         `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
@@ -307,8 +309,8 @@ async function updateIssuance(req, res) {
       // 作废多余的未核销水票（按票最早优先）
       const need = -diff;
       const [tickets] = await connection.execute(
-        `SELECT ticket_id FROM water_tickets WHERE issuance_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
-        [id]
+        `SELECT ticket_id FROM water_tickets WHERE issuance_id = ? AND status = ? ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
+        [id, TICKET_STATUS.UNUSED]
       );
       if (tickets.length < need) {
         await connection.rollback();
@@ -316,8 +318,8 @@ async function updateIssuance(req, res) {
       }
       const ids = tickets.map((t) => t.ticket_id);
       await connection.execute(
-        `UPDATE water_tickets SET status = 3 WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
-        ids
+        `UPDATE water_tickets SET status = ? WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
+        [TICKET_STATUS.VOID, ...ids]
       );
     }
 
@@ -361,8 +363,8 @@ async function adjustBalance(req, res) {
     await connection.beginTransaction();
 
     const [curRows] = await connection.execute(
-      `SELECT COUNT(*) AS c FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1`,
-      [actualStationId, actualProductId]
+      `SELECT COUNT(*) AS c FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = ?`,
+      [actualStationId, actualProductId, TICKET_STATUS.UNUSED]
     );
     const current = Number(curRows[0].c) || 0;
     const diff = target - current;
@@ -373,7 +375,7 @@ async function adjustBalance(req, res) {
       const values = [];
       for (let i = 0; i < diff; i++) {
         const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
-        values.push([ticketId, actualProductId, actualStationId, 1, now.toISOString().slice(0, 7), null, now, operator, null, null, '账户调整']);
+        values.push([ticketId, actualProductId, actualStationId, TICKET_STATUS.UNUSED, now.toISOString().slice(0, 7), null, now, operator, null, null, '账户调整']);
       }
       await connection.query(
         `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
@@ -382,8 +384,8 @@ async function adjustBalance(req, res) {
     } else if (diff < 0) {
       const need = -diff;
       const [tickets] = await connection.execute(
-        `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = 1 ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
-        [actualStationId, actualProductId]
+        `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = ? ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
+        [actualStationId, actualProductId, TICKET_STATUS.UNUSED]
       );
       if (tickets.length < need) {
         await connection.rollback();
@@ -391,8 +393,8 @@ async function adjustBalance(req, res) {
       }
       const ids = tickets.map((t) => t.ticket_id);
       await connection.execute(
-        `UPDATE water_tickets SET status = 3 WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
-        ids
+        `UPDATE water_tickets SET status = ? WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
+        [TICKET_STATUS.VOID, ...ids]
       );
     }
 
@@ -525,7 +527,7 @@ async function adjustStationDeliveryFee(req, res) {
 }
 
 // 删除发行批次（管理员）：整批删除
-// 约束：该批次存在已核销水票（status=2，已被订单抵扣）时拒绝删除；
+// 约束：该批次存在已核销水票（status=已核销，已被订单抵扣）时拒绝删除；
 // 未用(1)/作废(3)水票随批次一并删除
 async function deleteIssuanceBatch(req, res) {
   let connection;
@@ -549,8 +551,8 @@ async function deleteIssuanceBatch(req, res) {
 
     // 检查已核销水票
     const [usedRows] = await connection.execute(
-      `SELECT COUNT(*) AS c FROM water_tickets WHERE issuance_id IN (${placeholders}) AND status = 2`,
-      ids
+      `SELECT COUNT(*) AS c FROM water_tickets WHERE issuance_id IN (${placeholders}) AND status = ?`,
+      [TICKET_STATUS.USED, ...ids]
     );
     const usedCount = Number(usedRows[0].c) || 0;
     if (usedCount > 0) {

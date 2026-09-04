@@ -102,11 +102,6 @@
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="false" prop="deliveryFee" label="配送费" width="90" align="right">
-          <template #default="{ row }">
-            <span>¥{{ formatMoney(row.deliveryFee) }}</span>
-          </template>
-        </el-table-column>
         <el-table-column prop="totalAmount" label="应收总额" width="100" align="right">
           <template #default="{ row }">
             <!-- 官方平台销售/机台供货不显示应收总额（2026-08-27） -->
@@ -352,7 +347,6 @@
                       :precision="0"
                       :step="1"
                       style="width: 100%"
-                      @change="onTicketQtyChange(row)"
                     />
                     <div class="ticket-sub">
                       <span class="ticket-left">可用 {{ ticketMap[row.productId] || 0 }} 张</span>
@@ -412,24 +406,24 @@
           >
             <el-form-item label="配送方式" prop="deliveryMethod">
               <!-- 官方平台销售：自有员工配送（固定） -->
-              <el-radio-group v-if="orderForm.orderType === 1" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
+              <el-radio-group v-if="orderForm.orderType === 1" v-model="orderForm.deliveryMethod">
                 <el-radio :value="1">自有员工配送</el-radio>
               </el-radio-group>
               <!-- 直营水站销售：水站配送（固定） -->
-              <el-radio-group v-else-if="orderForm.orderType === 2" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
+              <el-radio-group v-else-if="orderForm.orderType === 2" v-model="orderForm.deliveryMethod">
                 <el-radio :value="2">水站配送</el-radio>
               </el-radio-group>
               <!-- 线下零售：自有员工配送 / 无需配送 -->
-              <el-radio-group v-else-if="orderForm.orderType === 3" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
+              <el-radio-group v-else-if="orderForm.orderType === 3" v-model="orderForm.deliveryMethod">
                 <el-radio :value="1">自有员工配送</el-radio>
                 <el-radio :value="3">无需配送</el-radio>
               </el-radio-group>
               <!-- 量贩机供货：量贩机配送（固定） -->
-              <el-radio-group v-else-if="orderForm.orderType === 4" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
+              <el-radio-group v-else-if="orderForm.orderType === 4" v-model="orderForm.deliveryMethod">
                 <el-radio :value="2">量贩机配送</el-radio>
               </el-radio-group>
               <!-- 零售机供货：零售机配送（固定） -->
-              <el-radio-group v-else-if="orderForm.orderType === 6" v-model="orderForm.deliveryMethod" @change="calculateDeliveryFee">
+              <el-radio-group v-else-if="orderForm.orderType === 6" v-model="orderForm.deliveryMethod">
                 <el-radio :value="2">零售机配送</el-radio>
               </el-radio-group>
             </el-form-item>
@@ -447,10 +441,6 @@
                   :value="item.id"
                 />
               </el-select>
-            </el-form-item>
-            <el-form-item v-if="false" label="配送费" prop="deliveryFee">
-              <el-input-number v-model="orderForm.deliveryFee" :min="0" :precision="2" :step="1" />
-              <span class="unit-label">元</span>
             </el-form-item>
           </el-form>
         </div>
@@ -574,7 +564,7 @@ import { usePagination } from '@/composables/usePagination'
 import { ORDER_TYPE_TEXT } from '@/utils/constants'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Delete, View, Close, Edit, Download, Upload } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Delete, View, Edit, Download, Upload } from '@element-plus/icons-vue'
 import {
   getOrders,
   getOrderDetail,
@@ -646,7 +636,6 @@ const orderForm = reactive({
   items: [],
   deliveryMethod: 1,
   deliveryStaffId: null,
-  deliveryFee: 0,
   remark: ''
 })
 
@@ -874,24 +863,14 @@ const onTicketToggle = (row) => {
   } else {
     row.ticketQty = 0
   }
-  calculateDeliveryFee()
 }
-const onTicketQtyChange = (row) => {
-  calculateDeliveryFee()
-}
-// 行级张数上限（输入框 max 兜底）
-const getTicketMax = (row) => {
-  if (!row.productId) return 0
-  return Math.min(row.quantity || 0, ticketMap.value[row.productId] || 0)
-}
-// 明细行数量变化：联动配送费 + 收敛水票抵扣张数
+// 明细行数量变化：收敛水票抵扣张数（不超过可用票数）
 const onItemQuantityChange = (row) => {
   if (row.useTicket) {
     const avail = ticketMap.value[row.productId] || 0
     const max = Math.min(row.quantity || 0, avail)
     if (row.ticketQty > max) row.ticketQty = max
   }
-  calculateDeliveryFee()
 }
 
 // 拉取量贩机/零售机列表，用于订单表单的机台关联下拉
@@ -987,7 +966,6 @@ const resetOrderForm = () => {
     items: [],
     deliveryMethod: 1,
     deliveryStaffId: null,
-    deliveryFee: 0,
     remark: ''
   })
   ticketMap.value = {}
@@ -1038,10 +1016,8 @@ const fillOrderForm = (order) => {
     })),
     deliveryMethod: order.deliveryMethod || 1,
     deliveryStaffId: order.deliveryStaffId,
-    deliveryFee: order.deliveryFee || 0,
     remark: order.remark || ''
   })
-  calculateDeliveryFee()
   fetchTicketAvailable()
   createDialogVisible.value = true
 }
@@ -1058,7 +1034,6 @@ const addProductItem = () => {
 
 const removeProductItem = (index) => {
   orderForm.items.splice(index, 1)
-  calculateDeliveryFee()
 }
 
 const handleProductChange = (index) => {
@@ -1088,7 +1063,6 @@ const handleProductChange = (index) => {
     item.useTicket = false
     item.ticketQty = 0
   }
-  calculateDeliveryFee()
 }
 
 const getPriceColumnLabel = () => {
@@ -1108,11 +1082,6 @@ const calculateItemSubtotal = (item) => {
     return item.unitPrice * (item.quantity - item.ticketQty)
   }
   return item.quantity * item.unitPrice || 0
-}
-
-// 2026-08-27：所有订单类型暂不考虑配送费（统一为 0），保留函数以便切换类型/数量时刷新
-const calculateDeliveryFee = () => {
-  orderForm.deliveryFee = 0
 }
 
 // 订单类型变更时设置默认配送方式
@@ -1145,7 +1114,6 @@ const onOrderTypeChange = () => {
     row.ticketQty = 0
   })
   ticketMap.value = {}
-  calculateDeliveryFee()
   if (orderType === 2) fetchTicketAvailable()
 }
 
@@ -1194,14 +1162,13 @@ const handleSubmitOrder = async (print = false) => {
     ElMessage.warning('请完善配送信息')
     return
   }
-  calculateDeliveryFee()
 
   submitLoading.value = true
   try {
     const orderData = {
       ...orderForm,
       orderAmount: calculateTotalAmount(),
-      totalAmount: calculateTotalAmount() + orderForm.deliveryFee
+      totalAmount: calculateTotalAmount()
     }
     let savedId = null
     if (isEditMode.value) {

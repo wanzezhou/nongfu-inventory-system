@@ -1,6 +1,6 @@
 // 幂等创建报销附件表 reimburse_attachments
 const mysql = require('mysql2/promise');
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
 async function run() {
   const conn = await mysql.createConnection({
