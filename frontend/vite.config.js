@@ -11,7 +11,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    open: true,
+    // 浏览器打开由 backend/scripts/start.js 统一负责（等前后端就绪后开一次）；
+    // 这里若设 open: true 会与 start.bat 各弹一个页面（出现两个标签）
+    open: false,
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
