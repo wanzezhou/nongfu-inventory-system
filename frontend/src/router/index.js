@@ -103,12 +103,6 @@ const routes = [
         meta: { title: t('worker'), requiresAuth: true }
       },
       {
-        path: 'salesman',
-        name: 'Salesman',
-        component: () => import('@/views/salesman/SalesmanList.vue'),
-        meta: { title: t('salesman'), requiresAuth: true }
-      },
-      {
         path: 'accounts',
         name: 'CompanyAccounts',
         component: () => import('@/views/account/CompanyAccounts.vue'),

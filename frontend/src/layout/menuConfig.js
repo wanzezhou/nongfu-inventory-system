@@ -20,7 +20,6 @@ export const menuGroups = [
       { index: '/retail-machine', title: '零售机管理', icon: Shop },
       { index: '/supplier', title: '供应商管理', icon: OfficeBuilding },
       { index: '/worker', title: '员工管理', icon: User },
-      { index: '/salesman', title: '业务员管理', icon: Avatar },
       { index: '/accounts', title: '公司账户管理', icon: Wallet }
     ]
   },

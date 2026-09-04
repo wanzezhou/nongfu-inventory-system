@@ -175,6 +175,16 @@
             <el-radio :value="2">面包车（批量配送）</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item v-if="workerForm.employeeType === 3" label="提成比例(%)">
+          <el-input-number
+            v-model="workerForm.commissionRate"
+            :min="0"
+            :max="100"
+            :precision="2"
+            :step="0.5"
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="收款银行">
           <el-input v-model="workerForm.bankName" placeholder="请输入收款银行" />
         </el-form-item>
@@ -326,6 +336,7 @@ const handleEdit = (row) => {
     phone: row.phone,
     employeeType: row.employeeType,
     vehicleType: row.vehicleType,
+    commissionRate: row.employeeType === 3 && row.commissionRate != null ? Number(row.commissionRate) : 0,
     bankName: row.bankName,
     bankAccount: row.bankAccount,
     status: row.status
@@ -434,5 +445,12 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 窄屏适配：对话框宽度响应式 */
+@media (max-width: 768px) {
+  .worker-dialog {
+    width: 94vw !important;
+  }
 }
 </style>

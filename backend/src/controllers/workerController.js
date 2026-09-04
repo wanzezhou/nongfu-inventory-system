@@ -15,6 +15,7 @@ function formatWorker(worker) {
     phone: worker.phone,
     employeeType: worker.employee_type,
     vehicleType: worker.vehicle_type,
+    commissionRate: worker.commission_rate != null ? Number(worker.commission_rate) : null,
     bankName: worker.bank_name,
     bankAccount: worker.bank_account,
     status: worker.status,
@@ -114,6 +115,7 @@ async function createWorker(req, res) {
       bank_name,
       bankAccount,
       bank_account,
+      commissionRate,
       status
     } = req.body;
 
@@ -131,9 +133,9 @@ async function createWorker(req, res) {
     const now = new Date();
 
     const sql = `INSERT INTO workers (
-      worker_id, worker_name, phone, employee_type, vehicle_type,
+      worker_id, worker_name, phone, employee_type, vehicle_type, commission_rate,
       bank_name, bank_account, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       worker_id,
@@ -141,6 +143,8 @@ async function createWorker(req, res) {
       phone || null,
       Number(eType) || 2,
       Number(vType) || 1,
+      // 提成比例仅业务员（类型3）使用，其他类型存 NULL
+      Number(eType) === 3 ? (commissionRate !== undefined && commissionRate !== null ? Number(commissionRate) : 0) : null,
       bName || null,
       bAccount || null,
       status !== undefined ? Number(status) : 1,
@@ -174,6 +178,7 @@ async function updateWorker(req, res) {
       bank_name,
       bankAccount,
       bank_account,
+      commissionRate,
       status
     } = req.body;
 
@@ -203,6 +208,11 @@ async function updateWorker(req, res) {
     if (vType !== undefined) {
       updateFields.push('vehicle_type = ?');
       values.push(Number(vType));
+    }
+    // 提成比例仅业务员（类型3）使用；显式传值才更新
+    if (commissionRate !== undefined) {
+      updateFields.push('commission_rate = ?');
+      values.push(commissionRate !== null && commissionRate !== '' ? Number(commissionRate) : null);
     }
     const bName = bankName !== undefined ? bankName : bank_name;
     if (bName !== undefined) {
