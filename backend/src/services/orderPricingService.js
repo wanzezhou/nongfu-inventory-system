@@ -21,24 +21,28 @@ const bizFail = (message) => {
   return e;
 };
 
-/** 统一蛇形/驼峰字段命名（create/update 请求体共用） */
+/**
+ * 提取订单请求体字段（create/update 共用）。
+ * D7 约定：normalizeBody 中间件已把蛇形键统一转成驼峰，此处只读驼峰，不再写 `body.xxx_yyy || body.xxxYyy`。
+ * 注意三个字段存在「前端历史驼峰别名」与「归一化后驼峰」两套名字，命名不同不可想当然：
+ *   delivery_type → deliveryType，前端别名 deliveryMethod
+ *   worker_id     → workerId，    前端别名 deliveryStaffId
+ *   created_by    → createdBy，   前端别名 createdById
+ */
 function normalizeOrderPayload(body = {}) {
   return {
-    orderType: body.order_type !== undefined ? body.order_type : body.orderType,
-    platformType: body.platform_type !== undefined ? body.platform_type : body.platformType,
-    platformOrderNo: body.platform_order_no !== undefined ? body.platform_order_no : body.platformOrderNo,
-    stationId: (body.station_id !== undefined ? body.station_id : body.stationId) || null,
-    machineStationId: (body.machine_station_id !== undefined ? body.machine_station_id : body.machineStationId) || null,
-    customerName: body.customer_name !== undefined ? body.customer_name : body.customerName,
-    customerPhone: body.customer_phone !== undefined ? body.customer_phone : body.customerPhone,
-    customerAddress: body.customer_address !== undefined ? body.customer_address : body.customerAddress,
-    contactName: body.contact_name !== undefined ? body.contact_name : body.contactName,
-    // 配送类型：delivery_type（蛇形）或 deliveryMethod（驼峰）
-    deliveryType: body.delivery_type !== undefined ? body.delivery_type : body.deliveryMethod,
-    // 员工ID：worker_id（蛇形）或 deliveryStaffId（驼峰）
-    workerId: (body.worker_id !== undefined ? body.worker_id : body.deliveryStaffId) || null,
-    // 创建人ID：created_by（蛇形）或 createdById（驼峰）
-    createdById: (body.created_by !== undefined ? body.created_by : body.createdById) || null,
+    orderType: body.orderType,
+    platformType: body.platformType,
+    platformOrderNo: body.platformOrderNo,
+    stationId: body.stationId || null,
+    machineStationId: body.machineStationId || null,
+    customerName: body.customerName,
+    customerPhone: body.customerPhone,
+    customerAddress: body.customerAddress,
+    contactName: body.contactName,
+    deliveryType: body.deliveryMethod !== undefined ? body.deliveryMethod : body.deliveryType,
+    workerId: (body.deliveryStaffId !== undefined ? body.deliveryStaffId : body.workerId) || null,
+    createdById: (body.createdById !== undefined ? body.createdById : body.createdBy) || null,
     items: body.items || []
   };
 }
