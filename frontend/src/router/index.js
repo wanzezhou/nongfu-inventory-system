@@ -158,6 +158,24 @@ const routes = [
         name: 'WaterTicketManage',
         component: () => import('@/views/waterTicket/WaterTicketManage.vue'),
         meta: { title: t('water-tickets'), requiresAuth: true }
+      },
+      {
+        path: 'barrel/deposit',
+        name: 'BarrelDeposit',
+        component: () => import('@/views/barrel/BarrelDeposit.vue'),
+        meta: { title: t('barrel/deposit'), requiresAuth: true }
+      },
+      {
+        path: 'barrel/ledger',
+        name: 'BarrelLedger',
+        component: () => import('@/views/barrel/BarrelLedger.vue'),
+        meta: { title: t('barrel/ledger'), requiresAuth: true }
+      },
+      {
+        path: 'barrel/config',
+        name: 'BarrelConfig',
+        component: () => import('@/views/barrel/BarrelConfig.vue'),
+        meta: { title: t('barrel/config'), requiresAuth: true }
       }
     ]
   }

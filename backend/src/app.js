@@ -24,6 +24,7 @@ const salaryRoutes = require('./routes/salaryRoutes');
 const costRoutes = require('./routes/costRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const financeAccountRoutes = require('./routes/financeAccountRoutes');
+const barrelRoutes = require('./routes/barrelRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -111,6 +112,7 @@ app.use('/api/salary', salaryRoutes);
 app.use('/api/cost', costRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/finance-accounts', financeAccountRoutes);
+app.use('/api/barrel', barrelRoutes);
 
 // 根路由
 app.get('/', (req, res) => {
