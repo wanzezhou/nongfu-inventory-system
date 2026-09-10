@@ -6,6 +6,8 @@
  */
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const BASE = 'http://localhost:3000/api';
+const { pool } = require('../src/config/db');
+const { cleanupSmokeResidue } = require('./lib/smokeCleanup');
 
 async function call(method, path, body, token) {
   const res = await fetch(BASE + path, {
@@ -31,8 +33,6 @@ function assert(cond, name) {
   const login = await call('POST', '/auth/login', { username: 'admin', password: 'admin123' });
   assert(login.data?.token, '管理员登录');
   const token = login.data.token;
-
-  const { pool } = require('../src/config/db');
 
   // 找一个有水票记录的水站+商品组合，没有就造两张票
   let [rows] = await pool.query(
@@ -127,14 +127,16 @@ function assert(cond, name) {
   assert(updated2.code === 200, `改单恢复抵扣 1 张: ${updated2.message || ''}`);
   assert((await countTickets(1)) === available0 - 1, `重新核销 1 张（可用 ${available0 - 1}）`);
 
-  // 清理：取消并硬删测试订单（DELETE /orders/:id/force），删除冒烟水票
+  // 清理：取消并硬删测试订单（DELETE /orders/:id/force）
   await call('DELETE', `/orders/${orderId2}`, {}, token);
   await call('DELETE', `/orders/${orderId2}/force`, {}, token);
-  await pool.query("DELETE FROM water_tickets WHERE issued_by='smoke'");
-  // 把被核销过又还原的票里非冒烟来源的残留核销记录清掉（理论上取消已还原，这里只清 remark=冒烟）
-  console.log('清理完成（冒烟水票与测试订单已删除）');
 
   console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
-  await pool.end();
-  process.exit(fail > 0 ? 1 : 0);
-})().catch(e => { console.error('冒烟异常:', e); process.exit(1); });
+})()
+  .catch(e => { console.error('冒烟异常:', e); fail++; })
+  .finally(async () => {
+    // 兜底：取消/改单中途失败时测试订单会残留（订单取消 ≠ 删除），统一物理清除
+    await cleanupSmokeResidue(pool);
+    await pool.end();
+    process.exit(fail > 0 ? 1 : 0);
+  });

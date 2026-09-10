@@ -20,8 +20,11 @@ Vue3 + Element Plus 前端（:5173）｜ Node.js + Express 后端（:3000）｜ 
 - [ ] **改订单/定价/水票**：逻辑归 `services/orderPricingService.js`，不要往 orderController 里抄；改前跑 `node scripts/smoke_order_pricing.js`（基线 40/40），改后再跑。
 - [ ] **改营收/成本口径**：营收表达式唯一来源 `utils/revenueExpr.js`，前端只展示不计算；订单类型 4/6 营收走 machine_sales。
 - [ ] **写 controller**：`req.body` 一律驼峰单读（全局 normalizeBody 已归一），禁止蛇形别名回退；金额 `Math.round(n*100)/100`；分页 parseInt 内联（mysql2 不支持 `LIMIT ?`）。
+  ⚠️ 归一化是**机械转换**（`delivery_type`→`deliveryType`）。若前端用的是另一个驼峰名，两者不会自动对齐、字段会静默取空 —— 订单接口已有三例（配送方式 `deliveryType`/`deliveryMethod`、配送员工 `workerId`/`deliveryStaffId`、创建人 `createdBy`/`createdById`）。**新增请求体字段前先 grep 前端确认实际键名。**
 - [ ] **改前端**：菜单只改 `layout/menuConfig.js`；窄屏适配（对话框 ≤768px 94vw）；失败分支不得误报成功；完成后台账 `docs/项目概览.md`。
 - [ ] **验证**：改后端代码后必须重启服务再跑冒烟；相关冒烟基线见 `docs/交接文档.md` 第四节表格。
+  ⚠️ `loginLimiter` 为 `max 10 / 15min`（按 IP），**连续跑整套冒烟会在第 11 个脚本处被限流**（登录返 `null`、断言连锁失败，极易误判为回归）—— 请分批跑，或每批前重启后端重置计数。
+- [ ] **写/改冒烟脚本**：凡写库的 `smoke_*.js` 必须在 `finally` 调 `cleanupSmokeResidue(pool)`（`scripts/lib/smokeCleanup.js`），测试数据须带「冒烟 / smoke_ / SMK / 未来月份」标记；**禁止**把真实数据（如 `products LIMIT 1`）当测试对象。历史残留可用 `node scripts/cleanup_smoke_data.js`（预演）/ `--apply`（执行）清理。
 
 ## 快速运行
 

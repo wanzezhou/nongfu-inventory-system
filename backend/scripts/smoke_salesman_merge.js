@@ -8,6 +8,8 @@
  *  5. 前端构建产物不再引用 salesman 路由（menuConfig 派生检查在 build 断言中做）
  */
 const BASE = process.env.SMOKE_BASE || 'http://localhost:3000';
+const { pool } = require('../src/config/db');
+const { cleanupSmokeResidue } = require('./lib/smokeCleanup');
 let pass = 0, fail = 0;
 const ok = (cond, name) => { if (cond) { pass++; console.log('  PASS', name); } else { fail++; console.error('  FAIL', name); } };
 
@@ -68,5 +70,11 @@ async function api(method, url, body, token) {
   ok(deletedRow && deletedRow.status === 0, '冒烟业务员软删除生效（status=0 离职）');
 
   console.log(`\n结果: ${pass} pass / ${fail} fail`);
-  process.exit(fail ? 1 : 0);
-})().catch(e => { console.error('SMOKE ERROR:', e); process.exit(1); });
+})()
+  .catch(e => { console.error('SMOKE ERROR:', e); fail++; })
+  .finally(async () => {
+    // 兜底：业务 DELETE 是软删除清不掉，这里物理删除冒烟员工，避免堆积在员工列表
+    await cleanupSmokeResidue(pool);
+    await pool.end();
+    process.exit(fail ? 1 : 0);
+  });

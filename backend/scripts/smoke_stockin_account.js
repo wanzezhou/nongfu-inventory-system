@@ -3,7 +3,9 @@
 const BASE = 'http://localhost:3000/api';
 const mysql = require('mysql2/promise');
 require('dotenv').config();
+const { cleanupSmokeResidue } = require('./lib/smokeCleanup');
 
+let pool; // 模块级：异常路径的兜底清理也要能拿到它
 let pass = 0, fail = 0;
 function check(name, cond, extra = '') {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
@@ -21,7 +23,7 @@ async function db() {
 }
 
 async function main() {
-  const pool = await db();
+  pool = await db();
 
   // 登录
   const lr = await fetch(`${BASE}/auth/login`, {
@@ -48,9 +50,19 @@ async function main() {
     acc = (await call('/finance-accounts')).data.list.find(a => a.accountId === acc.accountId);
   }
 
-  const [products] = await pool.query('SELECT product_id, product_name FROM products WHERE status = 1 LIMIT 1');
-  if (!products.length) throw new Error('无可用商品');
-  const product = products[0];
+  // 造一个临时商品，避免把测试入库记录挂到真实商品上
+  // （历史教训：旧版取 products LIMIT 1，导致真实商品被冒烟入库单/流水污染）
+  const productId = 'SMK' + Date.now();
+  await pool.query(
+    `INSERT INTO products (product_id, product_code, product_name, specification, unit,
+       purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee,
+       distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee,
+       worker_machine_delivery_fee, status)
+     VALUES (?,?,?,?,?, 10, 12, 15, 16, 2, 1.5, 1, 0.8, 0.6, 1)`,
+    [productId, 'SMK' + String(Date.now()).slice(-8), '冒烟入库账户测试商品', '550ml', '箱']
+  );
+  await pool.query('INSERT INTO inventory (product_id, quantity, last_in_time) VALUES (?, 0, NOW())', [productId]);
+  const product = { product_id: productId, product_name: '冒烟入库账户测试商品' };
 
   const stockOf = async () => {
     const [[r]] = await pool.query('SELECT quantity FROM inventory WHERE product_id = ?', [product.product_id]);
@@ -179,12 +191,19 @@ async function main() {
   check('0 元入库成功', r9.code === 200, JSON.stringify(r9));
   check('库存 +3', (await stockOf()) === stock3 + 3);
   check('余额不变', Math.abs((await balanceOf(acc.accountId)) - bal3) < 0.001);
-  // 清理
+  // 清理：作废盘库单（断言用），随后统一收尾物理删除临时商品/入库单/流水，
+  // 并把「冒烟预充值」这类垫资一并清掉、按恒等式重算账户余额。
   if (r9.code === 200) await call(`/inventory/purchases/${r9.data.purchaseId}/void`, { method: 'POST', body: JSON.stringify({ reason: '冒烟清理' }) });
+  await cleanupSmokeResidue(pool);
 
-  await pool.end();
   console.log(`\n结果：${pass} 通过 / ${fail} 失败\n`);
-  process.exit(fail ? 1 : 0);
 }
 
-main().catch(e => { console.error('冒烟异常:', e); process.exit(1); });
+main()
+  .then(async () => { await pool.end(); process.exit(fail ? 1 : 0); })
+  .catch(async (e) => {
+    console.error('冒烟异常:', e);
+    // 异常路径也要清理，否则临时商品与入库单会留在库里
+    if (pool) { await cleanupSmokeResidue(pool); await pool.end(); }
+    process.exit(1);
+  });

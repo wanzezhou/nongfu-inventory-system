@@ -1,0 +1,334 @@
+/**
+ * 一次性清理：历史冒烟测试残留数据
+ *
+ * 背景：多个 smoke_*.js 早期版本收尾不完整，在库里留下了测试数据，
+ *      且部分表（products / workers）业务删除是「软删除」（status=0），
+ *      导致前台上永远看得到、删不掉。
+ *
+ * 清理范围（物理删除）：
+ *   1. workers            冒烟业务员 / 冒烟配送员
+ *   2. mini_accounts      smoke_* 冒烟登录账号
+ *   3. products           冒烟归一化商品（SMK 前缀）
+ *   4. orders             冒烟-水票还原 测试订单（及其 order_items）
+ *   5. purchase_records   冒烟入库单 / 冒烟清理盘库单（含已作废单）
+ *   6. finance_transactions 上述采购单的收支流水 + 冒烟预充值 + 用户确认删除的测试工资发放流水
+ *   7. salary_payments    用户确认删除的测试工资发放单
+ *   8. inventory          冒烟商品库存行
+ *
+ * 收尾：按「余额 = 初始余额 + 剩余流水净额」重算所有账户 current_balance，
+ *      保证资金记账恒等式成立后再提交。整个过程单事务，任一步失败整体回滚。
+ *
+ * 用法：
+ *   node scripts/cleanup_smoke_data.js          # 预演（只读，不修改任何数据）
+ *   node scripts/cleanup_smoke_data.js --apply  # 实际执行
+ *
+ * 幂等：可重复执行，第二次运行应报告 0 条待清理。
+ */
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const mysql = require('mysql2/promise');
+
+const APPLY = process.argv.includes('--apply');
+
+/**
+ * 本次额外清理的工资发放单（用户 2026-09-10 确认：属工资改造期间的测试发放，
+ * 金额 20.40 由冒烟预充值垫付，一并删除后账户回到 0）。
+ */
+const EXTRA_SALARY_PAYMENT_IDS = ['PAYMTU7ADSXHH'];
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'nongfu_inventory',
+  charset: 'utf8mb4',
+  connectionLimit: 2,
+});
+
+const line = (s = '') => console.log(s);
+const head = (s) => { line(); line('─'.repeat(64)); line(s); line('─'.repeat(64)); };
+
+async function main() {
+  const conn = await pool.getConnection();
+  const ins = (sql, args) => conn.query(sql, args);
+
+  try {
+    // ============ 1. 采集待删主键（全部为只读查询） ============
+    const pick = async (sql, args = []) => {
+      const [rows] = await conn.query(sql, args);
+      return rows;
+    };
+
+    const smokeWorkers = await pick(
+      "SELECT worker_id, worker_name, phone FROM workers WHERE worker_name LIKE '冒烟%'"
+    );
+    const smokeAccounts = await pick(
+      "SELECT id, username FROM mini_accounts WHERE username LIKE 'smoke\\_%'"
+    );
+    const smokeProducts = await pick(
+      "SELECT product_id, product_code, product_name FROM products WHERE product_name LIKE '冒烟%' OR product_code LIKE 'SMK%'"
+    );
+    const smokeOrders = await pick(
+      "SELECT order_id, customer_name FROM orders WHERE customer_name LIKE '冒烟%'"
+    );
+    const smokePurchases = await pick(
+      "SELECT purchase_id, product_id, status, remark, void_reason FROM purchase_records WHERE remark LIKE '%冒烟%' OR void_reason LIKE '%冒烟%'"
+    );
+
+    const workerIds = smokeWorkers.map(r => r.worker_id);
+    const accountIds = smokeAccounts.map(r => r.id);
+    const productIds = smokeProducts.map(r => r.product_id);
+    const orderIds = smokeOrders.map(r => r.order_id);
+    const purchaseIds = smokePurchases.map(r => r.purchase_id);
+
+    // 流水：①采购单关联 ②命中冒烟备注 ③本次额外确认的工资发放
+    const txByPurchase = purchaseIds.length
+      ? await pick('SELECT tx_id, tx_no, amount, tx_type, remark FROM finance_transactions WHERE related_id IN (?)', [purchaseIds])
+      : [];
+    const txByRemark = await pick(
+      "SELECT tx_id, tx_no, amount, tx_type, remark FROM finance_transactions WHERE remark LIKE '%冒烟%'"
+    );
+    const txBySalary = EXTRA_SALARY_PAYMENT_IDS.length
+      ? await pick(
+        "SELECT tx_id, tx_no, amount, tx_type, remark FROM finance_transactions WHERE related_module = 'salary_payment' AND related_id IN (?)",
+        [EXTRA_SALARY_PAYMENT_IDS]
+      )
+      : [];
+    const txIds = [...new Set([...txByPurchase, ...txByRemark, ...txBySalary].map(r => r.tx_id))];
+
+    const salaries = EXTRA_SALARY_PAYMENT_IDS.length
+      ? await pick('SELECT payment_id, worker_name, salary_month, amount FROM salary_payments WHERE payment_id IN (?)', [EXTRA_SALARY_PAYMENT_IDS])
+      : [];
+
+    // 关联产物（用于删除）
+    const orderItems = orderIds.length
+      ? await pick('SELECT item_id FROM order_items WHERE order_id IN (?)', [orderIds])
+      : [];
+    const orderItemsByProduct = productIds.length
+      ? await pick('SELECT item_id FROM order_items WHERE product_id IN (?)', [productIds])
+      : [];
+    const dfSettleByOrder = orderIds.length
+      ? await pick('SELECT settlement_id FROM delivery_fee_settlement WHERE order_id IN (?)', [orderIds])
+      : [];
+    const dfSettleByProduct = productIds.length
+      ? await pick('SELECT settlement_id FROM delivery_fee_settlement WHERE product_id IN (?)', [productIds])
+      : [];
+    const finSettle = orderIds.length || workerIds.length
+      ? await pick(
+        `SELECT settlement_id FROM financial_settlement WHERE order_id IN (?) OR worker_id IN (?)`,
+        [orderIds.length ? orderIds : [null], workerIds.length ? workerIds : [null]]
+      )
+      : [];
+    const invRows = productIds.length
+      ? await pick('SELECT inventory_id FROM inventory WHERE product_id IN (?)', [productIds])
+      : [];
+    const machineSales = productIds.length
+      ? await pick('SELECT sale_id FROM machine_sales WHERE product_id IN (?)', [productIds])
+      : [];
+    const stockOuts = productIds.length
+      ? await pick('SELECT record_id FROM stock_out_records WHERE product_id IN (?)', [productIds])
+      : [];
+    const tickets = productIds.length
+      ? await pick('SELECT ticket_id FROM water_tickets WHERE product_id IN (?)', [productIds])
+      : [];
+    const ticketIssues = productIds.length
+      ? await pick('SELECT issuance_id FROM water_ticket_issuance WHERE product_id IN (?)', [productIds])
+      : [];
+    const ticketsByOrder = orderIds.length
+      ? await pick('SELECT ticket_id FROM water_tickets WHERE order_id IN (?)', [orderIds])
+      : [];
+    // 水票标记口径：2099 未来月份（脚本写死 month:'2099-01'）/ 脚本专用 issued_by / 冒烟备注
+    const ticketMarkers = await pick(
+      "SELECT ticket_id, product_id, month, issued_by FROM water_tickets WHERE month LIKE '2099%' OR issued_by IN ('smoke', 't1', 'a6') OR remark LIKE '%冒烟%'"
+    );
+    const salaryLinks = EXTRA_SALARY_PAYMENT_IDS.length
+      ? await pick('SELECT payment_id, advance_id FROM salary_payment_advances WHERE payment_id IN (?)', [EXTRA_SALARY_PAYMENT_IDS])
+      : [];
+    const ordersByWorker = workerIds.length
+      ? await pick('SELECT order_id FROM orders WHERE worker_id IN (?) OR created_by IN (?)', [workerIds, workerIds])
+      : [];
+
+    // ============ 2. 打印清理计划 ============
+    head(`冒烟残留清理计划　${APPLY ? '【实际执行】' : '【预演 · 不修改数据】'}`);
+    const plan = [
+      ['workers（冒烟员工）', smokeWorkers.map(r => `${r.worker_id}/${r.worker_name}`)],
+      ['mini_accounts（冒烟账号）', smokeAccounts.map(r => `${r.id}/${r.username}`)],
+      ['products（冒烟商品）', smokeProducts.map(r => `${r.product_code}/${r.product_name}`)],
+      ['orders（冒烟订单）', smokeOrders.map(r => `${r.order_id}/${r.customer_name}`)],
+      ['purchase_records（冒烟入库单）', smokePurchases.map(r => `${r.purchase_id}(status=${r.status})`)],
+      ['finance_transactions（冒烟流水）', [].concat(txByPurchase, txByRemark, txBySalary).filter((v, i, a) => a.findIndex(x => x.tx_id === v.tx_id) === i).map(r => `${r.tx_no}/${r.tx_type}/${r.amount}`)],
+      ['salary_payments（确认删除的测试发放）', salaries.map(r => `${r.payment_id}/${r.worker_name}/${r.amount}`)],
+      ['order_items（冒烟订单明细）', [].concat(orderItems, orderItemsByProduct).map(r => `#${r.item_id}`)],
+      ['inventory（冒烟商品库存行）', invRows.map(r => `#${r.inventory_id}`)],
+      ['water_tickets（2099/脚本标记水票）', ticketMarkers.map(r => `${r.ticket_id}(${r.month}/${r.issued_by})`)],
+      ['其他零散关联', [].concat(machineSales.map(r => `machine_sales/${r.sale_id}`), stockOuts.map(r => `stock_out_records/${r.record_id}`), tickets.map(r => `water_tickets/${r.ticket_id}`), ticketIssues.map(r => `water_ticket_issuance/${r.issuance_id}`), ticketsByOrder.map(r => `water_tickets/${r.ticket_id}`), dfSettleByOrder.map(r => `dfs/${r.settlement_id}`), dfSettleByProduct.map(r => `dfs/${r.settlement_id}`), finSettle.map(r => `fin#${r.settlement_id}`), salaryLinks.map(r => `spa/${r.payment_id}`), ordersByWorker.map(r => `orders/${r.order_id}`))],
+    ];
+    for (const [label, items] of plan) {
+      line(`${label.padEnd(38, ' ')} ${String(items.length).padStart(3)} 条${items.length ? '  → ' + items.slice(0, 6).join(', ') + (items.length > 6 ? ' …' : '') : ''}`);
+    }
+
+    // 账户余额变化预览
+    const [accounts] = await conn.query(
+      'SELECT account_id, account_name, initial_balance, current_balance FROM finance_accounts ORDER BY account_id'
+    );
+    const [delNet] = await conn.query(
+      txIds.length
+        ? 'SELECT ROUND(COALESCE(SUM(CASE WHEN tx_type=1 THEN amount WHEN tx_type=2 THEN -amount ELSE 0 END),0),2) n FROM finance_transactions WHERE tx_id IN (?)'
+        : 'SELECT 0 n',
+      txIds.length ? [txIds] : []
+    );
+    line();
+    line('受影响账户余额：');
+    line(`  待删流水净额合计：${Number(delNet[0].n).toFixed(2)}`);
+    for (const a of accounts) {
+      const before = Number(a.current_balance);
+      const [r] = await conn.query(
+        txIds.length
+          ? 'SELECT ROUND(COALESCE(SUM(CASE WHEN tx_type=1 THEN amount WHEN tx_type=2 THEN -amount ELSE 0 END),0),2) n FROM finance_transactions WHERE account_id=? AND tx_id IN (?)'
+          : 'SELECT 0 n',
+        txIds.length ? [a.account_id, txIds] : [a.account_id]
+      );
+      const after = Math.round((before - Number(r[0].n)) * 100) / 100;
+      const flag = after !== before ? '  ← 变化' : '';
+      line(`  ${a.account_name.padEnd(12, ' ')} ${before.toFixed(2).padStart(10)} → ${after.toFixed(2).padStart(10)}${flag}`);
+    }
+
+    const total = productIds.length + orderIds.length + purchaseIds.length + txIds.length +
+      workerIds.length + accountIds.length + salaries.length + orderItems.length +
+      orderItemsByProduct.length + invRows.length;
+    line();
+    line(`合计待删除记录：约 ${total} 条`);
+
+    if (!APPLY) {
+      line();
+      line('预演结束。确认无误后加 --apply 实际执行。');
+      return;
+    }
+
+    // ============ 3. 实际执行（单事务） ============
+    line();
+    line('开始执行（单事务）…');
+    await conn.beginTransaction();
+
+    const del = async (table, sql, args) => {
+      const [res] = await conn.query(sql, args);
+      if (res.affectedRows) line(`  ${table.padEnd(26)} -${res.affectedRows}`);
+      return res.affectedRows;
+    };
+
+    // 3.1 冒烟订单的子孙
+    if (orderIds.length) {
+      await del('order_items', 'DELETE FROM order_items WHERE order_id IN (?)', [orderIds]);
+      await del('delivery_fee_settlement', 'DELETE FROM delivery_fee_settlement WHERE order_id IN (?)', [orderIds]);
+      await del('financial_settlement', 'DELETE FROM financial_settlement WHERE order_id IN (?)', [orderIds]);
+      await del('water_tickets(by order)', 'DELETE FROM water_tickets WHERE order_id IN (?)', [orderIds]);
+    }
+    // 3.2 冒烟商品的子孙
+    if (productIds.length) {
+      await del('order_items(by product)', 'DELETE FROM order_items WHERE product_id IN (?)', [productIds]);
+      await del('delivery_fee_settlement', 'DELETE FROM delivery_fee_settlement WHERE product_id IN (?)', [productIds]);
+      await del('machine_sales', 'DELETE FROM machine_sales WHERE product_id IN (?)', [productIds]);
+      await del('stock_out_records', 'DELETE FROM stock_out_records WHERE product_id IN (?)', [productIds]);
+      await del('water_tickets', 'DELETE FROM water_tickets WHERE product_id IN (?)', [productIds]);
+      await del('water_ticket_issuance', 'DELETE FROM water_ticket_issuance WHERE product_id IN (?)', [productIds]);
+    }
+    // 3.2b 标记水票（2099 未来月份 / 脚本 issued_by / 冒烟备注）
+    if (ticketMarkers.length) {
+      await del('water_tickets(marked)', 'DELETE FROM water_tickets WHERE ticket_id IN (?)', [ticketMarkers.map(r => r.ticket_id)]);
+    }
+    // 3.3 工资发放子孙
+    if (EXTRA_SALARY_PAYMENT_IDS.length) {
+      await del('salary_payment_advances', 'DELETE FROM salary_payment_advances WHERE payment_id IN (?)', [EXTRA_SALARY_PAYMENT_IDS]);
+    }
+    // 3.4 资金流水（先于业务单删除）
+    if (txIds.length) {
+      await del('finance_transactions', 'DELETE FROM finance_transactions WHERE tx_id IN (?)', [txIds]);
+    }
+    // 3.5 业务单
+    if (purchaseIds.length) {
+      await del('purchase_records', 'DELETE FROM purchase_records WHERE purchase_id IN (?)', [purchaseIds]);
+    }
+    if (EXTRA_SALARY_PAYMENT_IDS.length) {
+      await del('salary_payments', 'DELETE FROM salary_payments WHERE payment_id IN (?)', [EXTRA_SALARY_PAYMENT_IDS]);
+    }
+    if (invRows.length) {
+      await del('inventory', 'DELETE FROM inventory WHERE inventory_id IN (?)', [invRows.map(r => r.inventory_id)]);
+    }
+    if (orderIds.length) {
+      await del('orders', 'DELETE FROM orders WHERE order_id IN (?)', [orderIds]);
+    }
+    if (productIds.length) {
+      await del('products', 'DELETE FROM products WHERE product_id IN (?)', [productIds]);
+    }
+    // 3.6 员工（先摘除引用）
+    if (workerIds.length) {
+      await del('financial_settlement(worker)', 'DELETE FROM financial_settlement WHERE worker_id IN (?)', [workerIds]);
+      await del('orders(by worker)', 'DELETE FROM orders WHERE worker_id IN (?) OR created_by IN (?)', [workerIds, workerIds]);
+      await del('workers', 'DELETE FROM workers WHERE worker_id IN (?)', [workerIds]);
+    }
+    // 3.7 冒烟登录账号
+    if (accountIds.length) {
+      await del('mini_accounts', 'DELETE FROM mini_accounts WHERE id IN (?)', [accountIds]);
+    }
+
+    // ============ 4. 重算账户余额并校验恒等式 ============
+    line();
+    line('重算账户余额…');
+    const [accts] = await conn.query(
+      'SELECT account_id, account_name, initial_balance, current_balance FROM finance_accounts ORDER BY account_id'
+    );
+    const netMap = await netOf(conn);
+    for (const a of accts) {
+      const init = Number(a.initial_balance);
+      const net = Number(netMap[a.account_id] || 0);
+      const target = Math.round((init + net) * 100) / 100;
+      if (Math.abs(target - Number(a.current_balance)) > 0.001) {
+        await conn.query('UPDATE finance_accounts SET current_balance = ? WHERE account_id = ?', [target, a.account_id]);
+        line(`  ${a.account_name.padEnd(12, ' ')} ${Number(a.current_balance).toFixed(2).padStart(10)} → ${target.toFixed(2).padStart(10)}`);
+      } else {
+        line(`  ${a.account_name.padEnd(12, ' ')} ${Number(a.current_balance).toFixed(2).padStart(10)}   （无变化）`);
+      }
+    }
+
+    // 校验恒等式
+    const bad = [];
+    for (const a of accts) {
+      const [[row]] = await conn.query(
+        'SELECT current_balance, initial_balance FROM finance_accounts WHERE account_id = ?', [a.account_id]
+      );
+      const net = Number(netMap[a.account_id] || 0);
+      const expect = Math.round((Number(row.initial_balance) + net) * 100) / 100;
+      if (Math.abs(expect - Number(row.current_balance)) > 0.001) {
+        bad.push(`${a.account_id}: 余额 ${row.current_balance} ≠ 初始 ${row.initial_balance} + 净额 ${net}`);
+      }
+    }
+    if (bad.length) {
+      throw Object.assign(new Error('余额恒等式校验失败：\n' + bad.join('\n')), { business: true });
+    }
+    line('  ✔ 恒等式校验通过（余额 = 初始余额 + 全部剩余流水净额）');
+
+    await conn.commit();
+    line();
+    line('✅ 清理完成，已提交。');
+  } catch (e) {
+    try { await conn.rollback(); line(); line('❌ 执行失败，已回滚，数据未变更。'); } catch { /* ignore */ }
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
+async function netOf(conn) {
+  const [rows] = await conn.query(
+    `SELECT account_id, ROUND(COALESCE(SUM(CASE WHEN tx_type=1 THEN amount WHEN tx_type=2 THEN -amount ELSE 0 END),0),2) net
+     FROM finance_transactions GROUP BY account_id`
+  );
+  const map = {};
+  for (const r of rows) map[r.account_id] = r.net;
+  return map;
+}
+
+main()
+  .then(() => pool.end())
+  .catch((e) => { console.error('\n错误：', e.message); pool.end(); process.exit(1); });

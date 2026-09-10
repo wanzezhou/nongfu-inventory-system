@@ -5,7 +5,9 @@
 const BASE = 'http://localhost:3000/api';
 const mysql = require('mysql2/promise');
 require('dotenv').config();
+const { cleanupSmokeResidue } = require('./lib/smokeCleanup');
 
+let pool; // 模块级：异常路径的 finally 也要能拿到它做兜底清理
 let pass = 0, fail = 0;
 function check(name, cond, extra = '') {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
@@ -41,7 +43,7 @@ function unitTests() {
 }
 
 async function main() {
-  const pool = await db();
+  pool = await db();
 
   // 登录
   const lr = await fetch(`${BASE}/auth/login`, {
@@ -60,7 +62,18 @@ async function main() {
     const [[r]] = await pool.query('SELECT current_balance FROM finance_accounts WHERE account_id = ?', [id]);
     return Number(r.current_balance);
   };
-  const balBefore = await balanceOf(acc.accountId);
+  const balBefore0 = await balanceOf(acc.accountId);
+  // 余额兜底：本用例需扣款 41.5，账户余额不足时先走正规调账接口垫资。
+  // 收尾时 lib/smokeCleanup 会按「余额 = 初始余额 + 流水净额」重算，垫资不会留下痕迹。
+  let balBefore = balBefore0;
+  if (balBefore < 100) {
+    const adj = await call(`/finance-accounts/${acc.accountId}/adjust`, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'income', amount: 1000, remark: '冒烟测试：预充值' })
+    });
+    if (adj.code !== 200) throw new Error('预充值失败：' + JSON.stringify(adj));
+    balBefore = await balanceOf(acc.accountId);
+  }
 
   // ===== 1. product：蛇形创建 =====
   console.log('\n[接口] 商品 — 蛇形创建 / 驼峰短别名更新');
@@ -187,23 +200,12 @@ async function main() {
   }
 
   // ===== 清理 =====
+  // 统一走 lib/smokeCleanup：按 SMK/冒烟口径清掉本轮全部临时商品及关联记录
+  // （旧版只删最后一条 lastPurchase，脚本多跑几次就会漏，历史残留即由此产生）
   console.log('\n[清理] 测试数据');
-  try {
-    await pool.query('DELETE FROM machine_sales WHERE product_id = ? AND sale_date = ?', [pid, '2099-01-01']);
-    await pool.query('DELETE FROM water_ticket_issuance WHERE product_id = ? AND month = ?', [pid, '2099-01']);
-    await pool.query('DELETE FROM stock_out_records WHERE product_id = ?', [pid]).catch(() => {});
-    await pool.query('DELETE FROM finance_transactions WHERE related_id = ?', [lastPurchase.purchase_id]);
-    await pool.query('DELETE FROM purchase_records WHERE product_id = ?', [pid]);
-    await pool.query('DELETE FROM inventory WHERE product_id = ?', [pid]);
-    await pool.query('DELETE FROM products WHERE product_id = ?', [pid]);
-    console.log('  ✅ 已清理临时商品及关联记录');
-  } catch (e) {
-    console.log('  ⚠️ 清理部分失败（不影响断言）：' + e.message);
-  }
+  await cleanupSmokeResidue(pool);
 
   console.log(`\n========== 结果：${pass} 通过 / ${fail} 失败 ==========`);
-  await pool.end();
-  process.exit(fail ? 1 : 0);
 }
 
 async function db() {
@@ -217,4 +219,11 @@ async function db() {
 }
 
 unitTests();
-main().catch((e) => { console.error('冒烟执行失败:', e); process.exitCode = 1; });
+main()
+  .then(async () => { await pool.end(); process.exit(fail ? 1 : 0); })
+  .catch(async (e) => {
+    console.error('冒烟执行失败:', e);
+    // 异常路径同样要清理，否则临时商品会留在库里
+    if (pool) { await cleanupSmokeResidue(pool); await pool.end(); }
+    process.exit(1);
+  });

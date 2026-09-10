@@ -1,12 +1,30 @@
 -- ============================================================
 -- 农富库存管理系统 - 全量数据库（结构 + 数据）
 -- 由 backend/scripts/export_dump.js 自动导出
--- 共 30 张表
+-- 共 33 张表
 -- ============================================================
 CREATE DATABASE IF NOT EXISTS nongfu_inventory DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_unicode_ci;
 USE nongfu_inventory;
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS=0;
+
+-- ----------------------------
+-- 表结构: barrel_config
+-- ----------------------------
+DROP TABLE IF EXISTS `barrel_config`;
+CREATE TABLE `barrel_config` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `barrel_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '桶型（唯一），如 19L桶/12L桶/4L桶/7.5L桶',
+  `deposit_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '押金单价',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '1启用 0停用',
+  `sort_order` int NOT NULL DEFAULT '0' COMMENT '排序',
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_barrel_type` (`barrel_type`)
+) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='桶型押金配置';
+INSERT INTO `barrel_config` (`id`, `barrel_type`, `deposit_price`, `status`, `sort_order`, `created_at`, `updated_at`) VALUES (1, '19L桶', '30.00', 1, 1, '2026-09-08 21:27:49.000', '2026-09-08 21:27:49.000');
+-- 1 行
 
 -- ----------------------------
 -- 表结构: barrel_deposits
@@ -16,18 +34,27 @@ CREATE TABLE `barrel_deposits` (
   `id` int NOT NULL AUTO_INCREMENT,
   `deposit_no` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `station_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `party_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'station' COMMENT 'station=水站, customer=零售客户',
+  `customer_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '零售客户姓名（水站对象为空）',
+  `customer_phone` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '零售客户电话（水站对象为空）',
   `barrel_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `quantity` int NOT NULL DEFAULT '0',
   `unit_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `account_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '财务账户ID：collect=押金入账账户，return=押金支出账户',
+  `account_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '财务账户名称冗余',
   `deposit_type` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'collect' COMMENT 'collect=收取押金, return=退回押金',
   `handler_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `remark` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `refunded_at` datetime DEFAULT NULL COMMENT '退回完成时间（仅 return 记录）',
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_station` (`station_id`),
-  KEY `idx_handler` (`handler_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  KEY `idx_handler` (`handler_id`),
+  KEY `idx_deposit_type` (`deposit_type`),
+  KEY `idx_deposit_created` (`created_at`),
+  KEY `idx_party_type` (`party_type`)
+) ENGINE=InnoDB AUTO_INCREMENT=27 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- 表结构: delivery_fee_settlement
@@ -79,10 +106,10 @@ CREATE TABLE `finance_accounts` (
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_CREDIT', '可上单信用余额', 5, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义）', 1, '2026-09-02 21:09:28.000', '2026-09-02 21:10:23.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_DISCOUNT', '可上单折扣余额', 6, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义）', 1, '2026-09-02 21:09:28.000', '2026-09-02 21:09:28.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_FEE', '自有费用余额', 7, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义）', 1, '2026-09-02 21:09:28.000', '2026-09-02 21:09:28.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_OTHER', '其他', 4, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:55:37.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_OTHER', '其他', 4, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-08 20:54:01.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SGS', '水公社公户', 2, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-02 20:50:03.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '1000.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-04 21:39:54.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, NULL, NULL, '0.00', '0.00', NULL, 1, '2026-09-02 20:50:03.000', '2026-09-02 21:10:23.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-10 21:50:19.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, NULL, NULL, '0.00', '0.00', NULL, 1, '2026-09-02 20:50:03.000', '2026-09-08 21:36:48.000');
 -- 7 行
 
 -- ----------------------------
@@ -112,16 +139,6 @@ CREATE TABLE `finance_transactions` (
   KEY `idx_tx_date` (`tx_date`),
   KEY `idx_related` (`related_module`,`related_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='账户资金流水表';
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLO1HC02UY', 'TX2026090311366', 'ACCOUNT_SZX', '晟之溪公户', 1, '收入', '1000.00', '0.00', '1000.00', 'account_transfer', 'MANUAL', '2026-09-03 00:00:00.000', 'admin', '人工收入', '冒烟测试：预充值', '2026-09-03 23:14:27.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLO1HDE14Y', 'TX2026090303782', 'ACCOUNT_SZX', '晟之溪公户', 2, '采购入库', '10.00', '1000.00', '990.00', 'purchase', 'PR17884484675049680', '2026-09-03 00:00:00.000', 'admin', NULL, '冒烟测试入库', '2026-09-03 23:14:27.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLO1HDWJ5', 'TX2026090332913', 'ACCOUNT_SZX', '晟之溪公户', 1, '入库退回', '10.00', '990.00', '1000.00', 'purchase_void', 'PR17884484675049680', '2026-09-03 00:00:00.000', 'admin', '晟之溪公户', '冒烟测试作废', '2026-09-03 23:14:27.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLO1HEB36S', 'TX2026090342239', 'ACCOUNT_SZX', '晟之溪公户', 2, '采购入库', '0.00', '1000.00', '1000.00', 'purchase', 'PR17884484675395362', '2026-09-03 00:00:00.000', 'admin', NULL, '盘库增加: 其他原因', '2026-09-03 23:14:27.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLO1HEJ2OH', 'TX2026090325455', 'ACCOUNT_SZX', '晟之溪公户', 1, '入库退回', '0.00', '1000.00', '1000.00', 'purchase_void', 'PR17884484675395362', '2026-09-03 00:00:00.000', 'admin', '晟之溪公户', '冒烟清理', '2026-09-03 23:14:27.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLQ2U9I3J3', 'TX2026090473538', 'ACCOUNT_SZX', '晟之溪公户', 2, '采购入库', '10.00', '1000.00', '990.00', 'purchase', 'PR17884518901029818', '2026-09-04 00:00:00.000', 'admin', NULL, '冒烟测试入库', '2026-09-04 00:11:30.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLQ2U9Z315', 'TX2026090435526', 'ACCOUNT_SZX', '晟之溪公户', 1, '入库退回', '10.00', '990.00', '1000.00', 'purchase_void', 'PR17884518901029818', '2026-09-04 00:00:00.000', 'admin', '晟之溪公户', '冒烟测试作废', '2026-09-04 00:11:30.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLQ2UAH70V', 'TX2026090490841', 'ACCOUNT_SZX', '晟之溪公户', 2, '采购入库', '0.00', '1000.00', '1000.00', 'purchase', 'PR17884518901373064', '2026-09-04 00:00:00.000', 'admin', NULL, '盘库增加: 其他原因', '2026-09-04 00:11:30.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMTLQ2UAP30K', 'TX2026090415134', 'ACCOUNT_SZX', '晟之溪公户', 1, '入库退回', '0.00', '1000.00', '1000.00', 'purchase_void', 'PR17884518901373064', '2026-09-04 00:00:00.000', 'admin', '晟之溪公户', '冒烟清理', '2026-09-04 00:11:30.000');
--- 9 行
 
 -- ----------------------------
 -- 表结构: financial_settlement
@@ -189,10 +206,10 @@ CREATE TABLE `inventory` (
   PRIMARY KEY (`inventory_id`),
   UNIQUE KEY `uk_product` (`product_id`),
   CONSTRAINT `fk_inventory_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=179 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='总仓库库存表';
-INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (1, 'Pmrf3fgpqDNVO8Q', 19, '2026-09-03 23:14:28.000', '2026-09-03 23:14:13.000', '2026-09-03 23:14:27.000');
+) ENGINE=InnoDB AUTO_INCREMENT=198 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='总仓库库存表';
+INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (1, 'Pmrf3fgpqDNVO8Q', 5, '2026-09-03 23:14:28.000', '2026-09-09 21:37:53.000', '2026-09-09 21:37:53.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (2, 'Pmrf3fgpzF5XO8D', 40, '2026-07-29 22:02:33.000', '2026-08-27 21:40:12.000', '2026-08-27 22:47:17.000');
-INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (3, 'Pmrf3fgq30J6ZV3', 60, '2026-07-29 22:02:33.000', '2026-09-03 23:14:14.000', '2026-09-03 23:14:13.000');
+INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (3, 'Pmrf3fgq30J6ZV3', 60, '2026-07-29 22:02:33.000', '2026-09-07 21:23:37.000', '2026-09-07 21:23:37.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (4, 'Pmrf3fgq6AASZ1I', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (5, 'Pmrf3fgq9BHXTAD', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (6, 'Pmrf3fgqcNJWXRR', 0, NULL, NULL, '2026-07-10 23:31:26.000');
@@ -229,7 +246,7 @@ INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (37, 'Pmrf3fgt4EP56EF', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (38, 'Pmrf3fgt7Z3E7E9', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (39, 'Pmrf3fgtbWU28QX', 0, NULL, NULL, '2026-07-10 23:31:26.000');
-INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (40, 'Pmrf3fgteHHV9KX', 27, '2026-08-25 23:45:51.000', '2026-08-28 21:41:43.000', '2026-08-28 21:41:57.000');
+INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (40, 'Pmrf3fgteHHV9KX', 15, '2026-08-25 23:45:51.000', '2026-09-09 19:49:49.000', '2026-09-09 19:49:49.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (41, 'Pmrf3fgthXVMNN9', 0, '2026-08-24 21:19:19.000', NULL, '2026-08-24 21:41:55.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (42, 'Pmrf3fgtlPZCO9R', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (43, 'Pmrf3fgtoQJZ3RM', 0, NULL, NULL, '2026-07-10 23:31:26.000');
@@ -349,8 +366,7 @@ INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (157, 'Pmrf3fh4z9BWNLX', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (158, 'Pmrf3fh52CP50GZ', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (159, 'Pmrf3fh56M5489U', 0, NULL, NULL, '2026-07-10 23:31:26.000');
-INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (170, 'P17884509663389733', 0, '2026-09-04 00:11:30.000', NULL, '2026-09-04 00:30:34.000');
--- 160 行
+-- 159 行
 
 -- ----------------------------
 -- 表结构: machine_sales
@@ -426,7 +442,7 @@ CREATE TABLE `mini_accounts` (
   KEY `idx_openid` (`openid`),
   KEY `idx_phone` (`phone`),
   KEY `idx_role` (`role`)
-) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='小程序账号绑定表';
+) ENGINE=InnoDB AUTO_INCREMENT=32 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='小程序账号绑定表';
 INSERT INTO `mini_accounts` (`id`, `openid`, `union_id`, `phone`, `username`, `password_hash`, `role`, `target_id`, `nickname`, `avatar_url`, `status`, `last_login_at`, `created_at`, `updated_at`) VALUES (18, 'seed_admin', NULL, '13900000001', 'admin', '$2b$10$B/m0kOtU2CSDwdCjlq92OO3KeoV0G08IQbOZGkqx0MaIrad80SMSu', 'admin', '1', NULL, NULL, 1, '2026-08-12 21:49:22.000', '2026-08-12 21:10:56.000', '2026-08-12 21:49:22.000');
 INSERT INTO `mini_accounts` (`id`, `openid`, `union_id`, `phone`, `username`, `password_hash`, `role`, `target_id`, `nickname`, `avatar_url`, `status`, `last_login_at`, `created_at`, `updated_at`) VALUES (19, 'seed_worker', NULL, '111111111', 'worker', '$2b$10$B/m0kOtU2CSDwdCjlq92OO3KeoV0G08IQbOZGkqx0MaIrad80SMSu', 'worker', 'W17851563703197234', NULL, NULL, 1, '2026-08-12 21:11:21.000', '2026-08-12 21:10:56.000', '2026-08-12 21:11:21.000');
 INSERT INTO `mini_accounts` (`id`, `openid`, `union_id`, `phone`, `username`, `password_hash`, `role`, `target_id`, `nickname`, `avatar_url`, `status`, `last_login_at`, `created_at`, `updated_at`) VALUES (20, 'seed_station', NULL, '1234567890', 'station', '$2b$10$B/m0kOtU2CSDwdCjlq92OO3KeoV0G08IQbOZGkqx0MaIrad80SMSu', 'station', 'S17853284880312262', NULL, NULL, 1, '2026-08-12 21:11:21.000', '2026-08-12 21:10:56.000', '2026-08-12 21:11:21.000');
@@ -460,7 +476,7 @@ CREATE TABLE `order_items` (
   KEY `idx_product` (`product_id`),
   CONSTRAINT `fk_item_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_item_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=102 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单商品明细表';
+) ENGINE=InnoDB AUTO_INCREMENT=172 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单商品明细表';
 INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (1, 'SZX202608200001', 'Pmrf3fgpqDNVO8Q', 10, '15.00', '15.00', '18.00', '24.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 1, 0, '150.00');
 INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (2, 'SZX202608180002', 'Pmrf3fgq6AASZ1I', 6, '19.00', '19.00', '21.00', '26.00', '0.00', '8.00', '5.00', '4.00', '0.90', '0.00', 1, 0, '114.00');
 INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (3, 'SZX202608160003', 'Pmrf3fgq6AASZ1I', 20, '21.00', '19.00', '21.00', '26.00', '0.00', '8.00', '5.00', '4.00', '0.90', '0.00', 1, 0, '420.00');
@@ -477,10 +493,14 @@ INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `uni
 INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (28, 'SZX2026082700002', 'Pmrf3fgteHHV9KX', 2, '15.00', '15.00', '18.00', '0.00', '0.00', '10.00', '7.00', '4.00', '0.90', '0.00', 1, 0, '30.00');
 INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (37, 'SZX2026082800001', 'Pmrf3fgteHHV9KX', 1, '18.00', '15.00', '18.00', '0.00', '0.00', '10.00', '7.00', '4.00', '0.90', '0.00', 1, 0, '18.00');
 INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (38, 'SZX2026082800001', 'Pmrf3fgpqDNVO8Q', 2, '18.00', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 2, 2, '0.00');
-INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (39, 'SZX2026090300001', 'Pmrf3fgpqDNVO8Q', 3, '18.00', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 2, 2, '18.00');
-INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (43, 'SZX2026090300002', 'Pmrf3fgpqDNVO8Q', 3, '18.00', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 2, 2, '18.00');
-INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (60, 'SZX2026090300003', 'Pmrf3fgpqDNVO8Q', 3, '18.00', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 2, 2, '18.00');
--- 19 行
+INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (159, 'SZX2026090700002', 'Pmrf3fgteHHV9KX', 1, '18.00', '15.00', '18.00', '0.00', '0.00', '10.00', '7.00', '4.00', '0.90', '0.00', 1, 0, '18.00');
+INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (160, 'SZX2026090700002', 'Pmrf3fgpqDNVO8Q', 1, '18.00', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 1, 0, '18.00');
+INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (161, 'SZX2026090700001', 'Pmrf3fgteHHV9KX', 1, '15.00', '15.00', '18.00', '0.00', '0.00', '10.00', '7.00', '4.00', '0.90', '0.00', 1, 0, '15.00');
+INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (162, 'SZX2026090700001', 'Pmrf3fgpqDNVO8Q', 1, '15.00', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 1, 0, '15.00');
+INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (163, 'SZX2026090900001', 'Pmrf3fgteHHV9KX', 10, '18.00', '15.00', '18.00', '0.00', '0.00', '10.00', '7.00', '4.00', '0.90', '0.00', 1, 0, '180.00');
+INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (164, 'SZX2026090900001', 'Pmrf3fgpqDNVO8Q', 5, '18.00', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 1, 0, '90.00');
+INSERT INTO `order_items` (`item_id`, `order_id`, `product_id`, `quantity`, `unit_price`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `pricing_type`, `ticket_qty`, `subtotal`) VALUES (169, 'SZX2026090900002', 'Pmrf3fgpqDNVO8Q', 7, '18.00', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', 2, 7, '0.00');
+-- 23 行
 
 -- ----------------------------
 -- 表结构: orders
@@ -534,10 +554,11 @@ INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order
 INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX202608200001', 1, '美团', 'MT20260820001', NULL, NULL, '张伟', '13911110001', '南京市秦淮区瑞金路12号', NULL, '150.00', '0.00', '150.00', 1, 'W001', 1, '170.00', 'W005', NULL, NULL, '2026-08-20 10:30:00.000', '2026-08-27 22:25:53.000');
 INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026082700002', 1, '4', NULL, NULL, NULL, '11', '11', '11', NULL, '30.00', '0.00', '30.00', 1, 'W004', 0, '0.00', 'W004', NULL, NULL, '2026-08-27 22:14:29.000', '2026-08-27 22:14:29.000');
 INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026082800001', 2, NULL, NULL, 'ST001', NULL, '江宁水站', '13900000001', '南京市江宁区东山街道', '周老板', '18.00', '0.00', '18.00', 2, 'W004', 0, '0.00', 'W004', NULL, NULL, '2026-08-28 21:41:43.000', '2026-08-28 21:41:43.000');
-INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026090300001', 2, NULL, NULL, 'ST004', NULL, '冒烟-水票还原', '13800000001', NULL, NULL, '18.00', '0.00', '18.00', 3, NULL, 0, '0.00', NULL, '2026-09-03 22:15:52.000', NULL, '2026-09-03 22:15:52.000', '2026-09-03 22:15:52.000');
-INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026090300002', 2, NULL, NULL, 'ST004', NULL, '冒烟-水票还原', '13800000001', NULL, NULL, '18.00', '0.00', '18.00', 3, NULL, 0, '0.00', NULL, '2026-09-03 22:56:19.000', NULL, '2026-09-03 22:56:19.000', '2026-09-03 22:56:19.000');
-INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026090300003', 2, NULL, NULL, 'ST004', NULL, '冒烟-水票还原', '13800000001', NULL, NULL, '18.00', '0.00', '18.00', 3, NULL, 0, '0.00', NULL, '2026-09-03 23:14:13.000', NULL, '2026-09-03 23:14:13.000', '2026-09-03 23:14:13.000');
--- 16 行
+INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026090700001', 1, '4', NULL, NULL, NULL, '1111111111', '1111111111', '111111111111', NULL, '30.00', '0.00', '30.00', 1, 'W004', 0, '0.00', 'W004', NULL, NULL, '2026-09-07 21:53:29.000', '2026-09-07 21:59:11.000');
+INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026090700002', 2, NULL, NULL, 'ST001', NULL, '江宁水站', '13900000001', '南京市江宁区东山街道', '周老板', '36.00', '0.00', '36.00', 2, 'W001', 0, '0.00', 'W001', NULL, NULL, '2026-09-07 21:54:44.000', '2026-09-07 21:54:44.000');
+INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026090900001', 2, NULL, NULL, 'ST001', NULL, '江宁水站', '13900000001', '南京市江宁区东山街道', '周老板', '270.00', '0.00', '270.00', 2, 'W004', 0, '0.00', 'W004', NULL, NULL, '2026-09-09 19:49:49.000', '2026-09-09 19:49:49.000');
+INSERT INTO `orders` (`order_id`, `order_type`, `platform_type`, `platform_order_no`, `station_id`, `machine_station_id`, `customer_name`, `customer_phone`, `customer_address`, `contact_name`, `order_amount`, `delivery_fee`, `total_receivable`, `delivery_type`, `worker_id`, `payment_status`, `paid_amount`, `created_by`, `canceled_at`, `remark`, `created_at`, `updated_at`) VALUES ('SZX2026090900002', 2, NULL, NULL, 'ST001', NULL, '江宁水站', '13900000001', '南京市江宁区东山街道', '周老板', '0.00', '0.00', '0.00', 2, 'W004', 0, '0.00', 'W004', NULL, NULL, '2026-09-09 21:25:38.000', '2026-09-09 21:37:53.000');
+-- 17 行
 
 -- ----------------------------
 -- 表结构: other_expenses
@@ -589,11 +610,9 @@ CREATE TABLE `products` (
   KEY `idx_category` (`category`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品信息表';
-INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('P17884509663389733', 'SMK50966334', '冒烟归一化商品', '550ml', '箱', '10.50', '12.00', '15.00', '16.00', '2.00', '1.50', '1.00', '0.80', '0.60', NULL, NULL, 1, '2026-09-03 23:56:06.000', '2026-09-03 23:56:06.000');
-INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('P17884511133894195', 'SMK51113387', '冒烟归一化商品', '550ml', '箱', '11.00', '12.00', '15.00', '99.00', '2.00', '1.50', '1.00', '88.00', '0.60', NULL, NULL, 1, '2026-09-03 23:58:33.000', '2026-09-03 23:58:33.000');
 INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fgpqDNVO8Q', 'SPBM001', '380mL天然矿泉水15入纸箱', '380ml*15', '箱', '15.00', '18.00', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', '饮用水', 'http://localhost:3000/product_images/SPBM001_image.png', 1, '2026-07-10 23:31:26.000', '2026-07-30 22:06:31.000');
 INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fgpzF5XO8D', 'SPBM002', '380mL天然水12入彩膜', '380ml*12', '箱', '9.00', '10.50', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', '饮用水', '/product_images/SPBM002_image.png', 1, '2026-07-10 23:31:26.000', '2026-07-30 22:06:31.000');
-INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fgq30J6ZV3', 'SPBM003', '380mL天然水24入纸箱学习强国', '380ml*24', '箱', '19.00', '21.00', '0.00', '0.00', '8.00', '5.00', '4.00', '0.90', '0.00', '饮用水', '/product_images/SPBM003_image.png', 1, '2026-07-10 23:31:26.000', '2026-07-30 22:06:31.000');
+INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fgq30J6ZV3', 'SPBM003', '380mL天然水24入纸箱学习强国', '380ml*24', '箱', '19.00', '21.00', '0.00', '0.00', '8.00', '5.00', '4.00', '0.90', '0.00', '饮用水', 'http://localhost:3000http://localhost:3000/product_images/SPBM003_image.png', 1, '2026-07-10 23:31:26.000', '2026-09-09 21:04:55.000');
 INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fgq6AASZ1I', 'SPBM004', '380mL天然水24入纸箱', '380ml*24', '箱', '19.00', '21.00', '0.00', '0.00', '8.00', '5.00', '4.00', '0.90', '0.00', '饮用水', '/product_images/SPBM004_image.png', 1, '2026-07-10 23:31:26.000', '2026-07-30 22:06:31.000');
 INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fgq9BHXTAD', 'SPBM005', '380mL天然水24入白膜', '380ml*24', '箱', '18.00', '20.00', '0.00', '0.00', '8.00', '5.00', '4.00', '0.90', '0.00', '饮用水', '/product_images/SPBM005_image.png', 1, '2026-07-10 23:31:26.000', '2026-07-30 22:06:31.000');
 INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fgqcNJWXRR', 'SPBM006', '550mL天然水12入彩膜马年CNY装', '550ml*12', '箱', '10.00', '10.50', '0.00', '0.00', '4.00', '2.50', '2.00', '0.45', '0.00', '饮用水', NULL, 1, '2026-07-10 23:31:26.000', '2026-07-30 22:06:31.000');
@@ -750,7 +769,7 @@ INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specifica
 INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fh4z9BWNLX', 'SPBM157', '1.5KG东北香米吉宏六号10入纸箱', '1.5KG*10', '箱', '143.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '粮食', '/product_images/SPBM157_image.png', 1, '2026-07-10 23:31:26.000', '2026-07-30 22:06:31.000');
 INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fh52CP50GZ', 'SPBM158', '2.5KG东北香米吉宏六号6入纸箱', '2.5KG*6', '箱', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '粮食', NULL, 1, '2026-07-10 23:31:26.000', '2026-07-10 23:31:26.000');
 INSERT INTO `products` (`product_id`, `product_code`, `product_name`, `specification`, `unit`, `purchase_price`, `wholesale_price`, `retail_price`, `machine_price`, `total_delivery_fee`, `distribution_delivery_fee`, `worker_retail_delivery_fee`, `worker_wholesale_delivery_fee`, `worker_machine_delivery_fee`, `category`, `image_url`, `status`, `created_at`, `updated_at`) VALUES ('Pmrf3fh56M5489U', 'SPBM159', '5KG东北香米吉宏六号5入纸箱', '5KG*5', '箱', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '粮食', NULL, 1, '2026-07-10 23:31:26.000', '2026-07-10 23:31:26.000');
--- 161 行
+-- 159 行
 
 -- ----------------------------
 -- 表结构: purchase_records
@@ -789,11 +808,7 @@ INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `acc
 INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17841202674530279', 'Pmrf3fgpzF5XO8D', NULL, NULL, NULL, 40, '0.00', '0.00', '0.00', 0, 1, NULL, NULL, NULL, NULL, '盘库增加: 其他原因，', '2026-07-15 20:57:47.000', NULL);
 INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17853297486786992', 'Pmrf3fgq30J6ZV3', NULL, NULL, NULL, 60, '0.00', '0.00', '0.00', 0, 1, NULL, NULL, NULL, NULL, '盘库增加: 盘点差异，', '2026-07-29 20:55:49.000', NULL);
 INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17876727510008777', 'Pmrf3fgteHHV9KX', NULL, NULL, NULL, 30, '0.00', '0.00', '0.00', 0, 1, NULL, NULL, NULL, NULL, '盘库增加: 盘点差异，', '2026-08-25 23:45:51.000', NULL);
-INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17884484675049680', 'Pmrf3fgpqDNVO8Q', NULL, 'ACCOUNT_SZX', '晟之溪公户', 5, '2.00', '10.00', '10.00', 0, 2, '2026-09-03 23:14:27.000', 'admin', '冒烟测试作废', '2026-09-03 23:14:28.000', '冒烟测试入库', '2026-09-03 23:14:28.000', 'admin');
-INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17884484675395362', 'Pmrf3fgpqDNVO8Q', NULL, 'ACCOUNT_SZX', '晟之溪公户', 3, '0.00', '0.00', '0.00', 0, 2, '2026-09-03 23:14:27.000', 'admin', '冒烟清理', '2026-09-03 23:14:28.000', '盘库增加: 其他原因', '2026-09-03 23:14:28.000', 'admin');
-INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17884518901029818', 'P17884509663389733', NULL, 'ACCOUNT_SZX', '晟之溪公户', 5, '2.00', '10.00', '10.00', 0, 2, '2026-09-04 00:11:30.000', 'admin', '冒烟测试作废', '2026-09-04 00:11:30.000', '冒烟测试入库', '2026-09-04 00:11:30.000', 'admin');
-INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17884518901373064', 'P17884509663389733', NULL, 'ACCOUNT_SZX', '晟之溪公户', 3, '0.00', '0.00', '0.00', 0, 2, '2026-09-04 00:11:30.000', 'admin', '冒烟清理', '2026-09-04 00:11:30.000', '盘库增加: 其他原因', '2026-09-04 00:11:30.000', 'admin');
--- 8 行
+-- 4 行
 
 -- ----------------------------
 -- 表结构: reimburse_attachments
@@ -830,6 +845,41 @@ CREATE TABLE `reimbursements` (
   KEY `idx_applicant` (`applicant_id`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------
+-- 表结构: salary_advances
+-- ----------------------------
+DROP TABLE IF EXISTS `salary_advances`;
+CREATE TABLE `salary_advances` (
+  `advance_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '预支ID',
+  `worker_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '员工ID',
+  `worker_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '员工姓名快照',
+  `amount` decimal(12,2) NOT NULL COMMENT '预支全额',
+  `advance_date` date NOT NULL COMMENT '预支日期',
+  `account_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '付款账户',
+  `account_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '付款账户快照',
+  `deducted_amount` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '已由工资发放抵扣金额',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0=未结清 1=已结清(被工资全部抵扣)',
+  `remark` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '备注',
+  `created_by` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '操作人',
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`advance_id`),
+  KEY `idx_worker` (`worker_id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='员工工资预支记录（发工资时从应发中抵扣，结清前挂账下月继续扣）';
+
+-- ----------------------------
+-- 表结构: salary_payment_advances
+-- ----------------------------
+DROP TABLE IF EXISTS `salary_payment_advances`;
+CREATE TABLE `salary_payment_advances` (
+  `payment_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '发放ID',
+  `advance_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '预支ID',
+  `deducted_amount` decimal(12,2) NOT NULL COMMENT '本次发放抵扣金额',
+  PRIMARY KEY (`payment_id`,`advance_id`),
+  KEY `idx_advance` (`advance_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工资发放-预支抵扣明细（撤销发放时反向还原预支挂账）';
 
 -- ----------------------------
 -- 表结构: salary_payments
@@ -1032,7 +1082,7 @@ CREATE TABLE `sub_stations` (
   KEY `idx_area` (`area`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='下级水站信息表';
-INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST001', '江宁水站', '周老板', '13900000001', '南京市江宁区东山街道', '江宁区', '50000.00', '18.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-04 21:39:55.000');
+INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST001', '江宁水站', '周老板', '13900000001', '南京市江宁区东山街道', '江宁区', '50000.00', '324.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-09 21:37:53.000');
 INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST002', '秦淮水站', '吴老板', '13900000002', '南京市秦淮区大光路', '秦淮区', '30000.00', '0.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST003', '鼓楼水站', '郑老板', '13900000003', '南京市鼓楼区中山北路', '鼓楼区', '40000.00', '0.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST004', '玄武水站', '冯老板', '13900000004', '南京市玄武区锁金村', '玄武区', '35000.00', '0.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-03 23:14:13.000');
@@ -1085,7 +1135,7 @@ CREATE TABLE `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
   KEY `idx_phone` (`phone`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统用户表';
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统用户表';
 INSERT INTO `users` (`id`, `username`, `password`, `display_name`, `phone`, `role`, `created_at`, `updated_at`) VALUES (1, 'admin', '$2b$10$7fAfAOoH6DqE4r4dgrllNOP93BjZo3Z0YaZp713lH8CceH9GJRnqe', '管理员', '13900000001', 'admin', '2026-08-04 21:14:39.000', '2026-08-12 00:34:15.000');
 -- 1 行
 
@@ -1112,9 +1162,11 @@ CREATE TABLE `water_ticket_issuance` (
 INSERT INTO `water_ticket_issuance` (`issuance_id`, `batch_id`, `station_id`, `product_id`, `quantity`, `distribution_delivery_fee`, `month`, `remark`, `created_by`, `created_at`) VALUES ('WTI1787751617987369', 'WTB178775161798645', 'ST004', 'Pmrf3fgpqDNVO8Q', 3, '7.50', '2026-08', NULL, 'admin', '2026-08-26 21:40:17.000');
 INSERT INTO `water_ticket_issuance` (`issuance_id`, `batch_id`, `station_id`, `product_id`, `quantity`, `distribution_delivery_fee`, `month`, `remark`, `created_by`, `created_at`) VALUES ('WTI1787751617989788', 'WTB178775161798645', 'ST004', 'Pmrf3fgq30J6ZV3', 6, '30.00', '2026-08', NULL, 'admin', '2026-08-26 21:40:17.000');
 INSERT INTO `water_ticket_issuance` (`issuance_id`, `batch_id`, `station_id`, `product_id`, `quantity`, `distribution_delivery_fee`, `month`, `remark`, `created_by`, `created_at`) VALUES ('WTI1787925949494275', 'WTB178792594949370', 'ST001', 'Pmrf3fgpqDNVO8Q', 3, '7.50', '2026-08', NULL, 'admin', '2026-08-28 22:05:49.000');
+INSERT INTO `water_ticket_issuance` (`issuance_id`, `batch_id`, `station_id`, `product_id`, `quantity`, `distribution_delivery_fee`, `month`, `remark`, `created_by`, `created_at`) VALUES ('WTI1788953459273236', 'WTB178895345927172', 'ST001', 'Pmrf3fgpqDNVO8Q', 5, '12.50', '2026-08', NULL, 'admin', '2026-09-09 19:30:59.000');
+INSERT INTO `water_ticket_issuance` (`issuance_id`, `batch_id`, `station_id`, `product_id`, `quantity`, `distribution_delivery_fee`, `month`, `remark`, `created_by`, `created_at`) VALUES ('WTI1788953459276520', 'WTB178895345927172', 'ST001', 'Pmrf3fgq30J6ZV3', 6, '30.00', '2026-08', NULL, 'admin', '2026-09-09 19:30:59.000');
 INSERT INTO `water_ticket_issuance` (`issuance_id`, `batch_id`, `station_id`, `product_id`, `quantity`, `distribution_delivery_fee`, `month`, `remark`, `created_by`, `created_at`) VALUES ('WTI20260825000001', 'WTB20260825000001', 'ST001', 'Pmrf3fgpqDNVO8Q', 5, '25.00', '2026-08', '8月返货清单', 'seed', '2026-08-25 10:00:00.000');
 INSERT INTO `water_ticket_issuance` (`issuance_id`, `batch_id`, `station_id`, `product_id`, `quantity`, `distribution_delivery_fee`, `month`, `remark`, `created_by`, `created_at`) VALUES ('WTI20260825000002', 'WTB20260825000001', 'ST001', 'Pmrf3fgteHHV9KX', 2, '14.00', '2026-08', '8月返货清单', 'seed', '2026-08-25 10:00:00.000');
--- 5 行
+-- 7 行
 
 -- ----------------------------
 -- 表结构: water_tickets
@@ -1148,33 +1200,20 @@ INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, 
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787751617989417401', 'Pmrf3fgq30J6ZV3', 'ST004', 1, '2026-08', 'WTI1787751617989788', '2026-08-26 21:40:18.000', 'admin', NULL, NULL, NULL);
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787751617989758435', 'Pmrf3fgq30J6ZV3', 'ST004', 1, '2026-08', 'WTI1787751617989788', '2026-08-26 21:40:18.000', 'admin', NULL, NULL, NULL);
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787751617989777533', 'Pmrf3fgq30J6ZV3', 'ST004', 1, '2026-08', 'WTI1787751617989788', '2026-08-26 21:40:18.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787925949495219093', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI1787925949494275', '2026-08-28 22:05:49.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787925949495607003', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI1787925949494275', '2026-08-28 22:05:49.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787925949495758890', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI1787925949494275', '2026-08-28 22:05:49.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451305991187864', 'P17884513059374724', 'ST001', 1, '2099-01', 'WTI1788451305990845', '2026-09-04 00:01:46.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451305991709362', 'P17884513059374724', 'ST001', 1, '2099-01', 'WTI1788451305990845', '2026-09-04 00:01:46.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451305991956103', 'P17884513059374724', 'ST001', 1, '2099-01', 'WTI1788451305990845', '2026-09-04 00:01:46.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451473508243643', 'P17884514734684605', 'ST001', 1, '2099-01', 'WTI1788451473508839', '2026-09-04 00:04:34.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451473508763744', 'P17884514734684605', 'ST001', 1, '2099-01', 'WTI1788451473508839', '2026-09-04 00:04:34.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451473508919150', 'P17884514734684605', 'ST001', 1, '2099-01', 'WTI1788451473508839', '2026-09-04 00:04:34.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451603949720287', 'P17884516039123822', 'ST001', 1, '2099-01', 'WTI1788451603948547', '2026-09-04 00:06:44.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451603949740413', 'P17884516039123822', 'ST001', 1, '2099-01', 'WTI1788451603948547', '2026-09-04 00:06:44.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451603949949654', 'P17884516039123822', 'ST001', 1, '2099-01', 'WTI1788451603948547', '2026-09-04 00:06:44.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451735099142860', 'P17884517350648970', 'ST001', 1, '2099-01', 'WTI1788451735099913', '2026-09-04 00:08:55.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451735099262231', 'P17884517350648970', 'ST001', 1, '2099-01', 'WTI1788451735099913', '2026-09-04 00:08:55.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451735099663542', 'P17884517350648970', 'ST001', 1, '2099-01', 'WTI1788451735099913', '2026-09-04 00:08:55.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451877305310467', 'P17884518772649169', 'ST001', 1, '2099-01', 'WTI1788451877304577', '2026-09-04 00:11:17.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451877305448862', 'P17884518772649169', 'ST001', 1, '2099-01', 'WTI1788451877304577', '2026-09-04 00:11:17.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788451877305801267', 'P17884518772649169', 'ST001', 1, '2099-01', 'WTI1788451877304577', '2026-09-04 00:11:17.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788453034696293044', 'P17884530346445729', 'ST001', 1, '2099-01', 'WTI1788453034696188', '2026-09-04 00:30:35.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788453034696389762', 'P17884530346445729', 'ST001', 1, '2099-01', 'WTI1788453034696188', '2026-09-04 00:30:35.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788453034696988299', 'P17884530346445729', 'ST001', 1, '2099-01', 'WTI1788453034696188', '2026-09-04 00:30:35.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788453869931216822', 'P17884538698859427', 'ST001', 1, '2099-01', 'WTI1788453869931851', '2026-09-04 00:44:30.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788453869931333789', 'P17884538698859427', 'ST001', 1, '2099-01', 'WTI1788453869931851', '2026-09-04 00:44:30.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788453869931542687', 'P17884538698859427', 'ST001', 1, '2099-01', 'WTI1788453869931851', '2026-09-04 00:44:30.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788529194270325131', 'P17885291942304215', 'ST001', 1, '2099-01', 'WTI1788529194269921', '2026-09-04 21:39:54.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788529194270547589', 'P17885291942304215', 'ST001', 1, '2099-01', 'WTI1788529194269921', '2026-09-04 21:39:54.000', 'admin', NULL, NULL, NULL);
-INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788529194270800306', 'P17885291942304215', 'ST001', 1, '2099-01', 'WTI1788529194269921', '2026-09-04 21:39:54.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787925949495219093', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI1787925949494275', '2026-08-28 22:05:49.000', 'admin', '2026-09-09 21:37:53.000', 'SZX2026090900002', NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787925949495607003', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI1787925949494275', '2026-08-28 22:05:49.000', 'admin', '2026-09-09 21:37:53.000', 'SZX2026090900002', NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1787925949495758890', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI1787925949494275', '2026-08-28 22:05:49.000', 'admin', '2026-09-09 21:37:53.000', 'SZX2026090900002', NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459274357336', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI1788953459273236', '2026-09-09 19:30:59.000', 'admin', '2026-09-09 21:37:53.000', 'SZX2026090900002', NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459274727239', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI1788953459273236', '2026-09-09 19:30:59.000', 'admin', '2026-09-09 21:37:53.000', 'SZX2026090900002', NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459274749519', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI1788953459273236', '2026-09-09 19:30:59.000', 'admin', '2026-09-09 21:37:53.000', 'SZX2026090900002', NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459274781153', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI1788953459273236', '2026-09-09 19:30:59.000', 'admin', '2026-09-09 21:37:53.000', 'SZX2026090900002', NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459274908127', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI1788953459273236', '2026-09-09 19:30:59.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459276171226', 'Pmrf3fgq30J6ZV3', 'ST001', 1, '2026-08', 'WTI1788953459276520', '2026-09-09 19:30:59.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459276513107', 'Pmrf3fgq30J6ZV3', 'ST001', 1, '2026-08', 'WTI1788953459276520', '2026-09-09 19:30:59.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459276604819', 'Pmrf3fgq30J6ZV3', 'ST001', 1, '2026-08', 'WTI1788953459276520', '2026-09-09 19:30:59.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459276711651', 'Pmrf3fgq30J6ZV3', 'ST001', 1, '2026-08', 'WTI1788953459276520', '2026-09-09 19:30:59.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459276732224', 'Pmrf3fgq30J6ZV3', 'ST001', 1, '2026-08', 'WTI1788953459276520', '2026-09-09 19:30:59.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1788953459276736317', 'Pmrf3fgq30J6ZV3', 'ST001', 1, '2026-08', 'WTI1788953459276520', '2026-09-09 19:30:59.000', 'admin', NULL, NULL, NULL);
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT20260825000001', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI20260825000001', '2026-08-25 23:40:29.000', 'seed', '2026-08-28 21:41:43.000', 'SZX2026082800001', NULL);
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT20260825000002', 'Pmrf3fgpqDNVO8Q', 'ST001', 2, '2026-08', 'WTI20260825000001', '2026-08-25 23:40:29.000', 'seed', '2026-08-28 21:41:43.000', 'SZX2026082800001', NULL);
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT20260825000003', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', '2026-08-25 23:40:29.000', 'seed', NULL, NULL, NULL);
@@ -1182,7 +1221,7 @@ INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, 
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT20260825000005', 'Pmrf3fgpqDNVO8Q', 'ST001', 1, '2026-08', 'WTI20260825000001', '2026-08-25 23:40:29.000', 'seed', NULL, NULL, NULL);
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT20260825000009', 'Pmrf3fgteHHV9KX', 'ST001', 2, '2026-08', 'WTI20260825000002', '2026-08-25 23:40:29.000', 'seed', '2026-08-27 21:40:12.000', 'SZX2026082700001', NULL);
 INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT20260825000010', 'Pmrf3fgteHHV9KX', 'ST001', 2, '2026-08', 'WTI20260825000002', '2026-08-25 23:40:29.000', 'seed', '2026-08-27 22:47:55.000', 'SZX2026082700003', NULL);
--- 43 行
+-- 30 行
 
 -- ----------------------------
 -- 表结构: workers
@@ -1195,6 +1234,7 @@ CREATE TABLE `workers` (
   `employee_type` tinyint NOT NULL DEFAULT '2' COMMENT '员工类型: 1=店长 2=配送员工 3=业务员',
   `vehicle_type` tinyint(1) NOT NULL DEFAULT '1' COMMENT '配送车辆类型：1-电动车（终端零售），2-面包车（批量配送）',
   `commission_rate` decimal(5,2) DEFAULT NULL COMMENT '提成比例(%)，仅业务员(employee_type=3)使用',
+  `monthly_salary` decimal(12,2) DEFAULT NULL COMMENT '固定月薪(元)，仅店长(employee_type=1)/业务员(employee_type=3)使用',
   `bank_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '收款银行',
   `bank_account` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '收款账户',
   `status` tinyint(1) NOT NULL DEFAULT '1' COMMENT '状态：0-离职，1-在职',
@@ -1204,15 +1244,15 @@ CREATE TABLE `workers` (
   KEY `idx_vehicle_type` (`vehicle_type`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='配送员工表';
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM001', '赵敏', '13600000001', 3, 1, '3.00', NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM002', '钱进', '13600000002', 3, 1, '2.50', NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM003', '孙丽', '13600000003', 3, 1, '3.50', NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM004', '李强', '13600000004', 3, 1, '2.00', NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W001', '张师傅', '13800000001', 1, 1, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W002', '李师傅', '13800000002', 1, 1, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W003', '王师傅', '13800000003', 1, 2, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W004', '刘师傅', '13800000004', 1, 2, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W005', '陈师傅', '13800000005', 2, 1, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM001', '赵敏', '13600000001', 3, 1, '3.00', NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM002', '钱进', '13600000002', 3, 1, '2.50', NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM003', '孙丽', '13600000003', 3, 1, '3.50', NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM004', '李强', '13600000004', 3, 1, '2.00', NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W001', '张师傅', '13800000001', 1, 1, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W002', '李师傅', '13800000002', 1, 1, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W003', '王师傅', '13800000003', 1, 2, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W004', '刘师傅', '13800000004', 1, 2, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
+INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `vehicle_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W005', '陈师傅', '13800000005', 2, 1, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 -- 9 行
 
 SET FOREIGN_KEY_CHECKS=1;
