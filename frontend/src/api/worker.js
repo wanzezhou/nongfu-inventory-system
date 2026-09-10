@@ -15,13 +15,6 @@ export function getAllWorkers() {
   })
 }
 
-export function getWorker(id) {
-  return request({
-    url: `/workers/${id}`,
-    method: 'get'
-  })
-}
-
 export function addWorker(data) {
   return request({
     url: '/workers',

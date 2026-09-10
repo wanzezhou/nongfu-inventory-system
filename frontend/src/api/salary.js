@@ -52,3 +52,14 @@ export function revokeSalaryPayment(id) {
     method: 'delete'
   })
 }
+
+// 预支登记（公司账户支出 + 员工挂账）
+export function createSalaryAdvance(data) {
+  return request({
+    url: '/salary/advances',
+    method: 'post',
+    data
+  })
+}
+
+// 撤销预支（仅未参与结算的预支）

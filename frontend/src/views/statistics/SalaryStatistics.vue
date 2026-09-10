@@ -22,42 +22,69 @@
     <!-- 汇总卡片 -->
     <div class="summary-grid">
       <div class="summary-card card-gold">
-        <div class="card-label"><el-icon><Money /></el-icon><span>配送费总额</span></div>
+        <div class="card-label"><el-icon><Money /></el-icon><span>应发工资总额</span></div>
         <div class="card-value">¥{{ fmtMoney(summary.totalDeliveryFee) }}</div>
-        <div class="card-desc">{{ month || '本月' }} 员工配送费合计</div>
+        <div class="card-desc">{{ month || '本月' }} 全部员工应发合计（含已发放锁定）</div>
       </div>
       <div class="summary-card card-blue">
         <div class="card-label"><el-icon><User /></el-icon><span>参与员工</span></div>
         <div class="card-value">{{ summary.workerCount }} 人</div>
-        <div class="card-desc">当月有配送订单的员工数</div>
+        <div class="card-desc">在职员工总数（应发=当月配送费）</div>
       </div>
       <div class="summary-card card-teal">
         <div class="card-label"><el-icon><List /></el-icon><span>配送订单数</span></div>
         <div class="card-value">{{ summary.orderCount }} 单</div>
         <div class="card-desc">当月计入工资的配送订单</div>
       </div>
+      <div class="summary-card card-red">
+        <div class="card-label"><el-icon><Wallet /></el-icon><span>待扣预支</span></div>
+        <div class="card-value">¥{{ fmtMoney(summary.totalPendingAdvance) }}</div>
+        <div class="card-desc">员工未结清预支合计（发工资时抵扣）</div>
+      </div>
     </div>
 
     <!-- 员工汇总表 -->
     <el-card class="table-card" shadow="never">
       <div class="table-header">
-        <span class="table-title">员工配送费汇总（{{ month || '-' }}）</span>
+        <span class="table-title">员工工资汇总（{{ month || '-' }}）</span>
+        <span class="table-tip">全员应发=当月配送费（发放时可手动调整补加其他工资）；实发=应发-待扣预支，不足时负数挂账下月继续扣</span>
       </div>
       <el-table :data="rows" v-loading="loading" border stripe size="small">
         <el-table-column prop="workerName" label="员工姓名" min-width="110">
           <template #default="{ row }">
             <el-icon style="vertical-align: -2px; margin-right: 4px;"><User /></el-icon>{{ row.workerName }}
+            <el-tag :type="employeeTypeTagType(row.employeeType)" size="small" style="margin-left: 4px;">{{ employeeTypeLabel(row.employeeType) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="phone" label="联系电话" width="130" />
-        <el-table-column prop="orderCount" label="配送订单数" width="110" align="center" />
-        <el-table-column prop="totalQty" label="配送件数" width="100" align="center" />
-        <el-table-column prop="deliveryFee" label="配送费" width="120" align="right">
+        <el-table-column prop="orderCount" label="配送订单数" width="105" align="center" />
+        <el-table-column prop="totalQty" label="配送件数" width="95" align="center" />
+        <el-table-column label="应发工资" width="120" align="right">
           <template #default="{ row }">
-            <span class="fee-text">¥{{ fmtMoney(row.deliveryFee) }}</span>
-            <el-tooltip v-if="row.paid" :content="`发放锁定金额（发放时快照）`" placement="top">
-              <el-icon class="lock-icon"><Lock /></el-icon>
-            </el-tooltip>
+            <template v-if="!row.paid">
+              <span class="fee-text">¥{{ fmtMoney(row.due) }}</span>
+              <div class="sub-text">当月配送费 ¥{{ fmtMoney(row.calcFee) }}</div>
+            </template>
+            <template v-else>
+              <span class="fee-text">¥{{ fmtMoney(row.paidAmount) }}</span>
+              <el-tooltip content="发放锁定金额（发放时快照）" placement="top">
+                <el-icon class="lock-icon"><Lock /></el-icon>
+              </el-tooltip>
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column label="待扣预支" width="105" align="right">
+          <template #default="{ row }">
+            <span v-if="!row.paid && row.pendingAdvance > 0" class="advance-text">-¥{{ fmtMoney(row.pendingAdvance) }}</span>
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="实发金额" width="110" align="right">
+          <template #default="{ row }">
+            <span v-if="!row.paid" :class="row.net < 0 ? 'net-negative' : 'net-text'">
+              ¥{{ fmtMoney(row.net) }}<template v-if="row.net < 0"><span class="sub-text">（挂账下月扣）</span></template>
+            </span>
+            <span v-else class="muted">-</span>
           </template>
         </el-table-column>
         <el-table-column label="发放状态" width="200">
@@ -73,7 +100,7 @@
             </template>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
+        <el-table-column label="操作" width="250" align="center">
           <template #default="{ row }">
             <el-button type="primary" link @click="viewDetail(row)">
               <el-icon><View /></el-icon>
@@ -86,6 +113,10 @@
             <el-button v-else type="danger" link @click="handleRevoke(row)">
               <el-icon><RefreshLeft /></el-icon>
               撤销发放
+            </el-button>
+            <el-button type="warning" link @click="openAdvance(row)">
+              <el-icon><Wallet /></el-icon>
+              预支
             </el-button>
           </template>
         </el-table-column>
@@ -111,13 +142,29 @@
       <el-form ref="payFormRef" :model="payForm" :rules="payRules" label-width="100px">
         <el-form-item label="员工">
           <span class="worker-name">{{ currentWorker?.workerName || '' }}</span>
+          <el-tag :type="employeeTypeTagType(payForm.employeeType)" size="small" style="margin-left: 8px;">{{ employeeTypeLabel(payForm.employeeType) }}</el-tag>
         </el-form-item>
         <el-form-item label="发放月份" prop="month">
           <el-date-picker v-model="payForm.month" type="month" value-format="YYYY-MM" format="YYYY年MM月" style="width: 100%;" @change="onPayMonthChange" />
         </el-form-item>
-        <el-form-item label="发放金额">
-          <span class="amount-big">¥{{ fmtMoney(payForm.amount) }}</span>
-          <span v-if="payForm.calcFee >= 0" class="calc-tip">（{{ payForm.month }} 实时配送费合计）</span>
+        <el-form-item label="应发金额" prop="amount">
+          <el-input-number
+            v-model="payForm.amount"
+            :min="0.01"
+            :precision="2"
+            :step="100"
+            :controls="false"
+            placeholder="当月配送费合计（可修改，补加其他工资）"
+            style="width: 100%"
+          />
+          <div class="calc-tip" style="margin-left: 0;">默认为 {{ payForm.month }} 实时配送费合计，可手动修改补加其他工资（仅影响当月）</div>
+        </el-form-item>
+        <el-form-item v-if="payForm.pendingAdvance > 0" label="预支抵扣">
+          <div class="deduct-line">
+            应发 ¥{{ fmtMoney(payForm.amount) }} − 待扣预支 <b class="advance-text">¥{{ fmtMoney(payForm.pendingAdvance) }}</b> = 实发
+            <span class="amount-big">¥{{ fmtMoney(netAmount) }}</span>
+            <span v-if="netAmount < 0" class="sub-text">（不足部分负数挂账，下月继续扣）</span>
+          </div>
         </el-form-item>
         <el-form-item label="发放账户" prop="accountId">
           <AccountSelect
@@ -125,14 +172,14 @@
             :accounts="accounts"
             placeholder="选择发放账户（将产生公司账户支出）"
             balance-label="可用"
-            :is-disabled="(a) => a.currentBalance < payForm.amount"
+            :is-disabled="(a) => a.currentBalance < netAmount"
           />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="payForm.remark" type="textarea" :rows="2" maxlength="200" placeholder="发放备注（可选）" />
         </el-form-item>
       </el-form>
-      <div class="pay-hint">确认后将：① 记录该员工 {{ payForm.month }} 工资发放；② 从所选账户扣减 ¥{{ fmtMoney(payForm.amount) }} 并记一笔公司支出。</div>
+      <div class="pay-hint">确认后将：① 记录该员工 {{ payForm.month }} 工资发放（实发 ¥{{ fmtMoney(netAmount) }}）；② {{ netAmount > 0 ? `从所选账户扣减 ¥${fmtMoney(netAmount)} 并记一笔公司支出` : '无需扣款（实发 ≤ 0，预支已抵扣/负数挂账）' }}；③ 预支按日期顺序抵扣。</div>
       <template #footer>
         <el-button @click="payVisible = false">取消</el-button>
         <el-button type="success" :loading="saving" :disabled="payForm.checked || !payForm.amount" @click="submitPay">确认发放</el-button>
@@ -204,22 +251,42 @@
         <el-button @click="itemsVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 工资预支弹窗 -->
+    <AdvanceDialog
+      v-model="advanceVisible"
+      :worker-id="advanceWorker.workerId || ''"
+      :worker-name="advanceWorker.workerName || ''"
+      @success="fetchSummary"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, User, Money, List, View, Lock, RefreshLeft } from '@element-plus/icons-vue'
+import { Search, User, Money, List, View, Lock, RefreshLeft, Wallet } from '@element-plus/icons-vue'
 import { getSalarySummary, getSalaryOrders, getSalaryOrderItems, getWorkerSalarySummary, payWorkerSalary, revokeSalaryPayment } from '@/api/salary'
 import { getFinanceAccounts } from '@/api/expense'
 import { formatMoney as fmtMoney } from '@/utils/format'
 import AccountSelect from '@/components/AccountSelect.vue'
+import AdvanceDialog from '@/components/AdvanceDialog.vue'
 
 const loading = ref(false)
 const month = ref('')
 const rows = ref([])
-const summary = reactive({ totalDeliveryFee: 0, workerCount: 0, orderCount: 0 })
+const summary = reactive({ totalDeliveryFee: 0, workerCount: 0, orderCount: 0, totalPendingAdvance: 0 })
+
+const employeeTypeLabel = (t) => ({ 1: '店长', 2: '配送员工', 3: '业务员' }[t] || '未知')
+const employeeTypeTagType = (t) => ({ 1: 'danger', 2: 'primary', 3: 'success' }[t] || 'info')
+
+// 工资预支弹窗
+const advanceVisible = ref(false)
+const advanceWorker = ref({})
+const openAdvance = (row) => {
+  advanceWorker.value = row
+  advanceVisible.value = true
+}
 
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -274,12 +341,22 @@ const handleSearch = () => {
 const saving = ref(false)
 const payVisible = ref(false)
 const payFormRef = ref(null)
-const payForm = reactive({ month: '', amount: 0, calcFee: -1, accountId: '', remark: '', checked: false })
+const payForm = reactive({
+  month: '',
+  employeeType: 2,
+  amount: 0,            // 应发金额（店长/业务员发放时可改）
+  pendingAdvance: 0,    // 待扣预支
+  accountId: '',
+  remark: '',
+  checked: false
+})
 const accounts = ref([])
 const payRules = {
-  month: [{ required: true, message: '请选择发放月份', trigger: 'change' }],
-  accountId: [{ required: true, message: '请选择发放账户', trigger: 'change' }]
+  month: [{ required: true, message: '请选择发放月份', trigger: 'change' }]
 }
+
+// 实发 = 应发 - 待扣预支（可为负：挂账下月继续扣）
+const netAmount = computed(() => fmtMoney(Math.round((Number(payForm.amount || 0) - Number(payForm.pendingAdvance || 0)) * 100) / 100))
 
 const loadAccounts = async () => {
   try {
@@ -294,8 +371,9 @@ const loadAccounts = async () => {
 const openPayDialog = async (row) => {
   currentWorker.value = row
   payForm.month = month.value || ''
-  payForm.amount = row.calcFee || row.deliveryFee || 0
-  payForm.calcFee = -1
+  payForm.employeeType = row.employeeType || 2
+  payForm.amount = row.due || 0
+  payForm.pendingAdvance = row.pendingAdvance || 0
   payForm.accountId = ''
   payForm.remark = ''
   payForm.checked = false
@@ -307,8 +385,9 @@ const refreshPayWorker = async (workerId) => {
   try {
     const res = await getWorkerSalarySummary({ month: payForm.month, workerId: workerId || currentWorker.value?.workerId })
     const d = res.data || {}
-    payForm.amount = d.paid ? d.deliveryFee : d.calcFee
-    payForm.calcFee = d.calcFee
+    payForm.employeeType = d.employeeType || 2
+    payForm.amount = d.paid ? d.payAmount : d.due
+    payForm.pendingAdvance = d.pendingAdvance || 0
     payForm.checked = !!d.paid // 该员工该月已发放 → 弹窗提示并禁用确认
   } catch (e) {
     console.error('工资状态获取失败:', e)
@@ -326,15 +405,17 @@ const submitPay = async () => {
     return
   }
   if (payForm.checked) { ElMessage.warning('该员工该月已发放'); return }
+  if (netAmount.value > 0 && !payForm.accountId) { ElMessage.warning('请选择发放账户'); return }
   saving.value = true
   try {
     const res = await payWorkerSalary({
       workerId: currentWorker.value.workerId,
       month: payForm.month,
       accountId: payForm.accountId,
+      amount: payForm.amount,
       remark: payForm.remark
     })
-    ElMessage.success(`发放成功（¥${fmtMoney(res.data?.amount || payForm.amount)}）`)
+    ElMessage.success(`发放成功（实发 ¥${fmtMoney(res.data?.amount ?? netAmount.value)}）`)
     payVisible.value = false
     fetchSummary()
   } catch (e) {
@@ -412,7 +493,7 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .filter-form {
@@ -424,7 +505,7 @@ onMounted(() => {
 .filter-tip {
   margin-left: 16px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .summary-grid {
@@ -435,10 +516,16 @@ onMounted(() => {
 }
 
 .summary-card {
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 16px 18px;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease;
+}
+
+.summary-card:hover {
+  border-color: rgba(168, 32, 26, 0.25);
 }
 
 .card-label {
@@ -446,7 +533,11 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  opacity: 0.92;
+  color: var(--text-2);
+}
+
+.card-label .el-icon {
+  color: var(--accent, var(--text-2));
 }
 
 .card-value {
@@ -454,23 +545,30 @@ onMounted(() => {
   font-weight: 700;
   margin: 6px 0 4px;
   line-height: 1.2;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .card-desc {
   font-size: 12px;
-  opacity: 0.85;
+  color: var(--text-3);
 }
 
-.card-gold { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.card-blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.card-teal { background: linear-gradient(135deg, #14b8a6, #0d9488); }
+.card-gold { --accent: var(--gold); }
+.card-blue { --accent: var(--text-2); }
+.card-teal { --accent: var(--text-2); }
+.card-red { --accent: var(--primary); }
 
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .table-header {
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .table-title {
@@ -478,9 +576,45 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.table-tip {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
 .fee-text {
-  color: #f56c6c;
+  color: var(--el-color-danger);
   font-weight: 600;
+}
+
+.advance-text {
+  color: var(--el-color-warning);
+  font-weight: 600;
+}
+
+.net-text {
+  color: var(--el-color-success);
+  font-weight: 600;
+}
+
+.net-negative {
+  color: var(--el-color-danger);
+  font-weight: 700;
+}
+
+.sub-text {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+.muted {
+  color: var(--text-3);
+}
+
+.deduct-line {
+  font-size: 13px;
+  line-height: 1.8;
 }
 
 .detail-total {
@@ -491,11 +625,11 @@ onMounted(() => {
 .lock-icon {
   margin-left: 4px;
   vertical-align: -1px;
-  color: #a0a4ab;
+  color: var(--text-2);
 }
 .paid-info {
-  font-size: 11px;
-  color: #909399;
+  font-size: 12px;
+  color: var(--text-2);
   line-height: 1.4;
   margin-top: 2px;
 }
@@ -506,20 +640,20 @@ onMounted(() => {
 .amount-big {
   font-size: 18px;
   font-weight: 700;
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 .calc-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
   margin-left: 6px;
 }
 .pay-hint {
   margin-top: 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
   line-height: 1.5;
-  background: #f4f4f5;
-  border-radius: 6px;
+  background: var(--el-color-info-light-8);
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
 }
 </style>

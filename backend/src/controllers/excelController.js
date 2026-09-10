@@ -109,6 +109,7 @@ const MODULE_CONFIG = {
       { header: '电话', db: 'phone' },
       { header: '员工类型', db: 'employee_type', type: 'number', default: 2 },
       { header: '车辆类型', db: 'vehicle_type', type: 'number', default: 1 },
+      { header: '固定月薪', db: 'monthly_salary', type: 'number' },
       { header: '开户银行', db: 'bank_name' },
       { header: '银行账号', db: 'bank_account' },
       { header: '状态', db: 'status', type: 'number', default: 1 }

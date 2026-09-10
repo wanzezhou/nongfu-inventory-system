@@ -16,6 +16,7 @@ function formatWorker(worker) {
     employeeType: worker.employee_type,
     vehicleType: worker.vehicle_type,
     commissionRate: worker.commission_rate != null ? Number(worker.commission_rate) : null,
+    monthlySalary: worker.monthly_salary != null ? Number(worker.monthly_salary) : null,
     bankName: worker.bank_name,
     bankAccount: worker.bank_account,
     status: worker.status,
@@ -71,7 +72,7 @@ async function getWorkerList(req, res) {
 
 async function getAllWorkers(req, res) {
   try {
-    const sql = 'SELECT worker_id, worker_name, phone, vehicle_type FROM workers WHERE status = 1 ORDER BY worker_name ASC';
+    const sql = 'SELECT worker_id, worker_name, phone, vehicle_type, employee_type, monthly_salary FROM workers WHERE status = 1 ORDER BY employee_type ASC, worker_name ASC';
     const [rows] = await pool.execute(sql);
 
     const formattedList = rows.map(item => formatWorker(item));
@@ -116,6 +117,7 @@ async function createWorker(req, res) {
       bankAccount,
       bank_account,
       commissionRate,
+      monthlySalary,
       status
     } = req.body;
 
@@ -133,9 +135,9 @@ async function createWorker(req, res) {
     const now = new Date();
 
     const sql = `INSERT INTO workers (
-      worker_id, worker_name, phone, employee_type, vehicle_type, commission_rate,
+      worker_id, worker_name, phone, employee_type, vehicle_type, commission_rate, monthly_salary,
       bank_name, bank_account, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       worker_id,
@@ -145,6 +147,10 @@ async function createWorker(req, res) {
       Number(vType) || 1,
       // 提成比例仅业务员（类型3）使用，其他类型存 NULL
       Number(eType) === 3 ? (commissionRate !== undefined && commissionRate !== null ? Number(commissionRate) : 0) : null,
+      // 固定月薪仅店长（类型1）/业务员（类型3）使用，其他类型存 NULL
+      Number(eType) === 1 || Number(eType) === 3
+        ? (monthlySalary !== undefined && monthlySalary !== null && monthlySalary !== '' ? Number(monthlySalary) : null)
+        : null,
       bName || null,
       bAccount || null,
       status !== undefined ? Number(status) : 1,
@@ -179,10 +185,11 @@ async function updateWorker(req, res) {
       bankAccount,
       bank_account,
       commissionRate,
+      monthlySalary,
       status
     } = req.body;
 
-    const [existing] = await pool.execute('SELECT worker_id FROM workers WHERE worker_id = ?', [id]);
+    const [existing] = await pool.execute('SELECT worker_id, employee_type FROM workers WHERE worker_id = ?', [id]);
     if (existing.length === 0) {
       return error(res, '员工不存在', 404);
     }
@@ -213,6 +220,14 @@ async function updateWorker(req, res) {
     if (commissionRate !== undefined) {
       updateFields.push('commission_rate = ?');
       values.push(commissionRate !== null && commissionRate !== '' ? Number(commissionRate) : null);
+    }
+    // 固定月薪仅店长（类型1）/业务员（类型3）使用；显式传值才更新
+    if (monthlySalary !== undefined) {
+      const t = Number(eType !== undefined ? eType : existing[0].employee_type);
+      updateFields.push('monthly_salary = ?');
+      values.push(t === 1 || t === 3
+        ? (monthlySalary !== null && monthlySalary !== '' ? Number(monthlySalary) : null)
+        : null);
     }
     const bName = bankName !== undefined ? bankName : bank_name;
     if (bName !== undefined) {
