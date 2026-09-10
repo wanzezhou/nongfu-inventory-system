@@ -42,3 +42,12 @@ mini-program/miniprogram_npm/
 
 # WeChat devtools private config
 mini-program/project.private.config.json
+
+# Vite 临时产物（构建/启动时生成，不参与版本控制）
+frontend/vite.config.js.timestamp-*
+
+# 数据库备份文件（含真实业务数据，只留本地，不进公开仓库）
+database/backup_*.sql
+
+# 误提交的临时产物
+query
