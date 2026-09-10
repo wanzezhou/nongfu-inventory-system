@@ -74,6 +74,7 @@
         style="width: 100%"
         v-loading="loading"
         border
+        stripe
       >
         <el-table-column prop="image" label="商品图片" width="80" align="center">
           <template #default="{ row }">
@@ -594,7 +595,7 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .filter-form {
@@ -608,16 +609,16 @@ onMounted(() => {
 }
 
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .price-text {
-  color: #f56c6c;
+  color: var(--el-color-danger);
   font-weight: 500;
 }
 
 .fee-text {
-  color: #67c23a;
+  color: var(--el-color-success);
   font-weight: 500;
 }
 
@@ -633,13 +634,13 @@ onMounted(() => {
 
 .unit-label {
   margin-left: 10px;
-  color: #606266;
+  color: var(--text-2);
   font-size: 14px;
 }
 
 .avatar-uploader {
-  border: 1px dashed #dcdfe6;
-  border-radius: 6px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   position: relative;
   overflow: hidden;
@@ -648,16 +649,16 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f7fa;
+  background: var(--bg);
 }
 
 .avatar-uploader:hover {
-  border-color: #C7000B;
+  border-color: var(--primary);
 }
 
 .avatar-uploader-icon {
   font-size: 28px;
-  color: #8c939d;
+  color: var(--text-2);
 }
 
 .avatar {
@@ -669,20 +670,20 @@ onMounted(() => {
 .product-thumb {
   width: 50px;
   height: 50px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .no-image {
   width: 50px;
   height: 50px;
-  background: #f5f7fa;
-  border-radius: 6px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto;
-  color: #c0c4cc;
+  color: var(--text-3);
   font-size: 24px;
 }
 </style>

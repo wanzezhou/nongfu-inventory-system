@@ -12,18 +12,6 @@ import {
 export const menuGroups = [
   { type: 'item', index: '/dashboard', title: '仪表盘', icon: HomeFilled },
   {
-    type: 'group', index: '/base', title: '基础信息管理', icon: Folder,
-    items: [
-      { index: '/product', title: '商品管理', icon: Goods },
-      { index: '/station', title: '水站管理', icon: Shop },
-      { index: '/bulk-machine', title: '量贩机管理', icon: Shop },
-      { index: '/retail-machine', title: '零售机管理', icon: Shop },
-      { index: '/supplier', title: '供应商管理', icon: OfficeBuilding },
-      { index: '/worker', title: '员工管理', icon: User },
-      { index: '/accounts', title: '公司账户管理', icon: Wallet }
-    ]
-  },
-  {
     type: 'group', index: '/trade', title: '进销存管理', icon: DataAnalysis,
     items: [
       { index: '/inventory', title: '库存管理', icon: Box },
@@ -55,7 +43,27 @@ export const menuGroups = [
       { index: '/salary', title: '工资统计', icon: Money }
     ]
   },
-  { type: 'item', index: '/water-tickets', title: '水站账户管理', icon: Ticket }
+  { type: 'item', index: '/water-tickets', title: '水站账户管理', icon: Ticket },
+  {
+    type: 'group', index: '/barrel', title: '回桶管理', icon: Coin,
+    items: [
+      { index: '/barrel/deposit', title: '押金登记', icon: Coin },
+      { index: '/barrel/ledger', title: '押金台账', icon: DataAnalysis },
+      { index: '/barrel/config', title: '桶型配置', icon: Box }
+    ]
+  },
+  {
+    type: 'group', index: '/base', title: '基础信息管理', icon: Folder,
+    items: [
+      { index: '/product', title: '商品管理', icon: Goods },
+      { index: '/station', title: '水站管理', icon: Shop },
+      { index: '/bulk-machine', title: '量贩机管理', icon: Shop },
+      { index: '/retail-machine', title: '零售机管理', icon: Shop },
+      { index: '/supplier', title: '供应商管理', icon: OfficeBuilding },
+      { index: '/worker', title: '员工管理', icon: User },
+      { index: '/accounts', title: '公司账户管理', icon: Wallet }
+    ]
+  }
 ]
 
 // path -> 标题 扁平映射（router meta.title 消费）

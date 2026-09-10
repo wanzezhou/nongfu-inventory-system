@@ -15,13 +15,6 @@ export function getAllSuppliers() {
   })
 }
 
-export function getSupplier(id) {
-  return request({
-    url: `/suppliers/${id}`,
-    method: 'get'
-  })
-}
-
 export function addSupplier(data) {
   return request({
     url: '/suppliers',

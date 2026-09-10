@@ -9,13 +9,6 @@ export function getMachineStations(params) {
   })
 }
 
-export function getMachineStation(id) {
-  return request({
-    url: `/machine-stations/${id}`,
-    method: 'get'
-  })
-}
-
 export function createMachineStation(data) {
   return request({
     url: '/machine-stations',

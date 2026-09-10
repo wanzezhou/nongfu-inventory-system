@@ -8,13 +8,6 @@ export function getInventoryList(params) {
   })
 }
 
-export function getInventoryDetail(productId) {
-  return request({
-    url: `/inventory/${productId}`,
-    method: 'get'
-  })
-}
-
 export function stockIn(data) {
   return request({
     url: '/inventory/in',

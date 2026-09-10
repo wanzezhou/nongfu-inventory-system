@@ -73,6 +73,7 @@
         style="width: 100%"
         v-loading="loading"
         border
+        stripe
       >
         <el-table-column prop="orderNo" label="订单号" width="160" />
         <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip>
@@ -149,409 +150,11 @@
       </div>
     </el-card>
 
-    <el-dialog
-      v-model="createDialogVisible"
-      :title="isEditMode ? '修改订单' : '新建订单'"
-      width="750px"
-      :close-on-click-modal="false"
-      destroy-on-close
-      class="create-order-dialog"
-    >
-      <div class="form-sections">
-        <div class="form-section">
-          <div class="section-title">基本信息</div>
-          <el-form
-            ref="basicFormRef"
-            :model="orderForm"
-            :rules="getBasicRules()"
-            label-width="120px"
-            class="step-form"
-          >
-            <el-form-item label="订单类型" prop="orderType">
-              <el-radio-group v-model="orderForm.orderType" @change="onOrderTypeChange">
-                <el-radio :value="1">官方平台销售</el-radio>
-                <el-radio :value="2">直营水站销售</el-radio>
-                <el-radio :value="3">线下零售</el-radio>
-                <el-radio :value="4">量贩机供货</el-radio>
-                <el-radio :value="6">零售机供货</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item label="创建人" prop="createdById">
-              <el-select
-                v-model="orderForm.createdById"
-                placeholder="请选择创建人"
-                filterable
-                clearable
-                style="width: 50%"
-              >
-                <el-option
-                  v-for="item in staffOptions"
-                  :key="item.id"
-                  :label="item.name"
-                  :value="item.id"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 1" label="平台类型" prop="platformType">
-              <el-select v-model="orderForm.platformType" placeholder="请选择平台" filterable style="width: 70%">
-                <el-option label="淘宝" :value="4" />
-                <el-option label="天猫" :value="5" />
-                <el-option label="京东" :value="6" />
-                <el-option label="拼多多" :value="7" />
-                <el-option label="抖音电商" :value="8" />
-                <el-option label="快手电商" :value="9" />
-                <el-option label="小红书" :value="10" />
-                <el-option label="唯品会" :value="11" />
-                <el-option label="苏宁易购" :value="12" />
-                <el-option label="美团" :value="1" />
-                <el-option label="饿了么" :value="2" />
-                <el-option label="京东到家" :value="13" />
-                <el-option label="美团闪购" :value="14" />
-                <el-option label="盒马鲜生" :value="15" />
-                <el-option label="叮咚买菜" :value="16" />
-                <el-option label="朴朴超市" :value="17" />
-                <el-option label="多点" :value="18" />
-                <el-option label="淘鲜达" :value="19" />
-                <el-option label="山姆会员店" :value="20" />
-                <el-option label="本来生活" :value="21" />
-                <el-option label="其他" :value="3" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 2" label="水站名称" prop="stationId">
-              <el-select
-                v-model="orderForm.stationId"
-                placeholder="请选择水站"
-                filterable
-                style="width: 70%"
-                @change="handleStationChange"
-              >
-                <el-option
-                  v-for="item in stationOptions"
-                  :key="item.id"
-                  :label="item.name"
-                  :value="item.id"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 2" label="联系人">
-              <el-input v-model="orderForm.contactName" placeholder="选择水站后自动带出" disabled style="width: 50%" />
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 2" label="联系电话">
-              <el-input v-model="orderForm.customerPhone" placeholder="选择水站后自动带出" disabled style="width: 50%" />
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 2" label="水站地址">
-              <el-input
-                v-model="orderForm.customerAddress"
-                type="textarea"
-                :rows="2"
-                placeholder="选择水站后自动带出"
-                disabled
-                style="width: 80%"
-              />
-            </el-form-item>
-            <!-- 线下零售：客户姓名/电话/地址（无联系人字段） -->
-            <el-form-item v-if="orderForm.orderType === 3" label="客户姓名" prop="customerName">
-              <el-input v-model="orderForm.customerName" placeholder="请输入客户姓名" style="width: 50%" />
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 3" label="客户电话" prop="customerPhone">
-              <el-input v-model="orderForm.customerPhone" placeholder="请输入客户电话" style="width: 50%" />
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 3" label="客户地址" prop="customerAddress">
-              <el-input v-model="orderForm.customerAddress" type="textarea" :rows="2" placeholder="请输入客户地址" style="width: 80%" />
-            </el-form-item>
+    <!-- 新建/修改订单弹窗（自包含表单域，2026-09-09 拆分） -->
+    <OrderFormDialog ref="formDialogRef" @saved="onOrderSaved" />
 
-            <!-- 官方平台销售：客户姓名/电话/地址 -->
-            <el-form-item v-if="orderForm.orderType === 1" label="客户姓名" prop="customerName">
-              <el-input v-model="orderForm.customerName" placeholder="请输入客户姓名" style="width: 50%" />
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 1" label="客户电话" prop="customerPhone">
-              <el-input v-model="orderForm.customerPhone" placeholder="请输入客户电话" style="width: 50%" />
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 1" label="客户地址" prop="customerAddress">
-              <el-input v-model="orderForm.customerAddress" type="textarea" :rows="2" placeholder="请输入客户地址" style="width: 80%" />
-            </el-form-item>
-
-            <!-- 量贩机供货(4)/零售机供货(6)：站点名称关联机台模块，站点地址自动带出 -->
-            <el-form-item v-if="orderForm.orderType === 4" label="站点名称" prop="machineStationId">
-              <el-select v-model="orderForm.machineStationId" placeholder="请选择量贩机" filterable style="width: 70%" @change="handleBulkMachineChange">
-                <el-option v-for="item in bulkMachineOptions" :key="item.id" :label="item.name" :value="item.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 6" label="站点名称" prop="machineStationId">
-              <el-select v-model="orderForm.machineStationId" placeholder="请选择零售机" filterable style="width: 70%" @change="handleRetailMachineChange">
-                <el-option v-for="item in retailMachineOptions" :key="item.id" :label="item.name" :value="item.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="orderForm.orderType === 4 || orderForm.orderType === 6" label="站点地址">
-              <el-input v-model="orderForm.customerAddress" type="textarea" :rows="2" placeholder="选择机台后自动带出" disabled style="width: 80%" />
-            </el-form-item>
-          </el-form>
-        </div>
-
-        <div class="form-section">
-          <div class="product-list-header">
-            <span class="title">商品明细</span>
-            <el-button type="primary" size="small" @click="addProductItem">
-              <el-icon><Plus /></el-icon>
-              添加商品
-            </el-button>
-          </div>
-          <el-table :data="orderForm.items" border class="product-table">
-            <el-table-column label="商品" min-width="200">
-              <template #default="{ row, $index }">
-                <el-select
-                  v-model="row.productId"
-                  placeholder="请选择商品"
-                  filterable
-                  style="width: 100%"
-                  @change="handleProductChange($index)"
-                >
-                  <el-option
-                    v-for="item in productOptions"
-                    :key="item.id"
-                    :label="`${item.name} (${item.code})`"
-                    :value="item.id"
-                    :disabled="item.stock <= 0"
-                    :class="{ 'option-out-of-stock': item.stock <= 0 }"
-                  >
-                    <span :style="{ color: item.stock <= 0 ? '#c0c4cc' : '' }">{{ item.name }} ({{ item.code }})</span>
-                    <span v-if="item.stock <= 0" style="color: #c0c4cc; font-size: 12px; margin-left: 8px;">无库存</span>
-                    <span v-else style="color: #67c23a; font-size: 12px; margin-left: 8px;">库存: {{ item.stock }}</span>
-                  </el-option>
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="数量" width="120">
-              <template #default="{ row }">
-                <el-input-number v-model="row.quantity" :min="1" :precision="0" :step="1" style="width: 100%" @change="onItemQuantityChange(row)" />
-              </template>
-            </el-table-column>
-            <!-- 直营水站销售：行级水票抵扣（是否使用水票 + 抵扣张数，未抵扣部分按分销价） -->
-            <template v-if="orderForm.orderType === 2">
-              <el-table-column label="是否使用水票" width="120" align="center">
-                <template #default="{ row }">
-                  <el-checkbox
-                    v-model="row.useTicket"
-                    :disabled="!row.productId || (ticketMap[row.productId] || 0) <= 0"
-                    @change="onTicketToggle(row)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="抵扣张数" width="140">
-                <template #default="{ row }">
-                  <template v-if="row.useTicket">
-                    <el-input-number
-                      v-model="row.ticketQty"
-                      :min="0"
-                      :max="Math.min(row.quantity || 0, ticketMap[row.productId] || 0)"
-                      :precision="0"
-                      :step="1"
-                      style="width: 100%"
-                    />
-                    <div class="ticket-sub">
-                      <span class="ticket-left">可用 {{ ticketMap[row.productId] || 0 }} 张</span>
-                    </div>
-                  </template>
-                  <span v-else class="ticket-empty">—</span>
-                </template>
-              </el-table-column>
-            </template>
-            <!-- 价格列：类型2 分销价只读（自动带出商品档案，水票抵扣行不显示价格）；类型3 零售价可编辑 -->
-            <el-table-column v-if="[2, 3].includes(orderForm.orderType)" :label="getPriceColumnLabel()" width="130">
-              <template #default="{ row }">
-                <!-- 类型2 使用水票抵扣：不显示任何价格（2026-08-28） -->
-                <span v-if="orderForm.orderType === 2 && row.useTicket" class="ticket-empty">-</span>
-                <el-input-number
-                  v-else-if="orderForm.orderType === 3"
-                  v-model="row.unitPrice"
-                  :min="0"
-                  :precision="2"
-                  :step="0.5"
-                  style="width: 100%"
-                />
-                <span v-else class="price-readonly">¥{{ formatMoney(row.unitPrice) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="[2, 3].includes(orderForm.orderType)" label="小计" width="130">
-              <template #default="{ row }">
-                <!-- 类型2 使用水票抵扣：不显示金额（未抵扣件数仍计入合计，2026-08-28） -->
-                <span v-if="orderForm.orderType === 2 && row.useTicket" class="ticket-empty">-</span>
-                <span v-else class="subtotal-text">¥{{ formatMoney(calculateItemSubtotal(row)) }}</span>
-                <div v-if="orderForm.orderType === 2 && row.useTicket && row.ticketQty > 0" class="ticket-sub">
-                  <span class="ticket-left">水票 {{ row.ticketQty }} 件（不计金额）</span>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="80" align="center">
-              <template #default="{ $index }">
-                <el-button type="danger" link @click="removeProductItem($index)">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div v-if="[2, 3].includes(orderForm.orderType)" class="order-total">
-            合计金额：<span class="total-amount">¥{{ formatMoney(calculateTotalAmount()) }}</span>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <div class="section-title">配送信息</div>
-          <el-form
-            ref="deliveryFormRef"
-            :model="orderForm"
-            :rules="getDeliveryRules()"
-            label-width="120px"
-            class="step-form"
-          >
-            <el-form-item label="配送方式" prop="deliveryMethod">
-              <!-- 官方平台销售：自有员工配送（固定） -->
-              <el-radio-group v-if="orderForm.orderType === 1" v-model="orderForm.deliveryMethod">
-                <el-radio :value="1">自有员工配送</el-radio>
-              </el-radio-group>
-              <!-- 直营水站销售：水站配送（固定） -->
-              <el-radio-group v-else-if="orderForm.orderType === 2" v-model="orderForm.deliveryMethod">
-                <el-radio :value="2">水站配送</el-radio>
-              </el-radio-group>
-              <!-- 线下零售：自有员工配送 / 无需配送 -->
-              <el-radio-group v-else-if="orderForm.orderType === 3" v-model="orderForm.deliveryMethod">
-                <el-radio :value="1">自有员工配送</el-radio>
-                <el-radio :value="3">无需配送</el-radio>
-              </el-radio-group>
-              <!-- 量贩机供货：量贩机配送（固定） -->
-              <el-radio-group v-else-if="orderForm.orderType === 4" v-model="orderForm.deliveryMethod">
-                <el-radio :value="2">量贩机配送</el-radio>
-              </el-radio-group>
-              <!-- 零售机供货：零售机配送（固定） -->
-              <el-radio-group v-else-if="orderForm.orderType === 6" v-model="orderForm.deliveryMethod">
-                <el-radio :value="2">零售机配送</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item v-if="orderForm.deliveryMethod === 1 || orderForm.deliveryMethod === 2" label="配送员工" prop="deliveryStaffId">
-              <el-select
-                v-model="orderForm.deliveryStaffId"
-                placeholder="请选择配送员工"
-                filterable
-                style="width: 50%"
-              >
-                <el-option
-                  v-for="item in staffOptions"
-                  :key="item.id"
-                  :label="item.name"
-                  :value="item.id"
-                />
-              </el-select>
-            </el-form-item>
-          </el-form>
-        </div>
-
-        <div class="form-section">
-          <div class="section-title">备注</div>
-          <el-form :model="orderForm" label-width="120px" class="step-form">
-            <el-form-item label="备注">
-              <el-input
-                v-model="orderForm.remark"
-                type="textarea"
-                :rows="3"
-                placeholder="请输入备注"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-form>
-        </div>
-      </div>
-
-      <template #footer>
-        <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-dropdown
-          split-button
-          type="primary"
-          :button-props="{ loading: submitLoading }"
-          :disabled="submitLoading"
-          @click="handleSubmitOrder(false)"
-          @command="(cmd) => handleSubmitOrder(cmd === 'print')"
-        >
-          {{ isEditMode ? '保存修改' : '提交订单' }}
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="print">
-                {{ isEditMode ? '保存并打印' : '提交并打印' }}
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="detailDialogVisible"
-      title="订单详情"
-      width="700px"
-      :close-on-click-modal="false"
-      destroy-on-close
-    >
-      <div v-if="currentOrder" class="order-detail">
-        <el-descriptions title="基本信息" :column="2" border class="detail-section">
-          <el-descriptions-item label="订单号">{{ currentOrder.orderNo }}</el-descriptions-item>
-          <el-descriptions-item label="订单类型">{{ getOrderTypeText(currentOrder.orderType) }}</el-descriptions-item>
-          <el-descriptions-item label="下单时间">{{ currentOrder.createTime }}</el-descriptions-item>
-          <el-descriptions-item label="创建人">{{ currentOrder.createdByName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="客户/水站">{{ currentOrder.customerName }}</el-descriptions-item>
-          <el-descriptions-item label="联系电话">{{ currentOrder.customerPhone }}</el-descriptions-item>
-          <el-descriptions-item label="配送地址" :span="2">{{ currentOrder.customerAddress }}</el-descriptions-item>
-        </el-descriptions>
-
-        <div class="detail-section">
-          <div class="section-title">商品明细</div>
-          <el-table :data="currentOrder.items" border size="small">
-            <el-table-column prop="productName" label="商品名称" min-width="150" />
-            <el-table-column prop="spec" label="规格" width="100" />
-            <el-table-column prop="quantity" label="数量" width="80" align="center" />
-            <el-table-column prop="unitPrice" label="单价" width="100" align="right">
-              <template #default="{ row }">¥{{ formatMoney(row.unitPrice) }}</template>
-            </el-table-column>
-            <el-table-column prop="subtotal" label="小计" width="100" align="right">
-              <template #default="{ row }">¥{{ formatMoney(row.subtotal) }}</template>
-            </el-table-column>
-          </el-table>
-        </div>
-
-        <el-descriptions title="配送信息" :column="2" border class="detail-section">
-          <el-descriptions-item label="配送方式">{{ getDeliveryMethodText(currentOrder.deliveryMethod) }}</el-descriptions-item>
-          <el-descriptions-item v-if="currentOrder.deliveryStaff" label="配送员工">{{ currentOrder.deliveryStaff }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="2">{{ currentOrder.remark || '-' }}</el-descriptions-item>
-        </el-descriptions>
-
-        <div class="amount-summary">
-          <div class="amount-row" v-if="![1, 4, 6].includes(currentOrder.orderType)">
-            <span>订单金额：</span>
-            <span>¥{{ formatMoney(currentOrder.orderAmount) }}</span>
-          </div>
-          <div class="amount-row total" v-if="![1, 4, 6].includes(currentOrder.orderType)">
-            <span>应收总额：</span>
-            <span>¥{{ formatMoney(currentOrder.totalAmount) }}</span>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <el-button @click="detailDialogVisible = false">关闭</el-button>
-        <el-button
-          v-if="currentOrder"
-          type="warning"
-          @click="handleEditFromDetail"
-        >
-          修改
-        </el-button>
-        <el-button
-          v-if="currentOrder"
-          type="warning"
-          @click="handlePrint"
-        >
-          打印
-        </el-button>
-      </template>
-    </el-dialog>
+    <!-- 订单详情弹窗 -->
+    <OrderDetailDialog ref="detailDialogRef" @edit="onEditFromDetail" @print="openPrint" />
 
     <OrderPrint :visible="printDialogVisible" :order="currentOrder" @update:visible="printDialogVisible = $event" />
 
@@ -560,27 +163,19 @@
 </template>
 
 <script setup>
+// 订单列表页（2026-09-09 拆分）：只负责列表查询/分页/操作编排。
+// 表单域逻辑见 OrderFormDialog.vue，详情展示见 OrderDetailDialog.vue。
 import { usePagination } from '@/composables/usePagination'
-import { ORDER_TYPE_TEXT } from '@/utils/constants'
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Delete, View, Edit, Download, Upload } from '@element-plus/icons-vue'
-import {
-  getOrders,
-  getOrderDetail,
-  createOrder,
-  updateOrder,
-  hardDeleteOrder
-} from '@/api/order'
-import { getTicketInventory } from '@/api/waterTicket'
-import { getProductList } from '@/api/product'
-import { getInventoryList } from '@/api/inventory'
-import { getMachineStations } from '@/api/machineStation'
-import { getStations } from '@/api/station'
-import { getAllWorkers } from '@/api/worker'
+import { getOrders, getOrderDetail, hardDeleteOrder } from '@/api/order'
 import OrderPrint from './OrderPrint.vue'
+import OrderFormDialog from './OrderFormDialog.vue'
+import OrderDetailDialog from './OrderDetailDialog.vue'
 import { exportData, downloadBlob } from '@/api/excel'
 import ImportDialog from '@/components/ImportDialog.vue'
+import { formatMoney, getOrderTypeText, getOrderTypeTagType } from './orderText'
 
 const exporting = ref(false)
 const importDialogVisible = ref(false)
@@ -596,16 +191,11 @@ const handleExport = async () => {
 }
 
 const loading = ref(false)
-const submitLoading = ref(false)
-const createDialogVisible = ref(false)
-const detailDialogVisible = ref(false)
 const printDialogVisible = ref(false)
-const isEditMode = ref(false)
-const editingOrderId = ref(null)
 const currentOrder = ref(null)
 
-const basicFormRef = ref(null)
-const deliveryFormRef = ref(null)
+const formDialogRef = ref(null)
+const detailDialogRef = ref(null)
 
 const queryForm = reactive({
   keyword: '',
@@ -616,105 +206,6 @@ const queryForm = reactive({
 const { pagination, handleSizeChange, handleCurrentChange } = usePagination(() => fetchData())
 
 const tableData = ref([])
-const productOptions = ref([])
-const stationOptions = ref([])
-const bulkMachineOptions = ref([])
-const retailMachineOptions = ref([])
-const staffOptions = ref([])
-
-const orderForm = reactive({
-  orderType: 3,
-  platformType: null,
-  platformOrderNo: '',
-  stationId: null,
-  machineStationId: null,
-  contactName: '',
-  customerName: '',
-  customerPhone: '',
-  customerAddress: '',
-  createdById: null,
-  items: [],
-  deliveryMethod: 1,
-  deliveryStaffId: null,
-  remark: ''
-})
-
-const basicRules = {
-  orderType: [{ required: true, message: '请选择订单类型', trigger: 'change' }],
-  customerName: [{ required: true, message: '请输入名称', trigger: 'blur' }],
-  customerPhone: [{ required: true, message: '请输入客户电话', trigger: 'blur' }],
-  customerAddress: [{ required: true, message: '请输入地址', trigger: 'blur' }]
-}
-
-// 动态校验：按订单类型设置必填项
-// - 创建人：所有类型必填
-// - 官方平台销售(1)：平台类型必填、客户信息必填
-// - 直营水站销售(2)/返货(5)：水站必填（信息自动带出）
-// - 线下零售(3)：客户信息必填
-// - 量贩机供货(4)/零售机供货(6)：机台必填（站点名称/地址自动带出）
-const getBasicRules = () => {
-  const rules = {
-    orderType: [{ required: true, message: '请选择订单类型', trigger: 'change' }],
-    createdById: [{ required: true, message: '请选择创建人', trigger: 'change' }]
-  }
-  const t = Number(orderForm.orderType)
-  if (t === 1) {
-    rules.platformType = [{ required: true, message: '请选择平台类型', trigger: 'change' }]
-    rules.customerName = [{ required: true, message: '请输入客户姓名', trigger: 'blur' }]
-    rules.customerPhone = [{ required: true, message: '请输入客户电话', trigger: 'blur' }]
-    rules.customerAddress = [{ required: true, message: '请输入客户地址', trigger: 'blur' }]
-  } else if (t === 2 || t === 5) {
-    rules.stationId = [{ required: true, message: '请选择水站', trigger: 'change' }]
-  } else if (t === 3) {
-    rules.customerName = [{ required: true, message: '请输入客户姓名', trigger: 'blur' }]
-    rules.customerPhone = [{ required: true, message: '请输入客户电话', trigger: 'blur' }]
-    rules.customerAddress = [{ required: true, message: '请输入客户地址', trigger: 'blur' }]
-  } else if (t === 4 || t === 6) {
-    rules.machineStationId = [{ required: true, message: '请选择机台', trigger: 'change' }]
-  }
-  return rules
-}
-
-// 动态校验：配送员工在配送方式需要员工时必填（自有员工配送/水站配送/机台配送）
-const getDeliveryRules = () => {
-  const rules = { ...deliveryRules }
-  if (orderForm.deliveryMethod === 1 || orderForm.deliveryMethod === 2) {
-    rules.deliveryStaffId = [{ required: true, message: '请选择配送员工', trigger: 'change' }]
-  }
-  return rules
-}
-
-const deliveryRules = {
-  deliveryMethod: [{ required: true, message: '请选择配送方式', trigger: 'change' }]
-}
-
-const formatMoney = (value) => {
-  if (!value && value !== 0) return '0.00'
-  return Number(value).toFixed(2)
-}
-
-const getOrderTypeText = (type) => ORDER_TYPE_TEXT[type] || '未知'
-
-const getOrderTypeTagType = (type) => {
-  const map = {
-    1: 'primary',
-    2: 'success',
-    3: 'warning',
-    4: 'info',
-    5: 'danger',
-    6: 'info'
-  }
-  return map[type] || 'info'
-}
-
-const getDeliveryMethodText = (method) => {
-  const map = {
-    1: '自有员工配送',
-    2: '水站配送',
-    3: '无需配送'
-  }
-  return map[method] || '未知'
-}
 
 const fetchData = async () => {
   loading.value = true
@@ -744,193 +235,6 @@ const fetchData = async () => {
   }
 }
 
-const fetchProductOptions = async () => {
-  try {
-    const [productRes, inventoryRes] = await Promise.all([
-      getProductList({ pageSize: 100 }),
-      getInventoryList({ pageSize: 100 })
-    ])
-    let products = []
-    if (productRes.data) {
-      products = productRes.data.list || productRes.data || []
-    }
-    // 构建库存映射表 product_id -> stock
-    // 库存接口 formatInventory 输出的 id 即为 product_id，字段名为 stock
-    const stockMap = {}
-    if (inventoryRes.data) {
-      const list = inventoryRes.data.list || inventoryRes.data || []
-      list.forEach(item => {
-        stockMap[item.id] = Number(item.stock) || 0
-      })
-    }
-    // 将库存量合并到每个商品上（商品 id 同为 product_id 值）
-    products.forEach(p => {
-      p.stock = stockMap[p.id] ?? 0
-    })
-    // 有库存在前，无库存在后；同库存按名称排序
-    productOptions.value = products.sort((a, b) => {
-      const aHasStock = a.stock > 0 ? 0 : 1
-      const bHasStock = b.stock > 0 ? 0 : 1
-      if (aHasStock !== bHasStock) return aHasStock - bHasStock
-      return (a.name || '').localeCompare(b.name || '', 'zh-CN')
-    })
-  } catch (error) {
-    console.error('获取商品列表失败:', error)
-    productOptions.value = generateProductMockData()
-  }
-}
-
-const generateProductMockData = () => {
-  const products = []
-  const names = ['农夫山泉天然水', '农夫山泉矿泉水', '东方树叶', '茶π', '维他命水', '尖叫']
-  const specs = ['550ml', '1.5L', '4L', '19L', '380ml']
-  for (let i = 1; i <= 15; i++) {
-    products.push({
-      id: i,
-      code: `SP${String(i).padStart(6, '0')}`,
-      name: names[i % names.length] + ' ' + specs[i % specs.length],
-      spec: specs[i % specs.length],
-      unit: '瓶',
-      retailPrice: (Math.random() * 20 + 2).toFixed(2) * 1,
-      wholesalePrice: (Math.random() * 15 + 1).toFixed(2) * 1
-    })
-  }
-  return products
-}
-
-const fetchStationOptions = async () => {
-  try {
-    const res = await getStations({ pageSize: 100 })
-    if (res.data) {
-      const rawList = res.data.list || res.data || []
-      stationOptions.value = rawList.map(item => ({
-        id: item.station_id,
-        name: item.station_name,
-        contact: item.contact_name || '',
-        phone: item.phone || '',
-        address: item.address || ''
-      }))
-    }
-  } catch (error) {
-    console.error('获取水站列表失败:', error)
-    stationOptions.value = []
-  }
-}
-
-const handleStationChange = () => {
-  const station = stationOptions.value.find(s => s.id === orderForm.stationId)
-  if (station) {
-    orderForm.contactName = station.contact
-    orderForm.customerName = station.name
-    orderForm.customerPhone = station.phone
-    orderForm.customerAddress = station.address
-  }
-  fetchTicketAvailable()
-}
-
-// 直营水站销售：行级水票抵扣（2026-08-27）
-//   商品级可用水票数（productId -> available），选水站后拉取，用于勾选/张数上限提示
-const ticketMap = ref({})
-const fetchTicketAvailable = async () => {
-  if (Number(orderForm.orderType) !== 2 || !orderForm.stationId) return
-  try {
-    const res = await getTicketInventory({ stationId: orderForm.stationId })
-    const list = res.data?.list || []
-    const map = {}
-    list.forEach((x) => { map[x.productId] = Number(x.available) || 0 })
-    ticketMap.value = map
-    // 水票余额变化后收敛行级抵扣张数
-    orderForm.items.forEach((row) => {
-      if (row.useTicket) {
-        const max = Math.min(row.quantity || 0, map[row.productId] || 0)
-        if (row.ticketQty > max) row.ticketQty = max
-      }
-    })
-  } catch (e) {
-    console.error('查询水票失败:', e)
-    ticketMap.value = {}
-  }
-}
-// 行级：勾选「是否使用水票」后默认全额抵扣（受可用票数/数量上限约束）
-const onTicketToggle = (row) => {
-  if (row.useTicket) {
-    const avail = ticketMap.value[row.productId] || 0
-    row.ticketQty = Math.min(row.quantity || 0, avail)
-    if (row.ticketQty <= 0) {
-      ElMessage.warning('该水站此商品无可用水票')
-      row.useTicket = false
-    }
-  } else {
-    row.ticketQty = 0
-  }
-}
-// 明细行数量变化：收敛水票抵扣张数（不超过可用票数）
-const onItemQuantityChange = (row) => {
-  if (row.useTicket) {
-    const avail = ticketMap.value[row.productId] || 0
-    const max = Math.min(row.quantity || 0, avail)
-    if (row.ticketQty > max) row.ticketQty = max
-  }
-}
-
-// 拉取量贩机/零售机列表，用于订单表单的机台关联下拉
-const fetchMachineOptions = async () => {
-  try {
-    const [bulkRes, retailRes] = await Promise.all([
-      getMachineStations({ type: 1, pageSize: 100, status: 1 }),
-      getMachineStations({ type: 2, pageSize: 100, status: 1 })
-    ])
-    const map = (res) => {
-      const list = res.data?.list || res.data || []
-      return list.map(item => ({
-        id: item.machine_id,
-        name: item.station_name,
-        address: item.address || '',
-        manager: item.manager || '',
-        managerPhone: item.manager_phone || ''
-      }))
-    }
-    bulkMachineOptions.value = map(bulkRes)
-    retailMachineOptions.value = map(retailRes)
-  } catch (error) {
-    console.error('获取机台列表失败:', error)
-    bulkMachineOptions.value = []
-    retailMachineOptions.value = []
-  }
-}
-
-// 选择量贩机/零售机后，自动带出站点名称与地址
-const handleBulkMachineChange = () => {
-  const m = bulkMachineOptions.value.find(x => x.id === orderForm.machineStationId)
-  fillMachineToOrder(m)
-}
-
-const handleRetailMachineChange = () => {
-  const m = retailMachineOptions.value.find(x => x.id === orderForm.machineStationId)
-  fillMachineToOrder(m)
-}
-
-const fillMachineToOrder = (m) => {
-  if (m) {
-    orderForm.customerName = m.name
-    orderForm.customerAddress = m.address
-    orderForm.contactName = m.manager
-    orderForm.customerPhone = m.managerPhone
-  }
-}
-
-const fetchStaffOptions = async () => {
-  try {
-    const res = await getAllWorkers()
-    if (res.data) {
-      staffOptions.value = res.data || []
-    }
-  } catch (error) {
-    console.error('获取员工列表失败:', error)
-    staffOptions.value = []
-  }
-}
-
 const handleSearch = () => {
   pagination.page = 1
   fetchData()
@@ -945,39 +249,14 @@ const handleReset = () => {
 }
 
 const handleAdd = () => {
-  isEditMode.value = false
-  editingOrderId.value = null
-  resetOrderForm()
-  createDialogVisible.value = true
-}
-
-const resetOrderForm = () => {
-  Object.assign(orderForm, {
-    orderType: 3,
-    platformType: null,
-    platformOrderNo: '',
-    stationId: null,
-    machineStationId: null,
-    contactName: '',
-    customerName: '',
-    customerPhone: '',
-    customerAddress: '',
-    createdById: null,
-    items: [],
-    deliveryMethod: 1,
-    deliveryStaffId: null,
-    remark: ''
-  })
-  ticketMap.value = {}
-  basicFormRef.value?.resetFields()
-  deliveryFormRef.value?.resetFields()
+  formDialogRef.value?.openCreate()
 }
 
 const handleEdit = async (row) => {
   try {
     const res = await getOrderDetail(row.id || row.orderNo)
     if (res.data) {
-      fillOrderForm(res.data)
+      formDialogRef.value?.openEdit(res.data)
     }
   } catch (error) {
     console.error('获取订单详情失败:', error)
@@ -985,233 +264,34 @@ const handleEdit = async (row) => {
   }
 }
 
-const handleEditFromDetail = () => {
-  if (currentOrder.value) {
-    fillOrderForm(currentOrder.value)
-    detailDialogVisible.value = false
-  }
-}
-
-const fillOrderForm = (order) => {
-  isEditMode.value = true
-  editingOrderId.value = order.id || order.orderNo
-  Object.assign(orderForm, {
-    orderType: order.orderType,
-    platformType: order.platformType,
-    platformOrderNo: order.platformOrderNo || '',
-    stationId: order.stationId,
-    machineStationId: order.machineStationId || null,
-    contactName: order.contactName || '',
-    customerName: order.customerName,
-    customerPhone: order.customerPhone || '',
-    customerAddress: order.customerAddress || '',
-    createdById: order.createdById || null,
-    items: (order.items || []).map(item => ({
-      productId: item.productId,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice || 0,
-      // 行级水票抵扣回显：pricing_type=2 且 ticket_qty>0 -> 勾选并按 ticket_qty 抵扣
-      useTicket: Number(item.pricingType || item.pricing_type) === 2 && Number(item.ticketQty) > 0,
-      ticketQty: Number(item.pricingType || item.pricing_type) === 2 ? (Number(item.ticketQty) || 0) : 0
-    })),
-    deliveryMethod: order.deliveryMethod || 1,
-    deliveryStaffId: order.deliveryStaffId,
-    remark: order.remark || ''
-  })
-  fetchTicketAvailable()
-  createDialogVisible.value = true
-}
-
-const addProductItem = () => {
-  orderForm.items.push({
-    productId: null,
-    quantity: 1,
-    unitPrice: 0,
-    useTicket: false,
-    ticketQty: 0
-  })
-}
-
-const removeProductItem = (index) => {
-  orderForm.items.splice(index, 1)
-}
-
-const handleProductChange = (index) => {
-  const product = productOptions.value.find(p => p.id === orderForm.items[index].productId)
-  if (product) {
-    let price = 0
-    switch (Number(orderForm.orderType)) {
-      case 1:
-        price = product.purchasePrice || 0
-        break
-      case 2:
-        // 直营水站销售：分销价自动关联商品档案，禁止修改（只读）
-        price = product.wholesalePrice || 0
-        break
-      case 3:
-        price = product.retailPrice || 0
-        break
-      case 4: // 量贩机供货：不计算商品价格（2026-08-27）
-      case 6: // 零售机供货：不计算商品价格（2026-08-27）
-        price = 0
-        break
-      default:
-        price = product.retailPrice || 0
-    }
-    const item = orderForm.items[index]
-    item.unitPrice = price
-    item.useTicket = false
-    item.ticketQty = 0
-  }
-}
-
-const getPriceColumnLabel = () => {
-  switch (Number(orderForm.orderType)) {
-    case 2:
-      return '分销价'
-    case 3:
-      return '零售价'
-    default:
-      return '单价'
-  }
-}
-
-// 行级小计：类型2 水票抵扣件数不计金额，仅未抵扣件数按分销价；类型3 零售价×数量
-const calculateItemSubtotal = (item) => {
-  if (Number(orderForm.orderType) === 2 && item.useTicket && item.ticketQty > 0) {
-    return item.unitPrice * (item.quantity - item.ticketQty)
-  }
-  return item.quantity * item.unitPrice || 0
-}
-
-// 订单类型变更时设置默认配送方式
-const onOrderTypeChange = () => {
-  const orderType = Number(orderForm.orderType)
-  // 离开机台供货类型时清空已选机台
-  if (orderType !== 4 && orderType !== 6) {
-    orderForm.machineStationId = null
-  }
-  switch (orderType) {
-    case 1: // 官方平台销售 -> 自有员工配送
-      orderForm.deliveryMethod = 1
-      break
-    case 2: // 直营水站销售 -> 水站配送
-      orderForm.deliveryMethod = 2
-      break
-    case 3: // 线下零售 -> 默认自有员工配送
-      orderForm.deliveryMethod = 1
-      break
-    case 4: // 量贩机供货 -> 量贩机配送（用2=水站配送占位）
-      orderForm.deliveryMethod = 2
-      break
-    case 6: // 零售机供货 -> 零售机配送（用2=水站配送占位）
-      orderForm.deliveryMethod = 2
-      break
-  }
-  // 切换订单类型：重置行级水票抵扣状态
-  orderForm.items.forEach((row) => {
-    row.useTicket = false
-    row.ticketQty = 0
-  })
-  ticketMap.value = {}
-  if (orderType === 2) fetchTicketAvailable()
-}
-
-const calculateTotalAmount = () => {
-  return orderForm.items.reduce((sum, item) => {
-    return sum + calculateItemSubtotal(item)
-  }, 0)
-}
-
-const handleSubmitOrder = async (print = false) => {
-  // 单页表单：提交时统一校验基本信息、商品明细、配送信息
-  try {
-    await basicFormRef.value?.validate()
-  } catch (error) {
-    ElMessage.warning('请完善基本信息')
-    return
-  }
-  if (orderForm.items.length === 0) {
-    ElMessage.warning('请至少添加一个商品')
-    return
-  }
-  const hasInvalidProduct = orderForm.items.some(item => !item.productId || item.quantity <= 0)
-  if (hasInvalidProduct) {
-    ElMessage.warning('请完善所有商品信息')
-    return
-  }
-  // 直营水站销售：行级水票抵扣校验（抵扣张数 ≤ 数量 且 ≤ 可用票数；未抵扣部分按分销价）
-  if (Number(orderForm.orderType) === 2) {
-    for (const row of orderForm.items) {
-      if (row.useTicket && row.ticketQty > 0) {
-        const avail = ticketMap.value[row.productId] || 0
-        if (row.ticketQty > row.quantity) {
-          ElMessage.warning('水票抵扣张数不能大于商品数量')
-          return
-        }
-        if (row.ticketQty > avail) {
-          ElMessage.warning('水票抵扣张数超过该水站可用票数，请减少抵扣张数')
-          return
-        }
-      }
+// 表单保存成功后：刷新列表；「提交/保存并打印」时拉详情打开打印预览
+const onOrderSaved = async ({ print, savedId }) => {
+  fetchData()
+  if (print && savedId) {
+    try {
+      const detailRes = await getOrderDetail(savedId)
+      currentOrder.value = detailRes.data
+      printDialogVisible.value = true
+    } catch (err) {
+      console.error('获取订单详情用于打印失败:', err)
+      ElMessage.warning('订单已保存，但获取打印数据失败，请到详情页重新打印')
     }
   }
-  try {
-    await deliveryFormRef.value?.validate()
-  } catch (error) {
-    ElMessage.warning('请完善配送信息')
-    return
-  }
-
-  submitLoading.value = true
-  try {
-    const orderData = {
-      ...orderForm,
-      orderAmount: calculateTotalAmount(),
-      totalAmount: calculateTotalAmount()
-    }
-    let savedId = null
-    if (isEditMode.value) {
-      savedId = editingOrderId.value
-      await updateOrder(savedId, orderData)
-      ElMessage.success('订单修改成功')
-    } else {
-      const res = await createOrder(orderData)
-      savedId = res.data?.id ?? res.data?.orderNo
-      ElMessage.success('订单创建成功')
-    }
-    createDialogVisible.value = false
-    fetchData()
-    // 提交并打印：拉取完整订单详情（含商品名称/规格/单位）后打开打印预览
-    if (print && savedId) {
-      try {
-        const detailRes = await getOrderDetail(savedId)
-        currentOrder.value = detailRes.data
-        printDialogVisible.value = true
-      } catch (err) {
-        console.error('获取订单详情用于打印失败:', err)
-        ElMessage.warning('订单已保存，但获取打印数据失败，请到详情页重新打印')
-      }
-    }
-  } catch (error) {
-    console.error(isEditMode.value ? '修改订单失败:' : '创建订单失败:', error)
-    ElMessage.error(error.response?.data?.message || (isEditMode.value ? '订单修改失败' : '订单创建失败'))
-  } finally {
-    submitLoading.value = false
-  }
 }
 
-const handleViewDetail = async (row) => {
-  try {
-    const res = await getOrderDetail(row.id)
-    if (res.data) {
-      currentOrder.value = res.data
-    }
-  } catch (error) {
-    console.error('获取订单详情失败:', error)
-    currentOrder.value = row
-  }
-  detailDialogVisible.value = true
+const handleViewDetail = (row) => {
+  detailDialogRef.value?.open(row)
+}
+
+// 详情弹窗点「修改」：打开表单弹窗回显（详情弹窗自行关闭）
+const onEditFromDetail = (order) => {
+  formDialogRef.value?.openEdit(order)
+}
+
+// 详情弹窗点「打印」
+const openPrint = (order) => {
+  currentOrder.value = order
+  printDialogVisible.value = true
 }
 
 const handleHardDelete = (row) => {
@@ -1231,15 +311,7 @@ const handleHardDelete = (row) => {
   }).catch(() => {})
 }
 
-const handlePrint = () => {
-  printDialogVisible.value = true
-}
-
 onMounted(() => {
-  fetchProductOptions()
-  fetchStationOptions()
-  fetchMachineOptions()
-  fetchStaffOptions()
   fetchData()
 })
 </script>
@@ -1251,7 +323,7 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .filter-form {
@@ -1265,7 +337,7 @@ onMounted(() => {
 }
 
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .money-text {
@@ -1273,11 +345,11 @@ onMounted(() => {
 }
 
 .text-muted {
-  color: #c0c4cc;
+  color: var(--text-3);
 }
 
 .total-text {
-  color: #f56c6c;
+  color: var(--el-color-danger);
   font-weight: 600;
 }
 
@@ -1285,124 +357,6 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
-}
-
-.form-sections {
-  padding: 0 4px;
-}
-
-.form-section {
-  margin-bottom: 12px;
-  padding: 8px 12px 12px;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  background: #fafafa;
-}
-
-.create-order-dialog :deep(.el-dialog__body) {
-  max-height: 72vh;
-  overflow-y: auto;
-}
-
-.step-form {
-  padding: 10px 20px;
-}
-
-.product-list-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding: 0 5px;
-}
-
-.product-list-header .title {
-  font-weight: 600;
-  font-size: 15px;
-  color: #303133;
-}
-
-.product-table {
-  margin-bottom: 15px;
-}
-
-/* 商品下拉：无库存项暗淡显示 */
-.option-out-of-stock {
-  opacity: 0.5;
-}
-
-:deep(.el-select-dropdown__item.is-disabled) {
-  color: #c0c4cc;
-}
-
-.order-total {
-  text-align: right;
-  padding-right: 20px;
-  font-size: 15px;
-}
-
-.total-amount {
-  color: #f56c6c;
-  font-weight: 600;
-  font-size: 18px;
-  margin-left: 8px;
-}
-
-.subtotal-text {
-  color: #f56c6c;
-  font-weight: 500;
-}
-
-.unit-label {
-  margin-left: 10px;
-  color: #606266;
-  font-size: 14px;
-}
-
-.order-detail {
-  padding: 5px;
-}
-
-.detail-section {
-  margin-bottom: 20px;
-}
-
-.section-title {
-  font-weight: 600;
-  font-size: 15px;
-  color: #303133;
-  margin-bottom: 12px;
-  padding-left: 5px;
-}
-
-.amount-summary {
-  background: #f5f7fa;
-  padding: 15px 20px;
-  border-radius: 6px;
-  margin-top: 10px;
-}
-
-.amount-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 8px;
-  font-size: 14px;
-  color: #606266;
-}
-
-.amount-row:last-child {
-  margin-bottom: 0;
-}
-
-.amount-row.total {
-  font-size: 16px;
-  font-weight: 600;
-  color: #f56c6c;
-}
-
-.amount-row span:last-child {
-  min-width: 100px;
-  text-align: right;
 }
 
 /* ===== 移动端 / 窄屏适配 ===== */
@@ -1413,58 +367,5 @@ onMounted(() => {
     margin-top: 4vh !important;
     margin-bottom: 4vh !important;
   }
-  .create-order-dialog :deep(.el-dialog__body) {
-    max-height: 82vh;
-  }
-  /* 表单标签转顶部布局，避免窄屏横向挤压 */
-  .create-order-dialog :deep(.el-form-item) {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .create-order-dialog :deep(.el-form-item__label) {
-    width: auto !important;
-    text-align: left;
-    justify-content: flex-start;
-    padding: 0 0 4px 0 !important;
-    line-height: 1.4;
-  }
-  .create-order-dialog :deep(.el-form-item__content) {
-    margin-left: 0 !important;
-    flex-wrap: wrap;
-  }
-  .create-order-dialog :deep(.el-input),
-  .create-order-dialog :deep(.el-select),
-  .create-order-dialog :deep(.el-input-number) {
-    width: 100% !important;
-  }
-  .create-order-dialog :deep(.el-radio-group) {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 14px;
-  }
-  .product-list-header {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  /* 对话框底部按钮在窄屏允许换行，避免分割按钮被挤压 */
-  .create-order-dialog :deep(.el-dialog__footer) {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
-  }
 }
-.ticket-hint {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #e6a23c;
-  line-height: 1.5;
-}
-.ticket-ok { color: #67c23a; font-weight: 600; }
-.ticket-short { color: #f56c6c; font-weight: 600; }
-.ticket-sub { font-size: 12px; line-height: 1.4; }
-.ticket-left { color: #909399; }
-.ticket-short-msg { color: #f56c6c; }
-.ticket-empty { font-size: 12px; color: #c0c4cc; }
 </style>

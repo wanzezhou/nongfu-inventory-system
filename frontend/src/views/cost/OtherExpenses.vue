@@ -92,12 +92,13 @@
       <div class="pager">
         <el-pagination
           v-model:current-page="page"
-          :page-size="pageSize"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
           :total="total"
-          layout="total, prev, pager, next"
-          small
+          layout="total, sizes, prev, pager, next, jumper"
           background
           @current-change="fetchList"
+          @size-change="onPageSizeChange"
         />
       </div>
     </el-card>
@@ -181,7 +182,11 @@ const rows = ref([])
 const total = ref(0)
 const sumAmount = ref(0)
 const page = ref(1)
-const pageSize = 10
+const pageSize = ref(10)
+const onPageSizeChange = () => {
+  page.value = 1
+  fetchList()
+}
 const dateRange = ref(null)
 const query = reactive({ category: '', keyword: '' })
 
@@ -216,7 +221,7 @@ const tagType = (c) => {
 }
 
 const buildParams = () => {
-  const params = { page: page.value, pageSize }
+  const params = { page: page.value, pageSize: pageSize.value }
   if (dateRange.value && dateRange.value.length === 2) {
     params.startDate = dateRange.value[0]
     params.endDate = dateRange.value[1]
@@ -368,7 +373,7 @@ onMounted(() => {
 }
 .filter-card {
   margin-bottom: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 .filter-form {
   display: flex;
@@ -384,18 +389,18 @@ onMounted(() => {
 .sum-bar {
   margin: 0 2px 10px;
   font-size: 13px;
-  color: #606266;
+  color: var(--text-2);
 }
 .sum-text {
-  color: #e6a23c;
+  color: var(--el-color-warning);
   font-weight: 700;
   font-size: 16px;
 }
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 .amount-text {
-  color: #f56c6c;
+  color: var(--el-color-danger);
   font-weight: 600;
 }
 .pager {

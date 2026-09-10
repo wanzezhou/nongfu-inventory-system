@@ -19,8 +19,8 @@
             <tr>
               <td class="info-label">客户名称:</td>
               <td class="info-value">{{ order.customerName }}</td>
-              <td class="info-label">经手人:</td>
-              <td class="info-value">{{ order.contactName || '-' }}</td>
+              <td class="info-label">创建人:</td>
+              <td class="info-value">{{ order.createdByName || '-' }}</td>
               <td class="info-label">单据编号:</td>
               <td class="info-value">{{ order.orderNo }}</td>
             </tr>
@@ -48,8 +48,8 @@
                 <th>规格</th>
                 <th>单位</th>
                 <th>数量</th>
-                <th>单价</th>
-                <th>金额</th>
+                <th v-if="!noPrice">单价</th>
+                <th v-if="!noPrice">金额</th>
                 <th>回桶</th>
               </tr>
             </thead>
@@ -61,18 +61,19 @@
                 <td>{{ item.unit || '-' }}</td>
                 <td align="center">{{ item.quantity }}</td>
                 <!-- 水票抵扣商品：不显示单价，显示“水票抵扣”（2026-08-27） -->
-                <td align="center">
+                <td v-if="!noPrice" align="center">
                   <template v-if="isTicketItem(item)">水票抵扣</template>
                   <template v-else>{{ formatMoney(item.unitPrice) }}</template>
                 </td>
-                <td align="right">{{ formatMoney(item.subtotal) }}</td>
+                <td v-if="!noPrice" align="right">{{ formatMoney(item.subtotal) }}</td>
                 <td></td>
               </tr>
               <tr class="total-row">
-                <td colspan="4">合计：{{ totalAmountChinese }}</td>
+                <!-- 官方平台销售/机台供货：不显示金额（单价为进货价口径，2026-09-07） -->
+                <td colspan="4">合计：{{ noPrice ? '--' : totalAmountChinese }}</td>
                 <td align="center">{{ totalQuantity }}</td>
-                <td></td>
-                <td align="right">{{ formatMoney(order.orderAmount) }}</td>
+                <td v-if="!noPrice"></td>
+                <td v-if="!noPrice" align="right">{{ formatMoney(order.orderAmount) }}</td>
                 <td></td>
               </tr>
             </tbody>
@@ -91,7 +92,7 @@
             </div>
           </div>
           <div class="footer-right">
-            <span class="label">收货单位经手人：</span>
+            <span class="label">收货单位创建人：</span>
             <span class="signature">（签字）</span>
           </div>
         </div>
@@ -136,6 +137,9 @@ watch(() => props.visible, (val) => {
 const isTicketItem = (item) => {
   return Number(props.order.orderType) === 2 && (Number(item.pricingType) === 2 || Number(item.ticketQty) > 0)
 }
+
+// 官方平台销售(1)/量贩机供货(4)/零售机供货(6)：不显示单价与金额（与详情弹窗口径一致）
+const noPrice = computed(() => [1, 4, 6].includes(Number(props.order.orderType)))
 
 const totalQuantity = computed(() => {
   return (props.order.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0)
@@ -389,7 +393,7 @@ const handlePrint = () => {
 }
 
 .print-table th {
-  background-color: #f5f5f5;
+  background-color: var(--bg);
   font-weight: bold;
 }
 

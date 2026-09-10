@@ -59,6 +59,7 @@
         style="width: 100%"
         v-loading="loading"
         border
+        stripe
       >
         <el-table-column prop="supplierName" label="供应商名称" min-width="160" />
         <el-table-column prop="contactName" label="联系人" width="100" />
@@ -424,7 +425,7 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .filter-form {
@@ -438,7 +439,7 @@ onMounted(() => {
 }
 
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .pagination-wrapper {

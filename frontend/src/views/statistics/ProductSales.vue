@@ -96,7 +96,7 @@
     <!-- 概览统计卡片 -->
     <el-row :gutter="20" class="summary-row">
       <el-col :span="6" v-for="(card, idx) in summaryCards" :key="idx" :style="{ animationDelay: idx * 0.08 + 's' }">
-        <div class="summary-card shine-effect" :class="card.cls">
+        <div class="summary-card" :class="card.cls">
           <div class="sc-content">
             <div class="sc-info">
               <div class="sc-label">{{ card.label }}</div>
@@ -131,6 +131,7 @@
             style="width: 100%"
             v-loading="loading"
             border
+            stripe
             height="480"
             @sort-change="handleSortChange"
           >
@@ -440,16 +441,14 @@ const initBarChart = () => {
         data: top10.map(item => item.quantity),
         barWidth: 16,
         itemStyle: {
-          borderRadius: [0, 8, 8, 0],
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#C7000B' },
-            { offset: 1, color: '#E63946' }
-          ])
+          borderRadius: [0, 6, 6, 0],
+          // ECharts canvas 不支持 CSS var()，字面量须与 token --primary 保持一致（DESIGN.md）
+          color: '#A8201A'
         },
         label: {
           show: true,
           position: 'right',
-          color: '#8E8E9E',
+          color: '#7A7A72',
           fontSize: 11
         }
       }
@@ -482,7 +481,7 @@ onBeforeUnmount(() => {
 
 .filter-card {
   margin-bottom: 20px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   border: none;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
 }
@@ -503,55 +502,33 @@ onBeforeUnmount(() => {
 }
 
 .summary-row .el-col {
-  animation: scEnter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fadeUp 0.4s ease-out both;
 }
 
-@keyframes scEnter {
-  0% {
-    opacity: 0;
-    transform: translateY(18px) scale(0.96);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .summary-card {
   position: relative;
-  border-radius: 16px;
-  padding: 22px 24px;
-  color: #fff;
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  overflow: hidden;
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease;
   height: 100%;
 }
 
 .summary-card:hover {
-  transform: translateY(-4px);
-  box-shadow:
-    0 16px 32px rgba(0, 0, 0, 0.12),
-    0 4px 12px rgba(0, 0, 0, 0.06);
+  border-color: rgba(168, 32, 26, 0.25);
 }
 
-.summary-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
-  pointer-events: none;
-}
-
-.card-red   { background: linear-gradient(135deg, #C7000B 0%, #9A0008 100%); }
-.card-green { background: linear-gradient(135deg, #0B8043 0%, #066B36 100%); }
-.card-blue  { background: linear-gradient(135deg, #2563EB 0%, #1E40AF 100%); }
-.card-gold  { background: linear-gradient(135deg, #C5A55A 0%, #A88842 100%); }
+.card-red   { --accent: var(--primary); }
+.card-green { --accent: var(--green); }
+.card-blue  { --accent: var(--text-2); }
+.card-gold  { --accent: var(--gold); }
 
 .sc-content {
   display: flex;
@@ -563,44 +540,37 @@ onBeforeUnmount(() => {
 
 .sc-label {
   font-size: 13px;
-  opacity: 0.92;
+  color: var(--text-2);
   margin-bottom: 8px;
-  letter-spacing: 0.5px;
 }
 
 .sc-value {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   margin-bottom: 6px;
-  letter-spacing: -0.5px;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .sc-desc {
   font-size: 12px;
-  opacity: 0.85;
+  color: var(--text-3);
 }
 
 .sc-icon {
-  opacity: 0.88;
-  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.summary-card:hover .sc-icon {
-  transform: scale(1.12) rotate(-5deg);
+  color: var(--accent, var(--text-2));
 }
 
 .chart-card,
 .table-card {
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   border: none;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
   margin-bottom: 20px;
 }
 
 .chart-card :deep(.el-card__header) {
-  border-bottom: 1px solid #f5f5f7;
+  border-bottom: 1px solid var(--bg);
 }
 
 .chart-header {
@@ -612,15 +582,15 @@ onBeforeUnmount(() => {
 .chart-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1A1A2E;
+  color: var(--text);
 }
 
 .chart-badge {
-  font-size: 11px;
-  color: #C7000B;
-  background: rgba(199, 0, 11, 0.08);
+  font-size: 12px;
+  color: var(--primary);
+  background: var(--primary-light);
   padding: 3px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-weight: 500;
 }
 
@@ -632,16 +602,16 @@ onBeforeUnmount(() => {
 .code-text {
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 12px;
-  color: #5A5A6E;
+  color: var(--text-2);
 }
 
 .quantity-text {
   font-weight: 600;
-  color: #1A1A2E;
+  color: var(--text);
 }
 
 .text-muted {
-  color: #B8B8C4;
+  color: var(--text-3);
 }
 
 /* 窄屏/移动端适配 */

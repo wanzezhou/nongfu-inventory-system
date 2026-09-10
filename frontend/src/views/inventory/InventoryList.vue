@@ -82,6 +82,7 @@
         style="width: 100%"
         v-loading="loading"
         border
+        stripe
         @sort-change="handleSortChange"
       >
         <el-table-column prop="image" label="商品图片" width="80" align="center">
@@ -134,421 +135,61 @@
       </div>
     </el-card>
 
-    <!-- 入库对话框 -->
-    <el-dialog
-      v-model="stockInVisible"
-      title="商品入库"
-      width="700px"
-      :close-on-click-modal="false"
-      destroy-on-close
-    >
-      <el-form
-        ref="stockInFormRef"
-        :model="stockInForm"
-        :rules="stockInRules"
-        label-width="100px"
-      >
-        <el-card class="stock-table-card" shadow="never">
-          <div style="margin-bottom: 10px;">
-            <el-select
-              v-model="stockInForm.productId"
-              placeholder="选择商品添加"
-              filterable
-              style="width: 300px"
-              size="default"
-            >
-              <el-option
-                v-for="item in productOptions"
-                :key="item.id"
-                :label="`${item.name} (${item.code})`"
-                :value="item.id"
-              />
-            </el-select>
-            <el-button type="primary" @click="addStockInItem" style="margin-left: 10px;">
-              <el-icon><Plus /></el-icon>
-              添加
-            </el-button>
-          </div>          <el-table :data="stockInForm.items" border size="small">
-            <el-table-column label="商品名称" min-width="150">
-              <template #default="{ row }">
-                {{ getProductName(row.productId) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="规格" width="100">
-              <template #default="{ row }">
-                {{ getProductSpec(row.productId) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="入库数量" width="130" align="center">
-              <template #default="{ row }">
-                <el-input-number v-model="row.quantity" :min="1" :precision="0" :step="10" size="small" />
-              </template>
-            </el-table-column>
-            <el-table-column label="进货单价" width="130" align="center">
-              <template #default="{ row }">
-                <el-input-number v-model="row.unitPrice" :min="0" :precision="2" :step="0.5" size="small" />
-              </template>
-            </el-table-column>
-            <el-table-column label="小计" width="100" align="center">
-              <template #default="{ row }">
-                <span class="price-text">¥{{ (row.quantity * row.unitPrice).toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="60" align="center">
-              <template #default="{ $index }">
-                <el-button type="danger" link @click="removeStockInItem($index)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div class="stock-total">
-            合计：<span class="total-text">¥{{ stockInTotal.toFixed(2) }}</span>
-          </div>
-        </el-card>
-        <el-form-item label="付款账户" prop="accountId" style="margin-top: 16px;">
-          <AccountSelect
-            v-model="stockInForm.accountId"
-            :accounts="enabledAccounts"
-            placeholder="请选择付款公司账户"
-            :is-disabled="(a) => a.currentBalance < stockInTotal"
-            @change="onAccountChange"
-          />
-          <div v-if="stockInForm.accountId" class="account-tip" :class="{ 'is-danger': !isBalanceEnough }">
-            <template v-if="isBalanceEnough">
-              本次扣款 ¥{{ stockInTotal.toFixed(2) }}，扣款后余额 ¥{{ formatMoney(selectedBalance - stockInTotal) }}
-            </template>
-            <template v-else>
-              <el-icon><WarningFilled /></el-icon>
-              账户余额不足，当前可用 ¥{{ formatMoney(selectedBalance) }}，需扣款 ¥{{ stockInTotal.toFixed(2) }}
-            </template>
-          </div>
-          <div v-else class="account-tip is-muted">
-            入库金额将从所选公司账户实时扣除，并生成资金流水
-          </div>
-        </el-form-item>
-        <el-form-item label="供应商" prop="supplierId">
-          <el-select
-            v-model="stockInForm.supplierId"
-            placeholder="请选择供应商"
-            filterable
-            style="width: 100%"
-          >
-            <el-option
-              v-for="item in supplierOptions"
-              :key="item.id || item.supplierId"
-              :label="item.supplierName || item.name"
-              :value="item.id || item.supplierId"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="备注" prop="remark">
-          <el-input v-model="stockInForm.remark" type="textarea" :rows="2" placeholder="请输入备注" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="stockInVisible = false">取消</el-button>
-        <el-button type="success" :loading="stockInLoading" @click="handleStockInSubmit">确认入库</el-button>
-      </template>
-    </el-dialog>
+    <!-- 入库对话框（2026-09-09 拆分为独立组件） -->
+    <StockInDialog
+      ref="stockInDialogRef"
+      :product-options="productOptions"
+      :supplier-options="supplierOptions"
+      :account-options="accountOptions"
+      @success="fetchData"
+    />
 
     <!-- 出库对话框 -->
-    <el-dialog
-      v-model="stockOutVisible"
-      title="商品出库"
-      width="700px"
-      :close-on-click-modal="false"
-      destroy-on-close
-    >
-      <el-form
-        ref="stockOutFormRef"
-        :model="stockOutForm"
-        :rules="stockOutRules"
-        label-width="100px"
-      >
-        <el-card class="stock-table-card" shadow="never">
-          <div style="margin-bottom: 10px;">
-            <el-select
-              v-model="stockOutForm.productId"
-              placeholder="选择商品添加"
-              filterable
-              style="width: 300px"
-              size="default"
-            >
-              <el-option
-                v-for="item in productOptions"
-                :key="item.id"
-                :label="`${item.name} (${item.code}) - 库存: ${item.stock || 0}`"
-                :value="item.id"
-              />
-            </el-select>
-            <el-button type="warning" @click="addStockOutItem" style="margin-left: 10px;">
-              <el-icon><Plus /></el-icon>
-              添加
-            </el-button>
-          </div>
-          <el-table :data="stockOutForm.items" border size="small">
-            <el-table-column label="商品名称" min-width="150">
-              <template #default="{ row }">
-                {{ getProductName(row.productId) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="规格" width="100">
-              <template #default="{ row }">
-                {{ getProductSpec(row.productId) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="当前库存" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag size="small" :type="getProductStock(row.productId) < row.quantity ? 'danger' : 'success'">
-                  {{ getProductStock(row.productId) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="出库数量" width="130" align="center">
-              <template #default="{ row }">
-                <el-input-number v-model="row.quantity" :min="1" :precision="0" :step="10" size="small" />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="60" align="center">
-              <template #default="{ $index }">
-                <el-button type="danger" link @click="removeStockOutItem($index)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-        <el-form-item label="出库类型" prop="type" style="margin-top: 16px;">
-          <el-select v-model="stockOutForm.type" placeholder="请选择出库类型" style="width: 100%">
-            <el-option label="销售出库" :value="1" />
-            <el-option label="调拨出库" :value="2" />
-            <el-option label="其他" :value="3" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="备注" prop="remark">
-          <el-input v-model="stockOutForm.remark" type="textarea" :rows="2" placeholder="请输入备注" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="stockOutVisible = false">取消</el-button>
-        <el-button type="warning" :loading="stockOutLoading" @click="handleStockOutSubmit">确认出库</el-button>
-      </template>
-    </el-dialog>
+    <StockOutDialog
+      ref="stockOutDialogRef"
+      :product-options="productOptions"
+      :inventory-list="tableData"
+      @success="fetchData"
+    />
 
     <!-- 盘库对话框 -->
-    <el-dialog
-      v-model="checkStockVisible"
-      title="盘库调整"
-      width="450px"
-      :close-on-click-modal="false"
-      destroy-on-close
-    >
-      <el-form
-        ref="checkStockFormRef"
-        :model="checkStockForm"
-        :rules="checkStockRules"
-        label-width="100px"
-      >
-        <el-form-item label="商品名称">
-          <span class="form-text">{{ checkStockForm.productName }}</span>
-        </el-form-item>
-        <el-form-item label="当前库存">
-          <el-tag type="info">{{ checkStockForm.currentStock }}</el-tag>
-        </el-form-item>
-        <el-form-item label="调整后库存" prop="newStock">
-          <el-input-number v-model="checkStockForm.newStock" :precision="0" :step="10" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="变动说明">
-          <div class="stock-diff">
-            变动数量：
-            <span :class="stockDiff >= 0 ? 'diff-add' : 'diff-sub'">
-              {{ stockDiff >= 0 ? '+' : '' }}{{ stockDiff }}
-            </span>
-            （{{ stockDiff >= 0 ? '增加' : '减少' }}）
-          </div>
-        </el-form-item>
-        <el-form-item label="调整原因" prop="reason">
-          <el-select v-model="checkStockForm.reason" placeholder="请选择原因" style="width: 100%">
-            <el-option label="盘点差异" value="盘点差异" />
-            <el-option label="破损损耗" value="破损损耗" />
-            <el-option label="系统错误" value="系统错误" />
-            <el-option label="其他原因" value="其他原因" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="stockDiff > 0" label="付款账户" prop="accountId">
-          <AccountSelect
-            v-model="checkStockForm.accountId"
-            :accounts="enabledAccounts"
-            placeholder="请选择付款公司账户（盘库增加按 0 元入库）"
-          />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="checkStockForm.remark" type="textarea" :rows="2" placeholder="请输入备注" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="checkStockVisible = false">取消</el-button>
-        <el-button type="primary" :loading="checkStockLoading" @click="handleCheckStockSubmit">确认调整</el-button>
-      </template>
-    </el-dialog>
+    <CheckStockDialog
+      ref="checkStockDialogRef"
+      :account-options="accountOptions"
+      @success="fetchData"
+    />
 
     <!-- 出入库记录对话框 -->
-    <el-dialog
-      v-model="purchaseVisible"
-      title="出入库记录"
-      width="1000px"
-      :close-on-click-modal="false"
-      destroy-on-close
-    >
-      <el-tabs v-model="recordTab" @tab-change="handleRecordTabChange">
-      <el-tab-pane label="入库记录" name="in">
-      <el-form :inline="true" :model="purchaseQuery" class="filter-form">
-        <el-form-item label="关键词">
-          <el-input
-            v-model="purchaseQuery.keyword"
-            placeholder="入库单号 / 商品名称"
-            clearable
-            style="width: 200px"
-            @keyup.enter="fetchPurchaseRecords"
-          />
-        </el-form-item>
-        <el-form-item label="付款账户">
-          <el-select v-model="purchaseQuery.accountId" placeholder="全部" clearable style="width: 180px">
-            <el-option v-for="a in accountOptions" :key="a.accountId" :label="a.accountName" :value="a.accountId" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="purchaseQuery.status" placeholder="全部" clearable style="width: 120px">
-            <el-option label="正常" :value="1" />
-            <el-option label="已作废" :value="2" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="fetchPurchaseRecords">
-            <el-icon><Search /></el-icon>
-            搜索
-          </el-button>
-        </el-form-item>
-      </el-form>
-
-      <el-table :data="purchaseList" border size="small" v-loading="purchaseLoading" max-height="420">
-        <el-table-column prop="purchaseId" label="入库单号" width="190" />
-        <el-table-column prop="productName" label="商品" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="quantity" label="数量" width="80" align="center" />
-        <el-table-column label="单价" width="100" align="right">
-          <template #default="{ row }">¥{{ formatMoney(row.unitPrice) }}</template>
-        </el-table-column>
-        <el-table-column label="扣款金额" width="110" align="right">
-          <template #default="{ row }">
-            <span class="price-text">¥{{ formatMoney(row.paidAmount) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="accountName" label="付款账户" width="140" show-overflow-tooltip />
-        <el-table-column label="状态" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 2 ? 'danger' : 'success'" size="small">
-              {{ row.status === 2 ? '已作废' : '正常' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="handler" label="经手人" width="90" align="center" />
-        <el-table-column prop="createdAt" label="入库时间" width="160" />
-        <el-table-column label="操作" width="80" align="center" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="row.status !== 2" type="danger" link @click="handleVoidPurchase(row)">作废</el-button>
-            <span v-else class="void-text">—</span>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div class="pagination-wrapper">
-        <el-pagination
-          v-model:current-page="purchasePagination.page"
-          v-model:page-size="purchasePagination.pageSize"
-          :page-sizes="[10, 20, 50]"
-          :total="purchasePagination.total"
-          layout="total, sizes, prev, pager, next, jumper"
-          @size-change="fetchPurchaseRecords"
-          @current-change="fetchPurchaseRecords"
-        />
-      </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="出库记录" name="out">
-        <el-form :inline="true" :model="outQuery" class="filter-form">
-          <el-form-item label="关键词">
-            <el-input
-              v-model="outQuery.keyword"
-              placeholder="出库单号 / 商品名称"
-              clearable
-              style="width: 200px"
-              @keyup.enter="fetchOutRecords"
-            />
-          </el-form-item>
-          <el-form-item label="出库类型">
-            <el-select v-model="outQuery.outType" placeholder="全部" clearable style="width: 140px">
-              <el-option label="销售出库" :value="1" />
-              <el-option label="调拨出库" :value="2" />
-              <el-option label="其他" :value="3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" @click="fetchOutRecords">
-              <el-icon><Search /></el-icon>
-              搜索
-            </el-button>
-          </el-form-item>
-        </el-form>
-
-        <el-table :data="outList" border size="small" v-loading="outLoading" max-height="420">
-          <el-table-column prop="recordId" label="出库单号" width="190" />
-          <el-table-column prop="productName" label="商品" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="quantity" label="数量" width="80" align="center" />
-          <el-table-column label="出库类型" width="100" align="center">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.outType === 1 ? 'warning' : 'info'">
-                {{ { 1: '销售出库', 2: '调拨出库', 3: '其他' }[row.outType] || '未知' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="stockAfter" label="出库后库存" width="100" align="center" />
-          <el-table-column prop="handler" label="经手人" width="90" align="center" />
-          <el-table-column prop="createdAt" label="出库时间" width="160" />
-          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-        </el-table>
-
-        <div class="pagination-wrapper">
-          <el-pagination
-            v-model:current-page="outPagination.page"
-            v-model:page-size="outPagination.pageSize"
-            :page-sizes="[10, 20, 50]"
-            :total="outPagination.total"
-            layout="total, sizes, prev, pager, next, jumper"
-            @size-change="fetchOutRecords"
-            @current-change="fetchOutRecords"
-          />
-        </div>
-      </el-tab-pane>
-      </el-tabs>
-    </el-dialog>
+    <InventoryRecordsDialog
+      ref="recordsDialogRef"
+      :account-options="accountOptions"
+      @changed="fetchData"
+    />
 
     <ImportDialog v-model="importDialogVisible" module="inventory" matchFieldText="商品编码" @success="fetchData" />
   </div>
 </template>
 
 <script setup>
+// 库存列表页（2026-09-09 拆分）：只负责列表查询/汇总/操作编排。
+// 入库/出库/盘库/出入库记录弹窗见同目录各 Dialog 组件。
 import { usePagination } from '@/composables/usePagination'
-import AccountSelect from '@/components/AccountSelect.vue'
 import { formatMoney } from '@/utils/format'
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  Search, Refresh, Plus, Minus, Edit, Picture, Download, Upload, Wallet, Tickets, WarningFilled
+  Search, Refresh, Plus, Minus, Edit, Picture, Download, Upload, Wallet, Tickets
 } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
-import { getInventoryList, stockIn, stockOut, getPurchaseRecords, voidPurchaseRecord, getStockOutRecords } from '@/api/inventory'
+import { getInventoryList } from '@/api/inventory'
 import { getAccounts } from '@/api/account'
 import { getProductList, getCategoryList } from '@/api/product'
 import { getAllSuppliers } from '@/api/supplier'
 import { exportData, downloadBlob } from '@/api/excel'
 import ImportDialog from '@/components/ImportDialog.vue'
+import StockInDialog from './StockInDialog.vue'
+import StockOutDialog from './StockOutDialog.vue'
+import CheckStockDialog from './CheckStockDialog.vue'
+import InventoryRecordsDialog from './InventoryRecordsDialog.vue'
 
 const importDialogVisible = ref(false)
 const exporting = ref(false)
@@ -564,16 +205,11 @@ const handleExport = async () => {
 }
 
 const loading = ref(false)
-const stockInLoading = ref(false)
-const stockOutLoading = ref(false)
-const checkStockLoading = ref(false)
-const stockInVisible = ref(false)
-const stockOutVisible = ref(false)
-const checkStockVisible = ref(false)
 
-const stockInFormRef = ref(null)
-const stockOutFormRef = ref(null)
-const checkStockFormRef = ref(null)
+const stockInDialogRef = ref(null)
+const stockOutDialogRef = ref(null)
+const checkStockDialogRef = ref(null)
+const recordsDialogRef = ref(null)
 
 const queryForm = reactive({
   keyword: '',
@@ -594,9 +230,6 @@ const supplierOptions = ref([])
 const inventorySummary = ref({ totalValue: 0 })
 const accountOptions = ref([])
 
-// 启用的公司账户（入库付款账户候选）
-const enabledAccounts = computed(() => accountOptions.value.filter(a => a.status))
-
 const fetchAccountOptions = async () => {
   try {
     const res = await getAccounts()
@@ -604,81 +237,6 @@ const fetchAccountOptions = async () => {
   } catch (e) {
     console.error('获取公司账户失败:', e)
   }
-}
-
-const stockInForm = reactive({
-  productId: null,
-  items: [],
-  supplierId: null,
-  accountId: null,
-  remark: ''
-})
-
-const stockOutForm = reactive({
-  productId: null,
-  items: [],
-  type: 1,
-  remark: ''
-})
-
-const checkStockForm = reactive({
-  productId: null,
-  productName: '',
-  currentStock: 0,
-  newStock: 0,
-  reason: '',
-  accountId: null,
-  remark: ''
-})
-
-const stockInRules = {
-  items: [{ required: true, message: '请至少添加一个商品', trigger: 'change' }],
-  accountId: [
-    { required: true, message: '请选择付款公司账户', trigger: 'change' },
-    { validator: validateAccountBalance, trigger: 'change' }
-  ]
-}
-
-const stockOutRules = {
-  items: [{ required: true, message: '请至少添加一个商品', trigger: 'change' }]
-}
-
-const checkStockRules = {
-  newStock: [{ required: true, message: '请输入调整后库存', trigger: 'blur' }],
-  reason: [{ required: true, message: '请选择调整原因', trigger: 'change' }],
-  accountId: [{ validator: validateCheckStockAccount, trigger: 'change' }]
-}
-
-// 盘库增加计入入库（0 元），同样要求指定付款账户
-function validateCheckStockAccount(rule, value, callback) {
-  if (stockDiff.value > 0 && !value) {
-    return callback(new Error('盘库增加需选择付款公司账户'))
-  }
-  callback()
-}
-
-const stockDiff = computed(() => {
-  return checkStockForm.newStock - checkStockForm.currentStock
-})
-
-const stockInTotal = computed(() => {
-  return stockInForm.items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0)
-})
-
-// 所选账户的可用余额 / 余额是否覆盖本次扣款
-const selectedBalance = computed(() => {
-  const acc = enabledAccounts.value.find(a => a.accountId === stockInForm.accountId)
-  return acc ? Number(acc.currentBalance) || 0 : 0
-})
-
-const isBalanceEnough = computed(() => selectedBalance.value + 1e-9 >= stockInTotal.value)
-
-function validateAccountBalance(rule, value, callback) {
-  if (!value) return callback()
-  if (!isBalanceEnough.value) {
-    return callback(new Error(`账户余额不足，可用 ¥${formatMoney(selectedBalance.value)}，需扣款 ¥${stockInTotal.value.toFixed(2)}`))
-  }
-  callback()
 }
 
 const getStockClass = (stock) => {
@@ -689,21 +247,6 @@ const getStockClass = (stock) => {
   if (s < 200) return 'stock-warning'
   if (s < 1000) return 'stock-normal'
   return 'stock-good'
-}
-
-const getProductName = (productId) => {
-  const product = productOptions.value.find(p => p.id === productId)
-  return product ? product.name : ''
-}
-
-const getProductSpec = (productId) => {
-  const product = productOptions.value.find(p => p.id === productId)
-  return product ? product.spec : ''
-}
-
-const getProductStock = (productId) => {
-  const product = tableData.value.find(p => p.id === productId)
-  return product ? product.stock : 0
 }
 
 const fetchData = async () => {
@@ -787,309 +330,24 @@ const handleSortChange = ({ prop, order }) => {
   fetchData()
 }
 
-// 入库相关
+// 打开各弹窗前刷新账户余额（余额校验依赖最新 currentBalance）
 const openStockInDialog = () => {
-  stockInForm.productId = null
-  stockInForm.items = []
-  stockInForm.supplierId = supplierOptions.value.length > 0 ? (supplierOptions.value[0].id || supplierOptions.value[0].supplierId) : null
-  stockInForm.accountId = null
-  stockInForm.remark = ''
-  stockInVisible.value = true
   fetchAccountOptions()
-  stockInFormRef.value?.clearValidate()
+  stockInDialogRef.value?.open()
 }
 
-const onAccountChange = () => {
-  stockInFormRef.value?.validateField('accountId')
-}
-
-const addStockInItem = () => {
-  if (!stockInForm.productId) {
-    ElMessage.warning('请先选择商品')
-    return
-  }
-  const exists = stockInForm.items.find(item => item.productId === stockInForm.productId)
-  if (exists) {
-    ElMessage.warning('该商品已在列表中')
-    return
-  }
-  const product = productOptions.value.find(p => p.id === stockInForm.productId)
-  stockInForm.items.push({
-    productId: stockInForm.productId,
-    quantity: 10,
-    unitPrice: product?.purchasePrice || 0
-  })
-  stockInForm.productId = null
-}
-
-const removeStockInItem = (index) => {
-  stockInForm.items.splice(index, 1)
-}
-
-const handleStockInSubmit = async () => {
-  if (stockInForm.items.length === 0) {
-    ElMessage.warning('请至少添加一个商品')
-    return
-  }
-  try {
-    await stockInFormRef.value?.validate()
-  } catch (error) {
-    return
-  }
-  if (!isBalanceEnough.value) {
-    ElMessage.error(`账户余额不足，可用 ¥${formatMoney(selectedBalance.value)}，需扣款 ¥${stockInTotal.value.toFixed(2)}`)
-    return
-  }
-
-  stockInLoading.value = true
-  const doneItems = []
-  try {
-    // 逐条入库：单条失败即中止，已成功的部分保留（每条独立事务，各自对应扣款与流水）
-    for (const item of stockInForm.items) {
-      await stockIn({
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        supplierId: stockInForm.supplierId,
-        accountId: stockInForm.accountId,
-        remark: stockInForm.remark
-      })
-      doneItems.push(item.productId)
-    }
-    ElMessage.success(`入库成功，共 ${doneItems.length} 条，扣款 ¥${stockInTotal.value.toFixed(2)}`)
-    stockInVisible.value = false
-    fetchData()
-  } catch (error) {
-    console.error('入库失败:', error)
-    ElMessage.error((error?.response?.data?.message) || `入库失败：已完成 ${doneItems.length} 条后中断`)
-    fetchData()
-  } finally {
-    stockInLoading.value = false
-  }
-}
-
-// 出库相关
 const openStockOutDialog = () => {
-  stockOutForm.productId = null
-  stockOutForm.items = []
-  stockOutForm.type = 1
-  stockOutForm.remark = ''
-  stockOutVisible.value = true
+  stockOutDialogRef.value?.open()
 }
 
-const addStockOutItem = () => {
-  if (!stockOutForm.productId) {
-    ElMessage.warning('请先选择商品')
-    return
-  }
-  const exists = stockOutForm.items.find(item => item.productId === stockOutForm.productId)
-  if (exists) {
-    ElMessage.warning('该商品已在列表中')
-    return
-  }
-  stockOutForm.items.push({
-    productId: stockOutForm.productId,
-    quantity: 10
-  })
-  stockOutForm.productId = null
-}
-
-const removeStockOutItem = (index) => {
-  stockOutForm.items.splice(index, 1)
-}
-
-const handleStockOutSubmit = async () => {
-  if (stockOutForm.items.length === 0) {
-    ElMessage.warning('请至少添加一个商品')
-    return
-  }
-  for (const item of stockOutForm.items) {
-    const stock = getProductStock(item.productId)
-    if (item.quantity > stock) {
-      ElMessage.error(`${getProductName(item.productId)} 库存不足，当前库存: ${stock}`)
-      return
-    }
-  }
-  stockOutLoading.value = true
-  try {
-    for (const item of stockOutForm.items) {
-      await stockOut({
-        productId: item.productId,
-        quantity: item.quantity,
-        type: stockOutForm.type,
-        remark: stockOutForm.remark
-      })
-    }
-    ElMessage.success('出库成功')
-    stockOutVisible.value = false
-    fetchData()
-  } catch (error) {
-    console.error('出库失败:', error)
-    ElMessage.error(error.message || '出库失败，请检查库存后重试')
-  } finally {
-    stockOutLoading.value = false
-  }
-}
-
-// 盘库相关
 const handleCheckStock = (row) => {
-  checkStockForm.productId = row.id
-  checkStockForm.productName = row.name
-  checkStockForm.currentStock = row.stock || 0
-  checkStockForm.newStock = row.stock || 0
-  checkStockForm.reason = ''
-  checkStockForm.accountId = enabledAccounts.value.length > 0 ? enabledAccounts.value[0].accountId : null
-  checkStockForm.remark = ''
-  checkStockVisible.value = true
   fetchAccountOptions()
-  checkStockFormRef.value?.clearValidate()
+  checkStockDialogRef.value?.open(row)
 }
-
-const handleCheckStockSubmit = async () => {
-  try {
-    await checkStockFormRef.value?.validate()
-  } catch (error) {
-    return
-  }
-  checkStockLoading.value = true
-  try {
-    const diff = stockDiff.value
-    if (diff > 0) {
-      await stockIn({
-        productId: checkStockForm.productId,
-        quantity: diff,
-        unitPrice: 0,
-        supplier: '盘库调整',
-        accountId: checkStockForm.accountId,
-        remark: `盘库增加: ${checkStockForm.reason}，${checkStockForm.remark || ''}`
-      })
-    } else if (diff < 0) {
-      await stockOut({
-        productId: checkStockForm.productId,
-        quantity: Math.abs(diff),
-        type: 3,
-        remark: `盘库减少: ${checkStockForm.reason}，${checkStockForm.remark || ''}`
-      })
-    }
-    ElMessage.success('库存调整成功')
-    checkStockVisible.value = false
-    fetchData()
-  } catch (error) {
-    console.error('库存调整失败:', error)
-    ElMessage.error((error?.response?.data?.message) || '库存调整失败')
-  } finally {
-    checkStockLoading.value = false
-  }
-}
-
-// 入库记录（列表 + 作废）
-const purchaseVisible = ref(false)
-const purchaseLoading = ref(false)
-const purchaseList = ref([])
-const purchaseQuery = reactive({
-  keyword: '',
-  accountId: null,
-  status: null
-})
-const purchasePagination = reactive({
-  page: 1,
-  pageSize: 10,
-  total: 0
-})
-
-// 出库台账（出入库记录对话框的「出库记录」Tab）
-const recordTab = ref('in')
-const outList = ref([])
-const outLoading = ref(false)
-const outQuery = reactive({
-  keyword: '',
-  outType: null
-})
-const outPagination = reactive({
-  page: 1,
-  pageSize: 10,
-  total: 0
-})
 
 const openPurchaseRecordsDialog = () => {
-  purchaseQuery.keyword = ''
-  purchaseQuery.accountId = null
-  purchaseQuery.status = null
-  purchasePagination.page = 1
-  outQuery.keyword = ''
-  outQuery.outType = null
-  outPagination.page = 1
-  recordTab.value = 'in'
-  purchaseVisible.value = true
   fetchAccountOptions()
-  fetchPurchaseRecords()
-}
-
-const handleRecordTabChange = (tab) => {
-  if (tab === 'out') fetchOutRecords()
-}
-
-const fetchOutRecords = async () => {
-  outLoading.value = true
-  try {
-    const res = await getStockOutRecords({
-      keyword: outQuery.keyword || undefined,
-      outType: outQuery.outType ?? undefined,
-      page: outPagination.page,
-      pageSize: outPagination.pageSize
-    })
-    outList.value = res.data?.list || []
-    outPagination.total = res.data?.total || 0
-  } catch (error) {
-    console.error('获取出库台账失败:', error)
-    ElMessage.error('获取出库台账失败')
-  } finally {
-    outLoading.value = false
-  }
-}
-
-const fetchPurchaseRecords = async () => {
-  purchaseLoading.value = true
-  try {
-    const res = await getPurchaseRecords({
-      keyword: purchaseQuery.keyword || undefined,
-      accountId: purchaseQuery.accountId || undefined,
-      status: purchaseQuery.status ?? undefined,
-      page: purchasePagination.page,
-      pageSize: purchasePagination.pageSize
-    })
-    purchaseList.value = res.data?.list || []
-    purchasePagination.total = res.data?.total || 0
-  } catch (error) {
-    console.error('获取入库记录失败:', error)
-    ElMessage.error('获取入库记录失败')
-  } finally {
-    purchaseLoading.value = false
-  }
-}
-
-const handleVoidPurchase = async (row) => {
-  try {
-    const { value } = await ElMessageBox.prompt(
-      `作废后将回退库存 ${row.quantity}，并从「${row.accountName || '—'}」原路退回 ¥${formatMoney(row.paidAmount)}，操作不可撤销。`,
-      '作废入库单',
-      {
-        confirmButtonText: '确认作废',
-        cancelButtonText: '取消',
-        inputPlaceholder: '请输入作废原因',
-        inputValidator: (v) => (v && String(v).trim() ? true : '作废原因不能为空'),
-        type: 'warning'
-      }
-    )
-    await voidPurchaseRecord(row.purchaseId, { reason: String(value).trim() })
-    ElMessage.success('入库单已作废，款项原路退回')
-    fetchPurchaseRecords()
-    fetchData()
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') return
-    console.error('作废入库单失败:', error)
-    ElMessage.error((error?.response?.data?.message) || '作废入库单失败')
-  }
+  recordsDialogRef.value?.open()
 }
 
 onMounted(() => {
@@ -1108,12 +366,12 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .summary-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .summary-item {
@@ -1128,20 +386,20 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 14px;
-  color: #606266;
+  color: var(--text-2);
   font-weight: 600;
 }
 
 .summary-value {
   font-size: 28px;
   font-weight: 700;
-  color: #409eff;
+  color: var(--text);
   line-height: 1.2;
 }
 
 .summary-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .filter-form {
@@ -1155,7 +413,7 @@ onMounted(() => {
 }
 
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .pagination-wrapper {
@@ -1167,69 +425,21 @@ onMounted(() => {
 .product-thumb {
   width: 50px;
   height: 50px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .no-image {
   width: 50px;
   height: 50px;
-  background: #f5f7fa;
-  border-radius: 6px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto;
-  color: #c0c4cc;
+  color: var(--text-3);
   font-size: 24px;
-}
-
-.stock-table-card {
-  border: 1px solid #ebeef5;
-  margin-bottom: 0;
-}
-
-.stock-total {
-  margin-top: 12px;
-  text-align: right;
-  font-size: 14px;
-  color: #606266;
-}
-
-.total-text {
-  color: #f56c6c;
-  font-size: 18px;
-  font-weight: 600;
-  margin-left: 6px;
-}
-
-.price-text {
-  color: #f56c6c;
-  font-weight: 500;
-}
-
-.form-text {
-  color: #303133;
-  font-size: 14px;
-}
-
-.account-tip {
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #67c23a;
-}
-
-.account-tip.is-danger {
-  color: #f56c6c;
-}
-
-.account-tip.is-muted {
-  color: #909399;
-}
-
-.void-text {
-  color: #c0c4cc;
 }
 
 @media (max-width: 768px) {
@@ -1238,30 +448,11 @@ onMounted(() => {
   }
 }
 
-.stock-diff {
-  color: #606266;
-  font-size: 14px;
-}
-
-.diff-add {
-  color: #67c23a;
-  font-weight: 600;
-  font-size: 16px;
-  margin: 0 6px;
-}
-
-.diff-sub {
-  color: #f56c6c;
-  font-weight: 600;
-  font-size: 16px;
-  margin: 0 6px;
-}
-
 /* 库存数量颜色样式 */
 .stock-amount {
   display: inline-block;
   padding: 4px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   font-size: 14px;
   font-weight: 600;
   min-width: 60px;
@@ -1270,41 +461,40 @@ onMounted(() => {
 }
 
 .stock-negative {
-  background: linear-gradient(135deg, #fef0f0 0%, #fde2e2 100%);
-  color: #c0392b;
-  border: 1px solid #f5c6cb;
+  background: linear-gradient(135deg, var(--el-color-danger-light-9) 0%, var(--el-color-danger-light-8) 100%);
+  color: var(--el-color-danger);
+  border: 1px solid var(--el-color-danger-light-7);
   box-shadow: 0 1px 4px rgba(192, 57, 43, 0.12);
 }
 
 .stock-zero {
-  background: linear-gradient(135deg, #f4f4f5 0%, #e9e9eb 100%);
-  color: #909399;
-  border: 1px solid #dcdfe6;
+  background: linear-gradient(135deg, var(--el-color-info-light-8) 0%, var(--border) 100%);
+  color: var(--text-2);
+  border: 1px solid var(--border);
 }
 
 .stock-danger {
-  background: linear-gradient(135deg, #fef6ec 0%, #fde8d0 100%);
-  color: #e67e22;
-  border: 1px solid #faecd8;
+  background: linear-gradient(135deg, var(--el-color-warning-light-9) 0%, var(--el-color-warning-light-8) 100%);
+  color: var(--el-color-warning);
+  border: 1px solid var(--el-color-warning-light-8);
   box-shadow: 0 1px 4px rgba(230, 126, 34, 0.12);
 }
 
 .stock-warning {
-  background: linear-gradient(135deg, #fdfaec 0%, #faf0c3 100%);
-  color: #d4a017;
-  border: 1px solid #faecd8;
+  background: linear-gradient(135deg, var(--el-color-warning-light-8) 0%, var(--el-color-warning-light-8) 100%);
+  color: var(--el-color-warning);
+  border: 1px solid var(--el-color-warning-light-8);
 }
 
 .stock-normal {
-  background: linear-gradient(135deg, #f0f9eb 0%, #e1f3d8 100%);
-  color: #529b2e;
-  border: 1px solid #d7ecc4;
+  background: linear-gradient(135deg, var(--el-color-success-light-9) 0%, var(--el-color-success-light-8) 100%);
+  color: var(--el-color-success);
+  border: 1px solid var(--el-color-success-light-8);
 }
 
 .stock-good {
-  background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
-  color: #1d6fdc;
-  border: 1px solid #c6e2ff;
-  box-shadow: 0 1px 4px rgba(29, 111, 220, 0.1);
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+  border: 1px solid var(--el-color-success-light-8);
 }
 </style>

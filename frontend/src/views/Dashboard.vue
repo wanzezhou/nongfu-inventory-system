@@ -1,40 +1,24 @@
 <template>
   <div class="dashboard">
-    <el-row :gutter="20" class="stat-cards">
-      <el-col :span="6" v-for="(card, idx) in statCards" :key="idx" :style="{ animationDelay: idx * 0.08 + 's' }">
-        <div class="stat-card shine-effect" :class="card.cls">
-          <div class="card-content">
-            <div class="card-info">
-              <div class="card-label">{{ card.label }}</div>
-              <div class="card-value">{{ card.value }}</div>
-              <div class="card-desc" v-html="card.desc"></div>
-            </div>
-            <div class="card-icon">
-              <el-icon :size="48"><component :is="card.icon" /></el-icon>
-            </div>
-          </div>
-          <div class="card-overlay"></div>
+    <el-row :gutter="16" class="stat-cards">
+      <el-col v-for="(card, idx) in statCards" :key="idx" :xs="24" :sm="12" :md="6" :style="{ animationDelay: idx * 0.05 + 's' }">
+        <div class="stat-card">
+          <div class="stat-label"><span class="dot" :style="{ background: card.dotColor }"></span>{{ card.label }}</div>
+          <div class="stat-value font-serif">{{ card.valuePrefix }}{{ card.value }}<span v-if="card.unit" class="unit">{{ card.unit }}</span></div>
+          <div class="stat-desc">{{ card.desc }}</div>
         </div>
       </el-col>
     </el-row>
 
-    <el-row :gutter="20" class="chart-row">
-      <el-col :span="14" :style="{ animationDelay: '0.32s' }">
-        <div class="chart-card chart-enter">
+    <el-row :gutter="16" class="chart-row">
+      <el-col :span="24" :style="{ animationDelay: '0.2s' }">
+        <div class="chart-card">
           <div class="chart-header">
-            <span class="chart-title">近7天销售趋势</span>
-            <span class="chart-badge">实时</span>
+            <span class="chart-title font-serif">近7天销售趋势</span>
+            <span class="chart-range">{{ trendRange }}</span>
           </div>
-          <div ref="trendChartRef" class="chart-container"></div>
-        </div>
-      </el-col>
-      <el-col :span="10" :style="{ animationDelay: '0.4s' }">
-        <div class="chart-card chart-enter">
-          <div class="chart-header">
-            <span class="chart-title">商品销售占比</span>
-            <span class="chart-badge">本月</span>
-          </div>
-          <div ref="pieChartRef" class="chart-container"></div>
+          <div v-if="trendEmpty" class="chart-empty">暂无订单数据</div>
+          <div v-show="!trendEmpty" ref="trendChartRef" class="chart-container"></div>
         </div>
       </el-col>
     </el-row>
@@ -43,67 +27,61 @@
 
 <script setup>
 import { formatMoney } from '@/utils/format'
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import echarts from '@/utils/echarts'
 import { getDashboardSummary, getDashboardTrend } from '@/api/dashboard'
-import { Box, DataLine, Wallet, Clock } from '@element-plus/icons-vue'
 
 const trendChartRef = ref(null)
-const pieChartRef = ref(null)
 let trendChart = null
-let pieChart = null
 
 const summaryData = ref({
   totalInventoryValue: 0,
   monthlySales: 0,
   stationDebt: 0,
-  debtStationCount: 0,
+  stationCount: 0,
   pendingOrders: 0
 })
 
+// 统计卡：全部取自 /dashboard/summary 真实字段，副文案为可追溯口径，不展示编造的环比
 const statCards = computed(() => [
   {
     label: '库存总金额',
-    value: '¥ ' + formatMoney(summaryData.value.totalInventoryValue),
-    desc: '较昨日 <span class="trend-up">↑ 2.5%</span>',
-    cls: 'card-blue',
-    icon: Box
+    value: formatMoney(summaryData.value.totalInventoryValue),
+    valuePrefix: '¥ ',
+    dotColor: 'var(--primary)',
+    desc: '全部商品 库存 × 进货价'
   },
   {
     label: '本月销售额',
-    value: '¥ ' + formatMoney(summaryData.value.monthlySales),
-    desc: '较上月 <span class="trend-up">↑ 12.3%</span>',
-    cls: 'card-green',
-    icon: DataLine
+    value: formatMoney(summaryData.value.monthlySales),
+    valuePrefix: '¥ ',
+    dotColor: 'var(--green)',
+    desc: '本月订单金额合计（不含已取消）'
   },
   {
     label: '水站欠款总额',
-    value: '¥ ' + formatMoney(summaryData.value.stationDebt),
-    desc: '共 ' + (summaryData.value.stationCount ?? 0) + ' 个水站',
-    cls: 'card-orange',
-    icon: Wallet
+    value: formatMoney(summaryData.value.stationDebt),
+    valuePrefix: '¥ ',
+    dotColor: 'var(--gold)',
+    desc: `共 ${summaryData.value.stationCount ?? 0} 个在职水站`
   },
   {
-    label: '待配送订单数',
-    value: summaryData.value.pendingOrders,
-    desc: '自有员工配送且未分配配送员',
-    cls: 'card-red',
-    icon: Clock
+    label: '待配送订单',
+    value: String(summaryData.value.pendingOrders ?? 0),
+    valuePrefix: '',
+    unit: '单',
+    dotColor: 'var(--primary)',
+    desc: '自有配送且未分配配送员'
   }
 ])
 
-const trendData = ref({
-  dates: [],
-  sales: []
+const trendData = ref({ dates: [], sales: [] })
+const trendEmpty = computed(() => !(trendData.value.sales || []).some((v) => Number(v) > 0))
+const trendRange = computed(() => {
+  const d = trendData.value.dates || []
+  return d.length ? `${d[0]} ~ ${d[d.length - 1]}` : ''
 })
-
-const pieData = ref([
-  { name: '农夫山泉 550ml', value: 3520 },
-  { name: '农夫山泉 1.5L', value: 2480 },
-  { name: '农夫山泉 4L', value: 1860 },
-  { name: '农夫山泉 19L', value: 1250 },
-  { name: '其他产品', value: 890 }
-])
 
 const initTrendChart = () => {
   if (!trendChartRef.value) return
@@ -113,118 +91,41 @@ const initTrendChart = () => {
       trigger: 'axis',
       formatter: '{b}<br/>销售额: ¥{c}'
     },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      top: '10%',
-      containLabel: true
-    },
+    grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
     xAxis: {
       type: 'category',
       boundaryGap: false,
       data: trendData.value.dates,
-      axisLine: {
-        lineStyle: {
-          color: '#e4e7ed'
-        }
-      },
-      axisLabel: {
-        color: '#606266'
-      }
+      axisLine: { lineStyle: { color: '#E8E6DF' } },
+      axisLabel: { color: '#7A7A72' }
     },
     yAxis: {
       type: 'value',
-      axisLine: {
-        show: false
-      },
-      axisTick: {
-        show: false
-      },
-      axisLabel: {
-        color: '#606266',
-        formatter: '¥{value}'
-      },
-      splitLine: {
-        lineStyle: {
-          color: '#f0f2f5'
-        }
-      }
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: '#7A7A72', formatter: '¥{value}' },
+      splitLine: { lineStyle: { color: '#E8E6DF' } }
     },
     series: [
       {
         name: '销售额',
         type: 'line',
-        smooth: true,
+        smooth: false,
+        symbol: 'circle',
+        symbolSize: 5,
         data: trendData.value.sales,
-        lineStyle: {
-          color: '#C7000B',
-          width: 3
-        },
+        lineStyle: { color: '#A8201A', width: 2 },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(199, 0, 11, 0.3)' },
-            { offset: 1, color: 'rgba(199, 0, 11, 0.05)' }
+            { offset: 0, color: 'rgba(168, 32, 26, 0.10)' },
+            { offset: 1, color: 'rgba(168, 32, 26, 0)' }
           ])
         },
-        itemStyle: {
-          color: '#C7000B',
-          borderWidth: 2,
-          borderColor: '#fff'
-        }
+        itemStyle: { color: '#A8201A', borderWidth: 2, borderColor: '#fff' }
       }
     ]
   }
   trendChart.setOption(option)
-}
-
-const initPieChart = () => {
-  if (!pieChartRef.value) return
-  pieChart = echarts.init(pieChartRef.value)
-  const option = {
-    tooltip: {
-      trigger: 'item',
-      formatter: '{b}: {c} ({d}%)'
-    },
-    legend: {
-      orient: 'vertical',
-      right: '5%',
-      top: 'center',
-      textStyle: {
-        color: '#606266'
-      }
-    },
-    series: [
-      {
-        name: '商品销售',
-        type: 'pie',
-        radius: ['45%', '70%'],
-        center: ['35%', '50%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 6,
-          borderColor: '#fff',
-          borderWidth: 2
-        },
-        label: {
-          show: false
-        },
-        emphasis: {
-          label: {
-            show: true,
-            fontSize: 14,
-            fontWeight: 'bold'
-          }
-        },
-        labelLine: {
-          show: false
-        },
-        data: pieData.value,
-        color: ['#C7000B', '#0B8043', '#C5A55A', '#E0666E', '#8E8E9E']
-      }
-    ]
-  }
-  pieChart.setOption(option)
 }
 
 const fetchSummaryData = async () => {
@@ -235,13 +136,7 @@ const fetchSummaryData = async () => {
     }
   } catch (error) {
     console.error('获取仪表盘数据失败:', error)
-    summaryData.value = {
-      totalInventoryValue: 1256800.50,
-      monthlySales: 856420.80,
-      stationDebt: 325600.00,
-      debtStationCount: 12,
-      pendingOrders: 28
-    }
+    ElMessage.error('仪表盘统计数据加载失败')
   }
 }
 
@@ -249,25 +144,19 @@ const fetchTrendData = async () => {
   try {
     const res = await getDashboardTrend()
     if (res.data) {
-      trendData.value = res.data
+      trendData.value = {
+        dates: res.data.map((x) => x.date?.slice(5)),
+        sales: res.data.map((x) => Number(x.amount) || 0)
+      }
     }
   } catch (error) {
     console.error('获取趋势数据失败:', error)
-    const dates = []
-    const sales = []
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date()
-      date.setDate(date.getDate() - i)
-      dates.push(`${date.getMonth() + 1}/${date.getDate()}`)
-      sales.push(Math.floor(Math.random() * 50000) + 80000)
-    }
-    trendData.value = { dates, sales }
+    ElMessage.error('销售趋势数据加载失败')
   }
 }
 
 const handleResize = () => {
   trendChart?.resize()
-  pieChart?.resize()
 }
 
 onMounted(async () => {
@@ -275,8 +164,13 @@ onMounted(async () => {
   await fetchTrendData()
   await nextTick()
   initTrendChart()
-  initPieChart()
   window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  trendChart?.dispose()
+  trendChart = null
 })
 </script>
 
@@ -286,202 +180,111 @@ onMounted(async () => {
 }
 
 .stat-cards {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  row-gap: 16px;
 }
 
 .stat-cards .el-col {
-  animation: statEnter 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes statEnter {
-  0% {
-    opacity: 0;
-    transform: translateY(24px) scale(0.94);
-    filter: blur(4px);
-  }
-  60% {
-    transform: translateY(-3px) scale(1.01);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
-  }
+  animation: fadeUp 0.4s ease-out both;
 }
 
 .stat-card {
-  position: relative;
-  border-radius: 16px;
-  padding: 26px;
-  color: #fff;
-  box-shadow: 
-    0 4px 12px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  overflow: hidden;
-  cursor: pointer;
   height: 100%;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 100%);
-  pointer-events: none;
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease;
 }
 
 .stat-card:hover {
-  transform: translateY(-6px) scale(1.02);
-  box-shadow: 
-    0 20px 40px rgba(0, 0, 0, 0.12),
-    0 6px 16px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border-color: rgba(168, 32, 26, 0.25);
 }
 
-.stat-card:active {
-  transform: translateY(-2px) scale(1);
-  transition-duration: 0.15s;
-}
-
-.card-overlay {
-  position: absolute;
-  bottom: -40px;
-  right: -40px;
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.card-blue {
-  background: linear-gradient(135deg, #C7000B 0%, #A00009 100%);
-}
-
-.card-green {
-  background: linear-gradient(135deg, #0B8043 0%, #066B36 100%);
-}
-
-.card-orange {
-  background: linear-gradient(135deg, #C5A55A 0%, #A88842 100%);
-}
-
-.card-red {
-  background: linear-gradient(135deg, #1A1A2E 0%, #2D2D44 100%);
-}
-
-.card-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: relative;
-  z-index: 1;
-}
-
-.card-label {
+.stat-label {
   font-size: 13px;
-  opacity: 0.92;
+  color: var(--text-2);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stat-label .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  line-height: 1.1;
   margin-bottom: 10px;
-  letter-spacing: 0.5px;
-  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
-.card-value {
-  font-size: 30px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  letter-spacing: -0.5px;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.stat-value .unit {
+  font-size: 14px;
+  color: var(--text-3);
+  margin-left: 3px;
+  font-weight: 400;
 }
 
-.card-desc {
+.stat-desc {
   font-size: 12px;
-  opacity: 0.85;
-  letter-spacing: 0.2px;
+  color: var(--text-3);
 }
 
-.trend-up {
-  color: #67C23A;
-  font-weight: 700;
-}
-
-.card-icon {
-  opacity: 0.88;
-  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.stat-card:hover .card-icon {
-  transform: scale(1.1) rotate(-5deg);
-}
-
-.chart-row {
-  margin-top: 0;
-}
-
-.chart-row .el-col {
-  animation: chartEnter 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes chartEnter {
-  0% {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
+/* 图表卡片 */
 .chart-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 
-    0 1px 3px rgba(0, 0, 0, 0.04),
-    0 1px 2px rgba(0, 0, 0, 0.02);
-  transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.chart-card:hover {
-  box-shadow: 
-    0 12px 32px rgba(0, 0, 0, 0.08),
-    0 4px 12px rgba(0, 0, 0, 0.04);
-  transform: translateY(-2px);
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  animation: fadeUp 0.4s ease-out both;
 }
 
 .chart-header {
-  margin-bottom: 18px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .chart-title {
   font-size: 16px;
   font-weight: 600;
-  color: #1A1A2E;
-  letter-spacing: 0.3px;
+  color: var(--text);
 }
 
-.chart-badge {
-  font-size: 11px;
-  color: #C7000B;
-  background: rgba(199, 0, 11, 0.08);
-  padding: 3px 10px;
-  border-radius: 10px;
-  font-weight: 500;
-  letter-spacing: 0.3px;
+.chart-range {
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-empty {
+  height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 13px;
 }
 
 .chart-container {
   width: 100%;
   height: 320px;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>

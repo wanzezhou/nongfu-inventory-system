@@ -51,6 +51,7 @@
         style="width: 100%"
         v-loading="loading"
         border
+        stripe
       >
         <el-table-column prop="stationName" :label="`${moduleTitle}名称`" min-width="160" />
         <el-table-column prop="address" label="站点地址" min-width="200" show-overflow-tooltip />
@@ -136,7 +137,7 @@
 
 <script setup>
 import { usePagination } from '@/composables/usePagination'
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
 import {
@@ -320,7 +321,7 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .filter-form {
@@ -334,7 +335,7 @@ onMounted(() => {
 }
 
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .pagination-wrapper {

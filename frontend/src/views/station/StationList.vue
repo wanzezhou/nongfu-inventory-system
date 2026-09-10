@@ -59,6 +59,7 @@
         style="width: 100%"
         v-loading="loading"
         border
+        stripe
       >
         <el-table-column prop="name" label="水站名称" min-width="150" />
         <el-table-column prop="contact" label="联系人" width="100" />
@@ -425,7 +426,7 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .filter-form {
@@ -439,7 +440,7 @@ onMounted(() => {
 }
 
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .money-text {
@@ -447,7 +448,7 @@ onMounted(() => {
 }
 
 .debt-text {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 
 .pagination-wrapper {
@@ -462,7 +463,7 @@ onMounted(() => {
 
 .unit-label {
   margin-left: 10px;
-  color: #606266;
+  color: var(--text-2);
   font-size: 14px;
 }
 </style>

@@ -4,7 +4,7 @@
       <div class="logo">
         <div class="logo-icon" v-if="!isCollapse">
           <svg viewBox="0 0 32 32" class="logo-svg" fill="none">
-            <path d="M16 4C16 4 6 14 6 21C6 26.5 10.5 29 16 29C21.5 29 26 26.5 26 21C26 14 16 4 16 4Z" fill="#C7000B" opacity="0.9"/>
+            <path d="M16 4C16 4 6 14 6 21C6 26.5 10.5 29 16 29C21.5 29 26 26.5 26 21C26 14 16 4 16 4Z" fill="#A8201A" opacity="0.9"/>
             <path d="M16 10C16 10 10 16 10 21C10 23.8 12.5 25.5 16 25.5C19.5 25.5 22 23.8 22 21C22 16 16 10 16 10Z" fill="#ffffff" opacity="0.85"/>
           </svg>
         </div>
@@ -17,9 +17,6 @@
       <el-menu
         :default-active="activeMenu"
         :collapse="isCollapse"
-        :background-color="'#1A1A2E'"
-        :text-color="'#8E8E9E'"
-        :active-text-color="'#ffffff'"
         router
         class="sidebar-menu"
       >
@@ -57,7 +54,9 @@
             <Fold v-if="!isCollapse" />
             <Expand v-else />
           </el-icon>
-          <span class="page-title">{{ currentPageTitle }}</span>
+          <el-breadcrumb separator="/" class="breadcrumb">
+            <el-breadcrumb-item v-for="(item, i) in breadcrumb" :key="i">{{ item }}</el-breadcrumb-item>
+          </el-breadcrumb>
         </div>
         <div class="header-right">
           <span class="current-date">{{ currentDate }}</span>
@@ -121,7 +120,17 @@ const isCollapse = ref(false)
 
 const activeMenu = computed(() => route.path)
 
-const currentPageTitle = computed(() => route.meta.title || '农夫山泉进销存管理系统')
+// —— 面包屑：分组标题 → 页面标题（数据源 menuConfig.js） ——
+const breadcrumb = computed(() => {
+  const path = route.path
+  for (const g of menuGroups) {
+    if (g.type === 'group' && g.items.some((i) => i.index === path)) {
+      return [g.title, route.meta.title]
+    }
+    if (g.type === 'item' && g.index === path) return [route.meta.title]
+  }
+  return [route.meta.title || '首页']
+})
 
 // 用户信息
 const userInfo = computed(() => useAuthStore().user)

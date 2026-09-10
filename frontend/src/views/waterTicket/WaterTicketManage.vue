@@ -20,9 +20,9 @@
                 <span class="item-label">商品</span>
                 <el-select v-model="it.productId" filterable placeholder="请选择商品" style="width: 36%" @change="(pid) => onIssueProductChange(it, pid)">
                   <el-option v-for="p in productOptions" :key="p.id" :label="`${p.name}（${p.spec || ''}）`" :value="p.id" :disabled="p.stock <= 0" :class="{ 'option-out-of-stock': p.stock <= 0 }">
-                    <span :style="{ color: p.stock <= 0 ? '#c0c4cc' : '' }">{{ p.name }}（{{ p.spec || '' }}）</span>
-                    <span v-if="p.stock <= 0" style="color: #c0c4cc; font-size: 12px; margin-left: 8px;">无库存</span>
-                    <span v-else style="color: #67c23a; font-size: 12px; margin-left: 8px;">库存: {{ p.stock }}</span>
+                    <span :style="{ color: p.stock <= 0 ? 'var(--text-3)' : '' }">{{ p.name }}（{{ p.spec || '' }}）</span>
+                    <span v-if="p.stock <= 0" style="color: var(--text-3); font-size: 12px; margin-left: 8px;">无库存</span>
+                    <span v-else style="color: var(--el-color-success); font-size: 12px; margin-left: 8px;">库存: {{ p.stock }}</span>
                   </el-option>
                 </el-select>
                 <span class="item-label">数量</span>
@@ -115,11 +115,13 @@
       <div class="pager">
         <el-pagination
           background
-          layout="total, prev, pager, next"
+          layout="total, sizes, prev, pager, next, jumper"
+          :page-sizes="[10, 20, 50, 100]"
           :total="issuanceTotal"
-          :page-size="issuancePage.pageSize"
+          v-model:page-size="issuancePage.pageSize"
           :current-page="issuancePage.page"
           @current-change="(p) => { issuancePage.page = p; fetchIssuances() }"
+          @size-change="() => { issuancePage.page = 1; fetchIssuances() }"
         />
       </div>
     </el-card>
@@ -522,27 +524,27 @@ onMounted(() => {
 
 <style scoped>
 .page-container { display: flex; flex-direction: column; gap: 16px; }
-.filter-card, .detail-card { border-radius: 10px; }
+.filter-card, .detail-card { border-radius: var(--radius-md); }
 .filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
 .issue-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
 .issue-items { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .issue-item-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.item-label { font-size: 12px; color: #909399; white-space: nowrap; }
-.option-out-of-stock { color: #c0c4cc; }
+.item-label { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.option-out-of-stock { color: var(--text-3); }
 .issue-actions { display: flex; align-items: center; gap: 10px; }
-.issue-hint { font-size: 12px; color: #909399; }
-.unit-label { margin-left: 8px; font-size: 12px; color: #909399; }
+.issue-hint { font-size: 12px; color: var(--text-2); }
+.unit-label { margin-left: 8px; font-size: 12px; color: var(--text-2); }
 .pager { display: flex; justify-content: flex-end; margin-top: 14px; }
 .iss-filter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
 .iss-title { font-weight: 600; }
 .iss-filter-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.fee-total { color: #d48806; font-weight: 600; }
+.fee-total { color: var(--el-color-warning); font-weight: 600; }
 .fee-cell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .edit-items { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; padding: 2px; }
-.edit-item-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 4px; border-bottom: 1px dashed #ebeef5; }
+.edit-item-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 4px; border-bottom: 1px dashed var(--border); }
 .edit-item-row:last-child { border-bottom: none; }
 .edit-product { font-size: 13px; min-width: 200px; }
-.edit-item-hint { font-size: 12px; color: #909399; margin-top: 2px; }
+.edit-item-hint { font-size: 12px; color: var(--text-2); margin-top: 2px; }
 @media screen and (max-width: 768px) {
   .issue-form-grid { grid-template-columns: 1fr; }
   .issue-item-row .el-select, .issue-item-row .el-input-number { width: 100% !important; }

@@ -8,13 +8,6 @@ export function getProductList(params) {
   })
 }
 
-export function getProduct(id) {
-  return request({
-    url: `/products/${id}`,
-    method: 'get'
-  })
-}
-
 export function addProduct(data) {
   return request({
     url: '/products',

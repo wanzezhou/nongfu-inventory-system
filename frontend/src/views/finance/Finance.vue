@@ -75,11 +75,13 @@
           <div class="pager">
             <el-pagination
               background
-              layout="total, prev, pager, next"
+              layout="total, sizes, prev, pager, next, jumper"
+              :page-sizes="[10, 20, 50, 100]"
               :total="orderTotal"
               :page-size="orderQuery.pageSize"
               :current-page="orderQuery.page"
               @current-change="(p) => { orderQuery.page = p; fetchOrders() }"
+              @size-change="(s) => { orderQuery.pageSize = s; orderQuery.page = 1; fetchOrders() }"
             />
           </div>
         </el-tab-pane>
@@ -118,11 +120,13 @@
           <div class="pager">
             <el-pagination
               background
-              layout="total, prev, pager, next"
+              layout="total, sizes, prev, pager, next, jumper"
+              :page-sizes="[10, 20, 50, 100]"
               :total="machineTotal"
               :page-size="machineQuery.pageSize"
               :current-page="machineQuery.page"
               @current-change="(p) => { machineQuery.page = p; fetchMachine() }"
+              @size-change="(s) => { machineQuery.pageSize = s; machineQuery.page = 1; fetchMachine() }"
             />
           </div>
         </el-tab-pane>
@@ -154,11 +158,13 @@
           <div class="pager">
             <el-pagination
               background
-              layout="total, prev, pager, next"
+              layout="total, sizes, prev, pager, next, jumper"
+              :page-sizes="[10, 20, 50, 100]"
               :total="orderTotal"
               :page-size="orderQuery.pageSize"
               :current-page="orderQuery.page"
               @current-change="(p) => { orderQuery.page = p; fetchOrders() }"
+              @size-change="(s) => { orderQuery.pageSize = s; orderQuery.page = 1; fetchOrders() }"
             />
           </div>
         </el-tab-pane>
@@ -614,7 +620,7 @@ watch(() => props.orderType, () => {
 }
 
 .filter-card {
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 
 .filter-bar {
@@ -631,7 +637,7 @@ watch(() => props.orderType, () => {
 .filter-hint {
   margin-top: 10px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
   line-height: 1.6;
 }
 
@@ -642,15 +648,16 @@ watch(() => props.orderType, () => {
 }
 
 .summary-card {
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 16px 18px;
-  color: #fff;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  transition: transform 0.2s;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease;
 }
 
 .summary-card:hover {
-  transform: translateY(-2px);
+  border-color: rgba(168, 32, 26, 0.25);
 }
 
 .card-label {
@@ -658,7 +665,11 @@ watch(() => props.orderType, () => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  opacity: 0.95;
+  color: var(--text-2);
+}
+
+.card-label .el-icon {
+  color: var(--accent, var(--text-2));
 }
 
 .card-value {
@@ -666,24 +677,26 @@ watch(() => props.orderType, () => {
   font-weight: 700;
   margin: 8px 0 4px;
   word-break: break-all;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .card-desc {
-  font-size: 11px;
-  opacity: 0.85;
+  font-size: 12px;
+  color: var(--text-3);
 }
 
-.card-red { background: linear-gradient(135deg, #f56c6c, #e64340); }
-.card-blue { background: linear-gradient(135deg, #409eff, #2f6fe0); }
-.card-green { background: linear-gradient(135deg, #67c23a, #4cae1f); }
-.card-gold { background: linear-gradient(135deg, #e6a23c, #d07f12); }
-.card-purple { background: linear-gradient(135deg, #9b59b6, #7d3c98); }
-.card-teal { background: linear-gradient(135deg, #13c2c2, #08979c); }
-.card-gray { background: linear-gradient(135deg, #909399, #6c6f73); }
-.card-total { background: linear-gradient(135deg, #303133, #1f1f21); }
+.card-red { --accent: var(--primary); }
+.card-blue { --accent: var(--text-2); }
+.card-green { --accent: var(--green); }
+.card-gold { --accent: var(--gold); }
+.card-purple { --accent: var(--text-2); }
+.card-teal { --accent: var(--text-2); }
+.card-gray { --accent: var(--text-2); }
+.card-total { --accent: var(--text); }
 
 .detail-card {
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 
 .tab-toolbar {
@@ -697,11 +710,11 @@ watch(() => props.orderType, () => {
 
 .tab-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .revenue-text {
-  color: #e64340;
+  color: var(--el-color-danger);
   font-weight: 600;
 }
 
@@ -714,12 +727,12 @@ watch(() => props.orderType, () => {
 .unit-label {
   margin-left: 8px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .option-sub {
   float: right;
-  color: #8492a6;
+  color: var(--text-2);
   font-size: 12px;
 }
 
@@ -757,19 +770,19 @@ watch(() => props.orderType, () => {
   gap: 4px;
   align-items: flex-end;
   padding: 8px 12px;
-  background: #f7f8fa;
-  border-radius: 6px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
 }
 
 .amount-row {
   font-size: 13px;
-  color: #606266;
+  color: var(--text-2);
 }
 
 .amount-row.total {
   font-size: 15px;
   font-weight: 700;
-  color: #e64340;
+  color: var(--el-color-danger);
 }
 
 @media screen and (max-width: 768px) {

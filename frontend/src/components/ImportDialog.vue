@@ -114,15 +114,15 @@ const handleClose = () => {
   display: flex;
   gap: 10px;
   padding: 12px 16px;
-  background: #f0f9ff;
-  border-radius: 10px;
+  background: var(--el-color-info-light-9);
+  border-radius: var(--radius-md);
   margin-bottom: 20px;
-  border: 1px solid #e0f2fe;
+  border: 1px solid var(--el-color-info-light-8);
 }
 
 .tips-icon {
   font-size: 18px;
-  color: #0ea5e9;
+  color: var(--el-color-info);
   flex-shrink: 0;
   margin-top: 1px;
 }
@@ -130,7 +130,7 @@ const handleClose = () => {
 .tips-text p {
   margin: 0 0 4px 0;
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-2);
   line-height: 1.6;
 }
 
@@ -139,7 +139,7 @@ const handleClose = () => {
 }
 
 .highlight {
-  color: #C7000B;
+  color: var(--primary);
   font-weight: 600;
 }
 
@@ -149,11 +149,11 @@ const handleClose = () => {
 
 .import-upload :deep(.el-upload-dragger) {
   padding: 28px 20px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   transition: all 0.3s ease;
 }
 
 .import-upload :deep(.el-upload-dragger:hover) {
-  border-color: #C7000B;
+  border-color: var(--primary);
 }
 </style>

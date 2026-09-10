@@ -152,12 +152,13 @@
       <div class="pager">
         <el-pagination
           v-model:current-page="txPage"
-          :page-size="txPageSize"
+          v-model:page-size="txPageSize"
+          :page-sizes="[10, 20, 50, 100]"
           :total="txTotal"
-          layout="total, prev, pager, next"
-          small
+          layout="total, sizes, prev, pager, next, jumper"
           background
           @current-change="fetchTxs"
+          @size-change="onTxSizeChange"
         />
       </div>
       <template #footer>
@@ -319,7 +320,11 @@ const txsLoading = ref(false)
 const txRows = ref([])
 const txTotal = ref(0)
 const txPage = ref(1)
-const txPageSize = 10
+const txPageSize = ref(10)
+const onTxSizeChange = () => {
+  txPage.value = 1
+  fetchTxs()
+}
 const openTxs = async (acc) => {
   current.value = acc
   txsVisible.value = true
@@ -329,7 +334,7 @@ const openTxs = async (acc) => {
 const fetchTxs = async () => {
   txsLoading.value = true
   try {
-    const res = await getAccountTransactions(current.value.accountId, { page: txPage.value, pageSize: txPageSize })
+    const res = await getAccountTransactions(current.value.accountId, { page: txPage.value, pageSize: txPageSize.value })
     txRows.value = res.data?.list || []
     txTotal.value = res.data?.total || 0
   } catch (e) {
@@ -392,7 +397,7 @@ onMounted(fetchAccounts)
 }
 .filter-card {
   margin-bottom: 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 .head-row {
   display: flex;
@@ -411,8 +416,8 @@ onMounted(fetchAccounts)
   gap: 14px;
 }
 .account-card {
-  border: 1px solid #e4e7ed;
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 14px 16px;
   background: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
@@ -423,7 +428,7 @@ onMounted(fetchAccounts)
 }
 .account-card.is-disabled {
   opacity: 0.55;
-  background: #fafafa;
+  background: var(--bg);
 }
 .acc-top {
   display: flex;
@@ -434,15 +439,15 @@ onMounted(fetchAccounts)
 .acc-type {
   font-size: 12px;
   padding: 2px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 .type-fund {
-  background: #fdf0ec;
-  color: #c45656;
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
 }
 .type-new {
-  background: #ecf5ff;
-  color: #337ecc;
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
 }
 .acc-name {
   font-size: 16px;
@@ -451,7 +456,7 @@ onMounted(fetchAccounts)
 }
 .acc-meta .meta-line {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
   line-height: 1.5;
 }
 .acc-balance-row {
@@ -464,19 +469,19 @@ onMounted(fetchAccounts)
 }
 .balance-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
 }
 .balance-value {
   font-size: 22px;
   font-weight: 700;
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 .in-text {
-  color: #67c23a;
+  color: var(--el-color-success);
   font-weight: 600;
 }
 .out-text {
-  color: #f56c6c;
+  color: var(--el-color-danger);
   font-weight: 600;
 }
 .pager {

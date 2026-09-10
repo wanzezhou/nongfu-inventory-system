@@ -31,13 +31,6 @@ export function updateOrder(id, data) {
   })
 }
 
-export function cancelOrder(id) {
-  return request({
-    url: `/orders/${id}`,
-    method: 'delete'
-  })
-}
-
 export function hardDeleteOrder(id) {
   return request({
     url: `/orders/${id}/force`,

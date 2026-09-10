@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>红墨留白 · 沉稳版</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg: #F5F4F0;
+    --card: #FFFFFF;
+    --text: #1F1F1F;
+    --text-2: #7A7A72;
+    --text-3: #AEAEA5;
+    --border: #E8E6DF;
+    --primary: #A8201A;
+    --primary-light: rgba(168, 32, 26, 0.07);
+    --green: #2D6A4F;
+    --gold: #A68B3D;
+    --radius: 14px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+    --shadow-md: 0 8px 28px rgba(0,0,0,0.07);
+    --shadow-primary: 0 8px 24px rgba(168,32,26,0.12);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(168,32,26,0.012) 0%, transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(45,106,79,0.012) 0%, transparent 40%);
+  }
+
+  .app { display: flex; height: 100vh; }
+
+  /* ===== 侧边栏 ===== */
+  .sidebar {
+    width: 240px;
+    background: #FFFFFF;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .logo {
+    height: 68px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 22px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+
+  .logo::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 22px; right: 22px;
+    height: 1px;
+    background: linear-gradient(90deg, var(--primary), transparent);
+  }
+
+  .logo-icon {
+    width: 38px; height: 38px;
+    background: linear-gradient(135deg, #A8201A, #7A1712);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-family: 'Noto Serif SC', serif; font-weight: 700; font-size: 18px;
+    box-shadow: 0 6px 16px rgba(168,32,26,0.28);
+    position: relative;
+  }
+  .logo-icon::before {
+    content: '';
+    position: absolute; inset: -6px;
+    border-radius: 14px;
+    border: 1px solid rgba(168,32,26,0.18);
+  }
+
+  .logo-text { font-family: 'Noto Serif SC', serif; font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+  .logo-sub { font-size: 9px; color: var(--text-3); letter-spacing: 3px; margin-top: 3px; text-transform: uppercase; }
+
+  .menu { flex: 1; padding: 16px 12px; overflow-y: auto; }
+
+  .menu-group-title {
+    font-size: 10px; color: var(--text-3); letter-spacing: 3px;
+    padding: 14px 14px 6px; text-transform: uppercase; font-weight: 500;
+  }
+
+  .menu-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 14px; margin: 2px 0;
+    border-radius: 10px; color: var(--text-2);
+    font-size: 14px; cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+    position: relative;
+    border-left: 3px solid transparent;
+  }
+
+  .menu-item:hover { color: var(--primary); background: var(--primary-light); }
+
+  .menu-item.active {
+    color: var(--primary);
+    background: var(--primary-light);
+    border-left-color: var(--primary);
+    font-weight: 600;
+  }
+
+  .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  .sidebar-footer {
+    padding: 18px 22px;
+    border-top: 1px solid var(--border);
+    font-size: 10px; color: var(--text-3); letter-spacing: 2px;
+    text-align: center;
+  }
+
+  /* ===== 主区域 ===== */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .header {
+    height: 62px;
+    background: rgba(255,255,255,0.75);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px;
+  }
+
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .collapse-btn { font-size: 20px; color: var(--text-2); cursor: pointer; padding: 6px; border-radius: 8px; transition: all 0.2s; }
+  .collapse-btn:hover { background: var(--border); color: var(--primary); }
+
+  .page-title { font-family: 'Noto Serif SC', serif; font-size: 17px; font-weight: 600; letter-spacing: 0.5px; }
+
+  .header-right { display: flex; align-items: center; gap: 20px; }
+  .date-pill { font-size: 12px; color: var(--text-2); padding: 6px 14px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); }
+  .user-chip { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 14px 5px 5px; border-radius: 22px; background: var(--bg); border: 1px solid var(--border); transition: all 0.2s; }
+  .user-chip:hover { border-color: rgba(168,32,26,0.3); box-shadow: var(--shadow-primary); }
+  .user-avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #A8201A, #7A1712); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; font-family: 'Noto Serif SC', serif; }
+
+  /* ===== 内容区 ===== */
+  .content { flex: 1; overflow-y: auto; padding: 28px; }
+
+  /* 统计卡片 */
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px; }
+
+  .stat-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 26px 24px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.35s cubic-bezier(0.16,1,0.3,1);
+    position: relative;
+    overflow: hidden;
+    animation: inkSpread 0.7s cubic-bezier(0.16,1,0.3,1) both;
+  }
+
+  .stat-card:nth-child(1) { animation-delay: 0.05s; }
+  .stat-card:nth-child(2) { animation-delay: 0.12s; }
+  .stat-card:nth-child(3) { animation-delay: 0.19s; }
+
+  .stat-card:hover {
+    border-color: rgba(168,32,26,0.25);
+    box-shadow: var(--shadow-primary), var(--shadow-md);
+    transform: translateY(-3px);
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 80px; height: 80px;
+    background: radial-gradient(circle at top right, var(--card-accent, rgba(168,32,26,0.05)) 0%, transparent 70%);
+    border-radius: 0 14px 0 40px;
+  }
+
+  .stat-card[data-color="red"] { --card-accent: rgba(168,32,26,0.07); }
+  .stat-card[data-color="green"] { --card-accent: rgba(45,106,79,0.07); }
+  .stat-card[data-color="gold"] { --card-accent: rgba(166,139,61,0.07); }
+
+  .stat-label { font-size: 13px; color: var(--text-2); margin-bottom: 14px; letter-spacing: 0.3px; display: flex; align-items: center; gap: 8px; }
+  .stat-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+  .stat-value { font-family: 'Noto Serif SC', serif; font-size: 34px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; line-height: 1; margin-bottom: 10px; }
+  .stat-value .unit { font-size: 15px; color: var(--text-3); margin-left: 2px; font-weight: 400; }
+  .stat-desc { font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 8px; }
+  .stat-desc .up { color: var(--green); font-weight: 600; }
+  .stat-desc .trend-line { flex: 1; height: 2px; background: var(--border); border-radius: 1px; overflow: hidden; }
+  .stat-desc .trend-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--green)); border-radius: 1px; }
+
+  /* 图表区 */
+  .chart-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+
+  .chart-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 26px 24px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    animation: inkSpread 0.7s cubic-bezier(0.16,1,0.3,1) 0.26s both;
+    position: relative;
+  }
+
+  .chart-card::before {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0; height: 60px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 60' preserveAspectRatio='none'%3E%3Cpath d='M0,60 L100,30 L200,45 L350,15 L500,40 L650,20 L800,50 L800,60 Z' fill='%23A8201A' opacity='0.03'/%3E%3C/svg%3E") no-repeat bottom center;
+    background-size: 100% 60px;
+    pointer-events: none;
+  }
+
+  .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; position: relative; z-index: 1; }
+  .chart-title { font-family: 'Noto Serif SC', serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px; }
+  .chart-badge { font-size: 11px; color: var(--primary); background: var(--primary-light); padding: 4px 12px; border-radius: 8px; font-weight: 500; border: 1px solid rgba(168,32,26,0.12); }
+
+  .chart-svg { width: 100%; height: 300px; position: relative; z-index: 1; }
+
+  /* 表格预览 */
+  .table-preview {
+    background: var(--card);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    margin-top: 20px;
+    animation: inkSpread 0.7s cubic-bezier(0.16,1,0.3,1) 0.33s both;
+  }
+
+  .table-header {
+    display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr;
+    padding: 16px 22px; background: var(--bg);
+    font-size: 12px; color: var(--text-2); font-weight: 600; letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .table-row {
+    display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr;
+    padding: 15px 22px; font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    transition: all 0.2s;
+    align-items: center;
+  }
+  .table-row:last-child { border-bottom: none; }
+  .table-row:hover { background: rgba(168,32,26,0.02); }
+
+  .tag { display: inline-block; padding: 3px 12px; border-radius: 6px; font-size: 11px; font-weight: 500; }
+  .tag-success { background: rgba(45,106,79,0.1); color: var(--green); border: 1px solid rgba(45,106,79,0.15); }
+  .tag-warning { background: rgba(166,139,61,0.1); color: #8A7230; border: 1px solid rgba(166,139,61,0.2); }
+
+  .action-btn { color: var(--text-2); font-size: 12px; cursor: pointer; padding: 5px 10px; border-radius: 6px; transition: all 0.2s; margin-right: 4px; }
+  .action-btn:hover { color: var(--primary); background: var(--primary-light); }
+
+  @keyframes inkSpread {
+    0% { opacity: 0; transform: translateY(20px) scale(0.97); filter: blur(3px); }
+    60% { transform: translateY(-2px) scale(1.01); }
+    100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  }
+
+  .design-note {
+    position: fixed; bottom: 20px; right: 20px;
+    background: rgba(31,31,31,0.92); color: #fff;
+    padding: 14px 18px; border-radius: 12px;
+    font-size: 12px; line-height: 1.7;
+    max-width: 290px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    border: 1px solid rgba(168,32,26,0.2);
+  }
+  .design-note strong { color: #C75048; display: block; margin-bottom: 4px; font-family: 'Noto Serif SC', serif; }
+  .palette { display: flex; gap: 6px; margin-top: 8px; }
+  .swatch { width: 20px; height: 20px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 侧边栏 -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">农</div>
+      <div>
+        <div class="logo-text">进销存管理</div>
+        <div class="logo-sub">NONGFU · INVENTORY</div>
+      </div>
+    </div>
+    <nav class="menu">
+      <div class="menu-group-title">概览</div>
+      <div class="menu-item active">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+        仪表盘
+      </div>
+      <div class="menu-group-title">业务</div>
+      <div class="menu-item">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-4V4c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zM10 4h4v2h-4V4z"/></svg>
+        进销存管理
+      </div>
+      <div class="menu-item">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg>
+        统计管理
+      </div>
+      <div class="menu-item">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+        营收统计
+      </div>
+      <div class="menu-group-title">基础</div>
+      <div class="menu-item">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+        基础信息管理
+      </div>
+    </nav>
+    <div class="sidebar-footer">v2.0 · 红墨留白（沉稳版）</div>
+  </aside>
+
+  <!-- 主区域 -->
+  <div class="main">
+    <header class="header">
+      <div class="header-left">
+        <div class="collapse-btn">☰</div>
+        <div class="page-title">仪表盘</div>
+      </div>
+      <div class="header-right">
+        <div class="date-pill">2026年9月8日</div>
+        <div class="user-chip">
+          <div class="user-avatar">A</div>
+          <span style="font-size:13px; font-weight:500;">管理员</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- 统计卡片 -->
+      <div class="stat-grid">
+        <div class="stat-card" data-color="red">
+          <div class="stat-label"><span class="dot"></span>库存总金额</div>
+          <div class="stat-value">¥1,256,800<span class="unit">.50</span></div>
+          <div class="stat-desc">
+            <span class="up">↑ 2.5%</span>
+            <div class="trend-line"><div class="trend-fill" style="width:65%"></div></div>
+          </div>
+        </div>
+        <div class="stat-card" data-color="green">
+          <div class="stat-label"><span class="dot" style="background:var(--green)"></span>本月销售额</div>
+          <div class="stat-value">¥856,420<span class="unit">.80</span></div>
+          <div class="stat-desc">
+            <span class="up">↑ 12.3%</span>
+            <div class="trend-line"><div class="trend-fill" style="width:88%"></div></div>
+          </div>
+        </div>
+        <div class="stat-card" data-color="gold">
+          <div class="stat-label"><span class="dot" style="background:var(--gold)"></span>水站欠款总额</div>
+          <div class="stat-value">¥325,600<span class="unit">.00</span></div>
+          <div class="stat-desc">
+            <span style="color:var(--text-2)">12 个水站</span>
+            <div class="trend-line"><div class="trend-fill" style="width:42%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 图表 -->
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-header">
+            <span class="chart-title">近7天销售趋势</span>
+            <span class="chart-badge">实时</span>
+          </div>
+          <svg class="chart-svg" viewBox="0 0 800 300" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#A8201A" stop-opacity="0.15"/>
+                <stop offset="100%" stop-color="#A8201A" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#A68B3D"/>
+                <stop offset="50%" stop-color="#A8201A"/>
+                <stop offset="100%" stop-color="#2D6A4F"/>
+              </linearGradient>
+            </defs>
+            <g stroke="#E8E6DF" stroke-width="1">
+              <line x1="0" y1="60" x2="800" y2="60"/>
+              <line x1="0" y1="120" x2="800" y2="120"/>
+              <line x1="0" y1="180" x2="800" y2="180"/>
+              <line x1="0" y1="240" x2="800" y2="240"/>
+            </g>
+            <path d="M0,200 L100,160 L200,180 L300,120 L400,140 L500,80 L600,100 L700,60 L800,90 L800,300 L0,300 Z" fill="url(#areaGrad)"/>
+            <path d="M0,200 L100,160 L200,180 L300,120 L400,140 L500,80 L600,100 L700,60 L800,90" fill="none" stroke="url(#lineGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <g>
+              <circle cx="0" cy="200" r="4" fill="#A68B3D"/>
+              <circle cx="100" cy="160" r="4" fill="#A8201A"/>
+              <circle cx="200" cy="180" r="4" fill="#A8201A"/>
+              <circle cx="300" cy="120" r="4" fill="#A8201A"/>
+              <circle cx="400" cy="140" r="4" fill="#A8201A"/>
+              <circle cx="500" cy="80" r="4" fill="#A8201A"/>
+              <circle cx="600" cy="100" r="4" fill="#2D6A4F"/>
+              <circle cx="700" cy="60" r="5" fill="#fff" stroke="#2D6A4F" stroke-width="2.5"/>
+              <circle cx="800" cy="90" r="4" fill="#2D6A4F"/>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <!-- 表格预览 -->
+      <div class="table-preview">
+        <div class="table-header">
+          <div>商品名称</div>
+          <div>库存数量</div>
+          <div>单价</div>
+          <div>状态</div>
+          <div>操作</div>
+        </div>
+        <div class="table-row">
+          <div style="font-weight:500;">农夫山泉 19L</div>
+          <div>1,256 桶</div>
+          <div>¥30.00</div>
+          <div><span class="tag tag-success">正常</span></div>
+          <div><span class="action-btn">编辑</span> <span class="action-btn">详情</span></div>
+        </div>
+        <div class="table-row">
+          <div style="font-weight:500;">农夫山泉 550ml</div>
+          <div>8,420 瓶</div>
+          <div>¥1.50</div>
+          <div><span class="tag tag-success">正常</span></div>
+          <div><span class="action-btn">编辑</span> <span class="action-btn">详情</span></div>
+        </div>
+        <div class="table-row">
+          <div style="font-weight:500;">农夫山泉 4L</div>
+          <div>320 桶</div>
+          <div>¥8.00</div>
+          <div><span class="tag tag-warning">偏低</span></div>
+          <div><span class="action-btn">编辑</span> <span class="action-btn">详情</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="design-note">
+  <strong>沉稳版配色</strong>
+  主红 #A8201A · 墨绿 #2D6A4F · 暗金 #A68B3D
+  <div class="palette">
+    <div class="swatch" style="background:#A8201A"></div>
+    <div class="swatch" style="background:#2D6A4F"></div>
+    <div class="swatch" style="background:#A68B3D"></div>
+    <div class="swatch" style="background:#F5F4F0;border:1px solid #ddd"></div>
+    <div class="swatch" style="background:#1F1F1F"></div>
+  </div>
+</div>
+
+</body>
+</html>

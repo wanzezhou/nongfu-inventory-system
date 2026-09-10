@@ -82,6 +82,7 @@
         style="width: 100%"
         v-loading="loading"
         border
+        stripe
       >
         <el-table-column prop="workerName" label="员工姓名" width="120" />
         <el-table-column prop="phone" label="联系电话" width="140" />
@@ -90,6 +91,12 @@
             <el-tag :type="employeeTypeTagType(row.employeeType)" size="small">
               {{ employeeTypeLabel(row.employeeType) }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="monthlySalary" label="固定月薪" width="110" align="right">
+          <template #default="{ row }">
+            <span v-if="row.monthlySalary != null && (row.employeeType === 1 || row.employeeType === 3)" class="salary-text">¥{{ Number(row.monthlySalary).toFixed(2) }}</span>
+            <span v-else class="muted">-</span>
           </template>
         </el-table-column>
         <el-table-column prop="vehicleType" label="配送车辆" width="100" align="center">
@@ -116,11 +123,15 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right" align="center" class-name="action-column">
+        <el-table-column label="操作" width="200" fixed="right" align="center" class-name="action-column">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
               编辑
+            </el-button>
+            <el-button type="warning" link @click="openAdvance(row)">
+              <el-icon><Wallet /></el-icon>
+              预支
             </el-button>
             <el-button type="danger" link @click="handleDelete(row)">
               <el-icon><Delete /></el-icon>
@@ -185,6 +196,17 @@
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item v-if="workerForm.employeeType === 1 || workerForm.employeeType === 3" label="固定月薪">
+          <el-input-number
+            v-model="workerForm.monthlySalary"
+            :min="0"
+            :precision="2"
+            :step="100"
+            :controls="false"
+            placeholder="每月固定工资，工资统计页发放时可改"
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="收款银行">
           <el-input v-model="workerForm.bankName" placeholder="请输入收款银行" />
         </el-form-item>
@@ -209,6 +231,13 @@
     </el-dialog>
 
     <ImportDialog v-model="importDialogVisible" module="workers" matchFieldText="员工姓名" @success="fetchData" />
+
+    <AdvanceDialog
+      v-model="advanceVisible"
+      :worker-id="advanceWorker.workerId || ''"
+      :worker-name="advanceWorker.workerName || ''"
+      @success="fetchData"
+    />
   </div>
 </template>
 
@@ -216,7 +245,7 @@
 import { usePagination } from '@/composables/usePagination'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete, Download, Upload } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Download, Upload, Wallet } from '@element-plus/icons-vue'
 import {
   getWorkerList,
   addWorker,
@@ -225,9 +254,18 @@ import {
 } from '@/api/worker'
 import { exportData, downloadBlob } from '@/api/excel'
 import ImportDialog from '@/components/ImportDialog.vue'
+import AdvanceDialog from '@/components/AdvanceDialog.vue'
 
 const importDialogVisible = ref(false)
 const exporting = ref(false)
+
+// 工资预支弹窗
+const advanceVisible = ref(false)
+const advanceWorker = ref({})
+const openAdvance = (row) => {
+  advanceWorker.value = row
+  advanceVisible.value = true
+}
 
 const handleExport = async () => {
   exporting.value = true
@@ -272,6 +310,8 @@ const workerForm = reactive({
   phone: '',
   employeeType: 2,
   vehicleType: 1,
+  commissionRate: 0,
+  monthlySalary: null,
   bankName: '',
   bankAccount: '',
   status: 1
@@ -337,6 +377,7 @@ const handleEdit = (row) => {
     employeeType: row.employeeType,
     vehicleType: row.vehicleType,
     commissionRate: row.employeeType === 3 && row.commissionRate != null ? Number(row.commissionRate) : 0,
+    monthlySalary: (row.employeeType === 1 || row.employeeType === 3) && row.monthlySalary != null ? Number(row.monthlySalary) : null,
     bankName: row.bankName,
     bankAccount: row.bankAccount,
     status: row.status
@@ -397,6 +438,8 @@ const resetForm = () => {
     phone: '',
     employeeType: 2,
     vehicleType: 1,
+    commissionRate: 0,
+    monthlySalary: null,
     bankName: '',
     bankAccount: '',
     status: 1
@@ -416,7 +459,7 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .filter-form {
@@ -430,7 +473,7 @@ onMounted(() => {
 }
 
 .table-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .pagination-wrapper {
@@ -445,6 +488,15 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.salary-text {
+  color: var(--el-color-warning);
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--text-3);
 }
 
 /* 窄屏适配：对话框宽度响应式 */

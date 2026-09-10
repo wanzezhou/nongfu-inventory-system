@@ -8,13 +8,6 @@ export function getStations(params) {
   })
 }
 
-export function getStation(id) {
-  return request({
-    url: `/stations/${id}`,
-    method: 'get'
-  })
-}
-
 export function createStation(data) {
   return request({
     url: '/stations',
