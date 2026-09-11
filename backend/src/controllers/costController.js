@@ -2,6 +2,7 @@
 // 成本 = (进货价 + 水站分销配送费 distribution_delivery_fee) × 抵扣件数
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
+const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
 
 // 行抵扣件数（旧整单抵扣 ticket_qty=0 时按整行数量）
 function ticketQtyExpr() {
@@ -13,18 +14,14 @@ function costExpr() {
   return `(oi.purchase_price + oi.distribution_delivery_fee) * ${ticketQtyExpr()}`;
 }
 
-// 校验月份
-function checkMonth(month) {
-  return month && /^\d{4}-\d{2}$/.test(month);
-}
-
-// 按水站汇总直营水站抵扣成本（月份）
+// 按水站汇总直营水站抵扣成本（时间范围：预设区间或旧 month 参数）
 async function getStationSummary(req, res) {
   try {
-    const { month } = req.query;
-    if (!checkMonth(month)) {
-      return error(res, '请选择统计月份（格式 YYYY-MM）', 400);
+    const r = resolveRange(req.query);
+    if (!r) {
+      return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
     }
+    const rw = buildRangeWhere('o.created_at', r);
     const [rows] = await pool.execute(
       `SELECT st.station_id, st.station_name,
               COUNT(DISTINCT o.order_id) AS order_count,
@@ -35,18 +32,18 @@ async function getStationSummary(req, res) {
        JOIN sub_stations st ON st.station_id = o.station_id
        WHERE o.order_type = 2 AND o.canceled_at IS NULL
          AND oi.pricing_type = 2
-         AND DATE_FORMAT(o.created_at, '%Y-%m') = ?
+         AND ${rw.clause}
        GROUP BY st.station_id, st.station_name
        ORDER BY cost_total DESC`,
-      [month]
+      rw.params
     );
 
-    const list = rows.map((r) => ({
-      stationId: r.station_id,
-      stationName: r.station_name,
-      orderCount: Number(r.order_count) || 0,
-      ticketQty: Number(r.ticket_qty) || 0,
-      costTotal: Number(r.cost_total) || 0
+    const list = rows.map((row) => ({
+      stationId: row.station_id,
+      stationName: row.station_name,
+      orderCount: Number(row.order_count) || 0,
+      ticketQty: Number(row.ticket_qty) || 0,
+      costTotal: Number(row.cost_total) || 0
     }));
 
     const summary = {
@@ -56,20 +53,22 @@ async function getStationSummary(req, res) {
       ticketQty: list.reduce((s, x) => s + x.ticketQty, 0)
     };
 
-    return success(res, { list, summary, month });
+    return success(res, { list, summary, range: r, month: r.isSingleMonth ? r.startMonth : undefined });
   } catch (e) {
     console.error('getStationSummary error:', e);
     return error(res, '直营水站成本统计查询失败', 500);
   }
 }
 
-// 指定水站当月抵扣订单明细
+// 指定水站在时间范围内的抵扣订单明细
 async function getStationOrders(req, res) {
   try {
-    const { month, stationId } = req.query;
-    if (!checkMonth(month) || !stationId) {
-      return error(res, '缺少月份或水站', 400);
+    const { stationId } = req.query;
+    const r = resolveRange(req.query);
+    if (!r || !stationId) {
+      return error(res, '缺少时间范围或水站', 400);
     }
+    const rw = buildRangeWhere('o.created_at', r);
     const [rows] = await pool.execute(
       `SELECT o.order_id, o.created_at,
               SUM(${ticketQtyExpr()}) AS ticket_qty,
@@ -78,20 +77,20 @@ async function getStationOrders(req, res) {
        JOIN order_items oi ON o.order_id = oi.order_id
        WHERE o.order_type = 2 AND o.canceled_at IS NULL
          AND oi.pricing_type = 2
-         AND o.station_id = ? AND DATE_FORMAT(o.created_at, '%Y-%m') = ?
+         AND o.station_id = ? AND ${rw.clause}
        GROUP BY o.order_id, o.created_at
        ORDER BY o.created_at DESC`,
-      [stationId, month]
+      [stationId, ...rw.params]
     );
 
-    const list = rows.map((r) => ({
-      orderId: r.order_id,
-      createTime: r.created_at,
-      ticketQty: Number(r.ticket_qty) || 0,
-      costTotal: Number(r.cost_total) || 0
+    const list = rows.map((row) => ({
+      orderId: row.order_id,
+      createTime: row.created_at,
+      ticketQty: Number(row.ticket_qty) || 0,
+      costTotal: Number(row.cost_total) || 0
     }));
 
-    return success(res, { list, month, stationId });
+    return success(res, { list, range: r, stationId });
   } catch (e) {
     console.error('getStationOrders error:', e);
     return error(res, '水站抵扣订单查询失败', 500);

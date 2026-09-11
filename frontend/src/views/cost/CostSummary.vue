@@ -3,14 +3,7 @@
     <!-- 筛选 -->
     <el-card class="filter-card" shadow="never">
       <div class="filter-row">
-        <el-date-picker
-          v-model="month"
-          type="month"
-          placeholder="选择统计月份"
-          value-format="YYYY-MM"
-          format="YYYY年MM月"
-          style="width: 180px"
-        />
+        <DateRangeFilter v-model="rangeState" @change="fetchData" />
         <el-button type="primary" style="margin-left: 12px;" @click="fetchData">
           <el-icon><Search /></el-icon>查询
         </el-button>
@@ -38,7 +31,7 @@
       <div class="summary-card card-gold">
         <div class="card-label"><el-icon><TrendCharts /></el-icon><span>成本合计</span></div>
         <div class="card-value total">¥{{ fmtMoney(totalCost) }}</div>
-        <div class="card-desc">{{ month || '-' }} 总成本</div>
+        <div class="card-desc">{{ rangeLabel }} 总成本</div>
       </div>
     </div>
 
@@ -60,7 +53,7 @@
               <template #default="{ row }">{{ row.remark || '-' }}</template>
             </el-table-column>
           </el-table>
-          <el-empty v-if="!expenseRows.length" description="本月无其他支出" :image-size="60" />
+          <el-empty v-if="!expenseRows.length" description="当前区间无其他支出" :image-size="60" />
         </el-tab-pane>
         <el-tab-pane label="直营水站成本明细" name="station">
           <el-table :data="stationRows" border stripe size="small">
@@ -71,7 +64,7 @@
               <template #default="{ row }"><span class="fee-text">¥{{ fmtMoney(row.costTotal) }}</span></template>
             </el-table-column>
           </el-table>
-          <el-empty v-if="!stationRows.length" description="本月无水票抵扣成本" :image-size="60" />
+          <el-empty v-if="!stationRows.length" description="当前区间无水票抵扣成本" :image-size="60" />
         </el-tab-pane>
         <el-tab-pane label="员工工资明细" name="salary">
           <el-table :data="salaryRows" border stripe size="small">
@@ -83,7 +76,7 @@
               <template #default="{ row }"><span class="fee-text">¥{{ fmtMoney(row.deliveryFee) }}</span></template>
             </el-table-column>
           </el-table>
-          <el-empty v-if="!salaryRows.length" description="本月无配送工资" :image-size="60" />
+          <el-empty v-if="!salaryRows.length" description="当前区间无配送工资" :image-size="60" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -94,17 +87,21 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Money, Wallet, OfficeBuilding, TrendCharts } from '@element-plus/icons-vue'
+import DateRangeFilter from '@/components/DateRangeFilter.vue'
+import { defaultRange, toQuery, rangeText } from '@/utils/dateRange'
 import { getStationCostSummary } from '@/api/cost'
 import { getSalarySummary } from '@/api/salary'
 import { getExpenses } from '@/api/expense'
 
-const month = ref('')
+const rangeState = ref(defaultRange())
 const loading = ref(false)
 const activeTab = ref('expense')
 const summary = reactive({ stationCost: 0, salaryCost: 0, otherExpense: 0, expenseCount: 0 })
 const stationRows = ref([])
 const salaryRows = ref([])
 const expenseRows = ref([])
+
+const rangeLabel = computed(() => rangeText(rangeState.value))
 
 const totalCost = computed(() =>
   Math.round((summary.stationCost + summary.salaryCost + summary.otherExpense) * 100) / 100
@@ -113,16 +110,18 @@ const totalCost = computed(() =>
 const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const fetchData = async () => {
-  if (!month.value) {
-    ElMessage.warning('请选择统计月份')
+  if (rangeState.value.range === 'custom' && !(rangeState.value.startDate && rangeState.value.endDate)) {
+    ElMessage.warning('请选择起止日期')
     return
   }
   loading.value = true
   try {
+    const q = toQuery(rangeState.value)
     const [st, sa, ex] = await Promise.all([
-      getStationCostSummary({ month: month.value }),
-      getSalarySummary({ month: month.value }),
-      getExpenses({ month: month.value, page: 1, pageSize: 200 })
+      getStationCostSummary(q),
+      getSalarySummary(q),
+      // 明细表仅预览前 500 条；卡片金额与笔数取后端全量聚合（sumAmount / total）
+      getExpenses({ ...q, page: 1, pageSize: 500 })
     ])
     summary.stationCost = st.data?.summary?.totalCost || 0
     stationRows.value = st.data?.list || []
@@ -140,8 +139,6 @@ const fetchData = async () => {
 }
 
 onMounted(() => {
-  const now = new Date()
-  month.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   fetchData()
 })
 </script>

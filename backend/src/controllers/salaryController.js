@@ -6,6 +6,7 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 const { ORDER_TYPES } = require('../constants/order');
+const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
 
 // 订单类型 -> 员工配送费费率（order_items 创建时快照的商品配送费）
 //   官方平台销售(1) / 线下零售(3)：工人零售配送费
@@ -21,13 +22,22 @@ function deliveryFeeExpr() {
       ELSE 0 END)`;
 }
 
-// 通用过滤：排除已取消、无需配送(delivery_type=3)、未指定员工、非业务订单
-function commonWhere(month) {
-  return `o.canceled_at IS NULL
+// 通用过滤（不含时间条件）：排除已取消、无需配送(delivery_type=3)、未指定员工、非业务订单
+const BASE_ORDER_FILTER = `o.canceled_at IS NULL
     AND o.delivery_type IN (1, 2)
     AND o.worker_id IS NOT NULL
-    AND o.order_type IN (1,2,3,4,6)
+    AND o.order_type IN (1,2,3,4,6)`;
+
+// 按整月过滤——工资发放/预支结算等「按月不可分割」的场景（参数：month）
+function commonWhere(month) {
+  return `${BASE_ORDER_FILTER}
     AND DATE_FORMAT(o.created_at, '%Y-%m') = ?`;
+}
+
+// 按时间范围过滤——统计场景（rw 来自 utils/dateRange.buildRangeWhere）
+function commonWhereRange(rw) {
+  return `${BASE_ORDER_FILTER}
+    AND ${rw.clause}`;
 }
 
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
@@ -83,13 +93,16 @@ async function loadPendingAdvances(conn, workerId) {
   return { advances: rows, pending: round2(pending) };
 }
 
-// 按员工汇总应发（月份）——全部在职员工：应发=当月配送费（2026-09-09 起）
+// 按员工汇总应发（时间范围）——全部在职员工：应发 = 区间内配送费（2026-09-09 起）
+// 跨月区间的「已发放」口径：按 salary_month 落在区间内判定，汇总该区间内的发放金额与覆盖月份
 async function getSalarySummary(req, res) {
   try {
-    const { month } = req.query;
-    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-      return error(res, '请选择统计月份（格式 YYYY-MM）', 400);
+    const r = resolveRange(req.query);
+    if (!r) {
+      return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
     }
+    const multiMonth = !r.isSingleMonth;
+    const rw = buildRangeWhere('o.created_at', r);
     const feeExpr = deliveryFeeExpr();
     const [rows] = await pool.execute(
       `SELECT w.worker_id, w.worker_name, w.phone, w.employee_type, w.monthly_salary,
@@ -97,8 +110,8 @@ async function getSalarySummary(req, res) {
               COALESCE(s.total_qty, 0) AS total_qty,
               COALESCE(s.calc_fee, 0) AS calc_fee,
               COALESCE(adv.pending, 0) AS pending_advance,
-              p.payment_id, p.amount AS paid_amount,
-              p.account_name AS paid_account, p.paid_at AS paid_at, p.remark AS pay_remark
+              p.payment_id, p.paid_amount, p.pay_count, p.pay_months,
+              p.paid_account, p.paid_at, p.pay_remark
        FROM workers w
        LEFT JOIN (
          SELECT o.worker_id,
@@ -107,46 +120,67 @@ async function getSalarySummary(req, res) {
                 ROUND(SUM(${feeExpr} * oi.quantity), 2) AS calc_fee
          FROM orders o
          JOIN order_items oi ON o.order_id = oi.order_id
-         WHERE ${commonWhere(month)}
+         WHERE ${commonWhereRange(rw)}
          GROUP BY o.worker_id
        ) s ON s.worker_id = w.worker_id
        LEFT JOIN (
          SELECT worker_id, ROUND(SUM(amount - deducted_amount), 2) AS pending
          FROM salary_advances WHERE deducted_amount < amount GROUP BY worker_id
        ) adv ON adv.worker_id = w.worker_id
-       LEFT JOIN salary_payments p ON p.worker_id = w.worker_id AND p.salary_month = ?
+       LEFT JOIN (
+         SELECT worker_id,
+                MIN(payment_id) AS payment_id,
+                ROUND(SUM(amount), 2) AS paid_amount,
+                COUNT(*) AS pay_count,
+                GROUP_CONCAT(DISTINCT salary_month ORDER BY salary_month) AS pay_months,
+                MAX(account_name) AS paid_account,
+                MAX(paid_at) AS paid_at,
+                MAX(remark) AS pay_remark
+         FROM salary_payments
+         WHERE salary_month >= ? AND salary_month <= ?
+         GROUP BY worker_id
+       ) p ON p.worker_id = w.worker_id
        WHERE w.status = 1
        ORDER BY w.employee_type ASC, w.worker_name ASC`,
-      [month, month]
+      [...rw.params, r.startMonth, r.endMonth]
     );
 
-    const list = rows.map((r) => {
-      const paid = !!r.payment_id;
-      const deliveryFee = Number(r.calc_fee) || 0;
-      const due = round2(calcDue(r, deliveryFee));
-      const pendingAdvance = round2(r.pending_advance);
+    const list = rows.map((row) => {
+      const payCount = Number(row.pay_count) || 0;
+      const paid = payCount > 0;
+      const deliveryFee = Number(row.calc_fee) || 0;
+      const due = round2(calcDue(row, deliveryFee));
+      const pendingAdvance = round2(row.pending_advance);
       const net = round2(due - pendingAdvance);
+      const paidAmount = paid ? round2(row.paid_amount) : null;
+      // 汇总口径：
+      //   单月 —— 沿用原逻辑（已发放取发放快照金额，未发放取实发 net）
+      //   跨月 —— 取应发口径（区间内配送费合计），逐月发放状态由 paidMonths 单独展示，
+      //           避免「部分月已发」时用发放额掩盖了未发月份的应发成本
+      const payAmount = multiMonth ? due : (paid ? paidAmount : net);
       return {
-        workerId: r.worker_id,
-        workerName: r.worker_name,
-        phone: r.phone || '',
-        employeeType: Number(r.employee_type),
-        orderCount: Number(r.order_count) || 0,
-        totalQty: Number(r.total_qty) || 0,
+        workerId: row.worker_id,
+        workerName: row.worker_name,
+        phone: row.phone || '',
+        employeeType: Number(row.employee_type),
+        orderCount: Number(row.order_count) || 0,
+        totalQty: Number(row.total_qty) || 0,
         calcFee: deliveryFee,
-        // 应发：全员=当月配送费（发放时可手动调整）
+        // 应发：全员 = 区间内配送费（发放时可手动调整）
         due,
         pendingAdvance,
         // 实发 = 应发 - 待扣预支（可为负：挂账下月继续扣）
         net,
-        // 已发放行锁定为发放记录金额，未发放行显示实发
-        payAmount: paid ? Number(r.paid_amount) || 0 : net,
+        payAmount,
         paid,
-        paymentId: r.payment_id || null,
-        paidAmount: paid ? Number(r.paid_amount) || 0 : null,
-        paidAccount: r.paid_account || '',
-        paidAt: r.paid_at || null,
-        payRemark: r.pay_remark || ''
+        multiMonth,
+        paymentId: row.payment_id || null,
+        paidAmount,
+        paidMonthCount: payCount,
+        paidMonths: row.pay_months ? String(row.pay_months).split(',') : [],
+        paidAccount: row.paid_account || '',
+        paidAt: row.paid_at || null,
+        payRemark: row.pay_remark || ''
       };
     });
 
@@ -154,23 +188,32 @@ async function getSalarySummary(req, res) {
       totalDeliveryFee: round2(list.reduce((s, x) => s + x.payAmount, 0)),
       workerCount: list.length,
       orderCount: list.reduce((s, x) => s + x.orderCount, 0),
-      totalPendingAdvance: round2(list.reduce((s, x) => s + x.pendingAdvance, 0))
+      totalPendingAdvance: round2(list.reduce((s, x) => s + x.pendingAdvance, 0)),
+      paidWorkerCount: list.filter((x) => x.paid).length
     };
 
-    return success(res, { list, summary, month });
+    return success(res, {
+      list,
+      summary,
+      range: r,
+      multiMonth,
+      month: r.isSingleMonth ? r.startMonth : undefined
+    });
   } catch (e) {
     console.error('getSalarySummary error:', e);
     return error(res, '工资统计查询失败', 500);
   }
 }
 
-// 指定员工当月配送订单明细
+// 指定员工在时间范围内的配送订单明细
 async function getSalaryOrders(req, res) {
   try {
-    const { month, workerId } = req.query;
-    if (!month || !/^\d{4}-\d{2}$/.test(month) || !workerId) {
-      return error(res, '缺少月份或员工', 400);
+    const { workerId } = req.query;
+    const r = resolveRange(req.query);
+    if (!r || !workerId) {
+      return error(res, '缺少时间范围或员工', 400);
     }
+    const rw = buildRangeWhere('o.created_at', r);
     const feeExpr = deliveryFeeExpr();
     const [rows] = await pool.execute(
       `SELECT o.order_id, o.order_type, o.customer_name, o.contact_name, o.created_at,
@@ -178,10 +221,10 @@ async function getSalaryOrders(req, res) {
               ROUND(SUM(${feeExpr} * oi.quantity), 2) AS delivery_fee
        FROM orders o
        JOIN order_items oi ON o.order_id = oi.order_id
-       WHERE ${commonWhere(month)} AND o.worker_id = ?
+       WHERE ${commonWhereRange(rw)} AND o.worker_id = ?
        GROUP BY o.order_id, o.order_type, o.customer_name, o.contact_name, o.created_at
        ORDER BY o.created_at DESC`,
-      [month, workerId]
+      [...rw.params, workerId]
     );
 
     // 订单级商品明细（供展开查看：每件商品的配送费 = 费率快照 × 数量）
@@ -226,7 +269,7 @@ async function getSalaryOrders(req, res) {
       items: itemsByOrder[r.order_id] || []
     }));
 
-    return success(res, { list, month, workerId });
+    return success(res, { list, range: r, month: r.isSingleMonth ? r.startMonth : undefined, workerId });
   } catch (e) {
     console.error('getSalaryOrders error:', e);
     return error(res, '工资明细查询失败', 500);

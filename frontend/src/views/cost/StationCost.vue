@@ -3,14 +3,7 @@
     <!-- 筛选区 -->
     <el-card class="filter-card" shadow="never">
       <div class="filter-form">
-        <el-date-picker
-          v-model="month"
-          type="month"
-          placeholder="选择统计月份"
-          value-format="YYYY-MM"
-          format="YYYY年MM月"
-          style="width: 180px"
-        />
+        <DateRangeFilter v-model="rangeState" @change="handleSearch" />
         <el-button type="primary" style="margin-left: 12px;" @click="handleSearch">
           <el-icon><Search /></el-icon>
           查询
@@ -24,7 +17,7 @@
       <div class="summary-card card-gold">
         <div class="card-label"><el-icon><Money /></el-icon><span>成本总额</span></div>
         <div class="card-value">¥{{ fmtMoney(summary.totalCost) }}</div>
-        <div class="card-desc">{{ month || '本月' }} 水票抵扣商品成本合计</div>
+        <div class="card-desc">{{ rangeLabel }} 水票抵扣商品成本合计</div>
       </div>
       <div class="summary-card card-blue">
         <div class="card-label"><el-icon><OfficeBuilding /></el-icon><span>水站数</span></div>
@@ -46,7 +39,7 @@
     <!-- 水站汇总表 -->
     <el-card class="table-card" shadow="never">
       <div class="table-header">
-        <span class="table-title">水站抵扣成本汇总（{{ month || '-' }}）</span>
+        <span class="table-title">水站抵扣成本汇总（{{ rangeLabel }}）</span>
       </div>
       <el-table :data="rows" v-loading="loading" border stripe size="small">
         <el-table-column prop="stationName" label="水站名称" min-width="130">
@@ -75,7 +68,7 @@
     <!-- 水站抵扣订单明细弹窗 -->
     <el-dialog
       v-model="ordersVisible"
-      :title="`抵扣订单明细：${currentStation?.stationName || ''}（${month}）`"
+      :title="`抵扣订单明细：${currentStation?.stationName || ''}（${rangeLabel}）`"
       :width="dialogWidth"
       :close-on-click-modal="false"
       destroy-on-close
@@ -142,12 +135,16 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Money, List, View, Goods, OfficeBuilding } from '@element-plus/icons-vue'
+import DateRangeFilter from '@/components/DateRangeFilter.vue'
+import { defaultRange, toQuery, rangeText } from '@/utils/dateRange'
 import { getStationCostSummary, getStationCostOrders, getCostOrderItems } from '@/api/cost'
 
 const loading = ref(false)
-const month = ref('')
+const rangeState = ref(defaultRange())
 const rows = ref([])
 const summary = reactive({ totalCost: 0, stationCount: 0, orderCount: 0, ticketQty: 0 })
+
+const rangeLabel = computed(() => rangeText(rangeState.value))
 
 // 水站订单明细
 const ordersVisible = ref(false)
@@ -177,13 +174,13 @@ const ordersTotal = computed(() => orderRows.value.reduce((s, x) => s + (x.costT
 const itemsTotal = computed(() => itemRows.value.reduce((s, x) => s + (x.costTotal || 0), 0))
 
 const fetchSummary = async () => {
-  if (!month.value) {
-    ElMessage.warning('请选择统计月份')
+  if (rangeState.value.range === 'custom' && !(rangeState.value.startDate && rangeState.value.endDate)) {
+    ElMessage.warning('请选择起止日期')
     return
   }
   loading.value = true
   try {
-    const res = await getStationCostSummary({ month: month.value })
+    const res = await getStationCostSummary(toQuery(rangeState.value))
     if (res.data) {
       rows.value = res.data.list || []
       Object.assign(summary, res.data.summary || {})
@@ -206,7 +203,7 @@ const viewStationOrders = async (row) => {
   ordersLoading.value = true
   orderRows.value = []
   try {
-    const res = await getStationCostOrders({ month: month.value, stationId: row.stationId })
+    const res = await getStationCostOrders({ ...toQuery(rangeState.value), stationId: row.stationId })
     orderRows.value = res.data?.list || []
   } catch (e) {
     console.error('水站订单明细失败:', e)
@@ -233,8 +230,6 @@ const viewOrderItems = async (row) => {
 }
 
 onMounted(() => {
-  const now = new Date()
-  month.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   fetchSummary()
 })
 </script>

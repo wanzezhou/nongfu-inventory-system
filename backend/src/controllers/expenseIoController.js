@@ -3,6 +3,7 @@ const { writeWorkbook, readSheetJson, readCsvAoa } = require('../utils/excel');
 const multer = require('multer');
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
+const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
 const expenseCore = require('./expenseController');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -127,15 +128,24 @@ function validateImportRow(name, amountRaw, dateRaw, category, accountName, acco
 // 导出（xlsx / csv）：按日期范围/类别/关键词筛选
 async function exportExpenses(req, res) {
   try {
-    const { startDate, endDate, category, keyword, format = 'xlsx', month } = req.query;
+    const { startDate, endDate, category, keyword, format = 'xlsx', month, range } = req.query;
     const parts = [];
     const params = [];
-    if (month && /^\d{4}-\d{2}$/.test(month)) {
-      parts.push('DATE_FORMAT(expense_date, ?) = ?');
-      params.push('%Y-%m', month);
+    // 时间条件与列表接口保持一致：range / month 走统一区间解析，否则用直接传入的起止日期
+    if (range || month) {
+      const r = resolveRange({ range, month, startDate, endDate });
+      if (!r) {
+        return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+      }
+      const rw = buildRangeWhere('expense_date', r);
+      if (rw.clause) {
+        parts.push(rw.clause);
+        params.push(...rw.params);
+      }
+    } else {
+      if (startDate) { parts.push('expense_date >= ?'); params.push(startDate); }
+      if (endDate) { parts.push('expense_date <= ?'); params.push(endDate); }
     }
-    if (startDate) { parts.push('expense_date >= ?'); params.push(startDate); }
-    if (endDate) { parts.push('expense_date <= ?'); params.push(endDate); }
     if (category) { parts.push('category = ?'); params.push(category); }
     if (keyword) {
       parts.push('(expense_name LIKE ? OR remark LIKE ?)');

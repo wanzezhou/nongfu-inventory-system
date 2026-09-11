@@ -3,15 +3,7 @@
     <!-- 筛选区 -->
     <el-card class="filter-card" shadow="never">
       <div class="filter-form">
-        <el-date-picker
-          v-model="dateRange"
-          type="daterange"
-          range-separator="至"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-          value-format="YYYY-MM-DD"
-          style="width: 250px"
-        />
+        <DateRangeFilter v-model="rangeState" @change="onRangeChange" />
         <el-select v-model="query.category" placeholder="支出类别" clearable filterable style="width: 140px; margin-left: 10px;">
           <el-option v-for="c in allCategories" :key="c" :label="c" :value="c" />
         </el-select>
@@ -176,6 +168,8 @@ import {
 import { downloadBlob } from '@/api/excel'
 import { formatMoney as fmtMoney } from '@/utils/format'
 import AccountSelect from '@/components/AccountSelect.vue'
+import DateRangeFilter from '@/components/DateRangeFilter.vue'
+import { defaultRange, toQuery } from '@/utils/dateRange'
 
 const loading = ref(false)
 const rows = ref([])
@@ -187,7 +181,7 @@ const onPageSizeChange = () => {
   page.value = 1
   fetchList()
 }
-const dateRange = ref(null)
+const rangeState = ref(defaultRange())
 const query = reactive({ category: '', keyword: '' })
 
 const allCategories = ref([])
@@ -220,18 +214,24 @@ const tagType = (c) => {
   return tagTypes[sum % tagTypes.length]
 }
 
+// 时间范围变化：回到第 1 页再查
+const onRangeChange = () => {
+  page.value = 1
+  fetchList()
+}
+
 const buildParams = () => {
-  const params = { page: page.value, pageSize: pageSize.value }
-  if (dateRange.value && dateRange.value.length === 2) {
-    params.startDate = dateRange.value[0]
-    params.endDate = dateRange.value[1]
-  }
+  const params = { ...toQuery(rangeState.value), page: page.value, pageSize: pageSize.value }
   if (query.category) params.category = query.category
   if (query.keyword) params.keyword = query.keyword
   return params
 }
 
 const fetchList = async () => {
+  if (rangeState.value.range === 'custom' && !(rangeState.value.startDate && rangeState.value.endDate)) {
+    ElMessage.warning('请选择起止日期')
+    return
+  }
   loading.value = true
   try {
     const res = await getExpenses(buildParams())

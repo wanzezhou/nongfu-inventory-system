@@ -3,14 +3,7 @@
     <!-- 筛选区 -->
     <el-card class="filter-card" shadow="never">
       <div class="filter-form">
-        <el-date-picker
-          v-model="month"
-          type="month"
-          placeholder="选择统计月份"
-          value-format="YYYY-MM"
-          format="YYYY年MM月"
-          style="width: 180px"
-        />
+        <DateRangeFilter v-model="rangeState" @change="handleSearch" />
         <el-button type="primary" style="margin-left: 12px;" @click="handleSearch">
           <el-icon><Search /></el-icon>
           查询
@@ -24,7 +17,7 @@
       <div class="summary-card card-gold">
         <div class="card-label"><el-icon><Money /></el-icon><span>应发工资总额</span></div>
         <div class="card-value">¥{{ fmtMoney(summary.totalDeliveryFee) }}</div>
-        <div class="card-desc">{{ month || '本月' }} 全部员工应发合计（含已发放锁定）</div>
+        <div class="card-desc">{{ rangeLabel }} 全部员工应发合计（{{ multiMonth ? '跨月按应发口径' : '含已发放锁定' }}）</div>
       </div>
       <div class="summary-card card-blue">
         <div class="card-label"><el-icon><User /></el-icon><span>参与员工</span></div>
@@ -46,8 +39,8 @@
     <!-- 员工汇总表 -->
     <el-card class="table-card" shadow="never">
       <div class="table-header">
-        <span class="table-title">员工工资汇总（{{ month || '-' }}）</span>
-        <span class="table-tip">全员应发=当月配送费（发放时可手动调整补加其他工资）；实发=应发-待扣预支，不足时负数挂账下月继续扣</span>
+        <span class="table-title">员工工资汇总（{{ rangeLabel }}）</span>
+        <span class="table-tip">全员应发=区间配送费（发放时可手动调整补加其他工资）；实发=应发-待扣预支，不足时负数挂账下月继续扣{{ multiMonth ? '；跨月区间为统计视图，工资发放/撤销请切换到单个自然月' : '' }}</span>
       </div>
       <el-table :data="rows" v-loading="loading" border stripe size="small">
         <el-table-column prop="workerName" label="员工姓名" min-width="110">
@@ -59,9 +52,14 @@
         <el-table-column prop="phone" label="联系电话" width="130" />
         <el-table-column prop="orderCount" label="配送订单数" width="105" align="center" />
         <el-table-column prop="totalQty" label="配送件数" width="95" align="center" />
-        <el-table-column label="应发工资" width="120" align="right">
+        <el-table-column label="应发工资" width="130" align="right">
           <template #default="{ row }">
-            <template v-if="!row.paid">
+            <!-- 跨月区间：发放记录按月存储，无法对应单一快照，统一按应发口径展示 -->
+            <template v-if="row.multiMonth">
+              <span class="fee-text">¥{{ fmtMoney(row.due) }}</span>
+              <div class="sub-text">区间配送费 ¥{{ fmtMoney(row.calcFee) }}</div>
+            </template>
+            <template v-else-if="!row.paid">
               <span class="fee-text">¥{{ fmtMoney(row.due) }}</span>
               <div class="sub-text">当月配送费 ¥{{ fmtMoney(row.calcFee) }}</div>
             </template>
@@ -75,22 +73,27 @@
         </el-table-column>
         <el-table-column label="待扣预支" width="105" align="right">
           <template #default="{ row }">
-            <span v-if="!row.paid && row.pendingAdvance > 0" class="advance-text">-¥{{ fmtMoney(row.pendingAdvance) }}</span>
+            <span v-if="(row.multiMonth || !row.paid) && row.pendingAdvance > 0" class="advance-text">-¥{{ fmtMoney(row.pendingAdvance) }}</span>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
         <el-table-column label="实发金额" width="110" align="right">
           <template #default="{ row }">
-            <span v-if="!row.paid" :class="row.net < 0 ? 'net-negative' : 'net-text'">
+            <span v-if="row.multiMonth || !row.paid" :class="row.net < 0 ? 'net-negative' : 'net-text'">
               ¥{{ fmtMoney(row.net) }}<template v-if="row.net < 0"><span class="sub-text">（挂账下月扣）</span></template>
             </span>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="发放状态" width="200">
+        <el-table-column label="发放状态" width="210">
           <template #default="{ row }">
             <template v-if="!row.paid">
               <el-tag type="warning" size="small">未发放</el-tag>
+              <div v-if="row.multiMonth" class="paid-info">区间内无发放记录</div>
+            </template>
+            <template v-else-if="row.multiMonth">
+              <el-tag type="success" size="small">区间内已发 {{ row.paidMonthCount }} 个月份</el-tag>
+              <div class="paid-info">已发合计 ¥{{ fmtMoney(row.paidAmount) }}<br>{{ (row.paidMonths || []).join('、') }}</div>
             </template>
             <template v-else>
               <el-tooltip placement="top" :content="`账户：${row.paidAccount || '-'}｜时间：${formatTime(row.paidAt)}${row.payRemark ? '｜备注：' + row.payRemark : ''}`">
@@ -106,14 +109,25 @@
               <el-icon><View /></el-icon>
               明细
             </el-button>
-            <el-button v-if="!row.paid" type="success" link @click="openPayDialog(row)">
-              <el-icon><Money /></el-icon>
-              确认发放
-            </el-button>
-            <el-button v-else type="danger" link @click="handleRevoke(row)">
-              <el-icon><RefreshLeft /></el-icon>
-              撤销发放
-            </el-button>
+            <!-- 跨月区间为统计视图：发放/撤销按自然月操作，故禁用并提示 -->
+            <el-tooltip v-if="row.multiMonth" placement="top" content="跨月区间不支持发放，请切换到单个自然月">
+              <span>
+                <el-button type="success" link disabled>
+                  <el-icon><Money /></el-icon>
+                  确认发放
+                </el-button>
+              </span>
+            </el-tooltip>
+            <template v-else>
+              <el-button v-if="!row.paid" type="success" link @click="openPayDialog(row)">
+                <el-icon><Money /></el-icon>
+                确认发放
+              </el-button>
+              <el-button v-else type="danger" link @click="handleRevoke(row)">
+                <el-icon><RefreshLeft /></el-icon>
+                撤销发放
+              </el-button>
+            </template>
             <el-button type="warning" link @click="openAdvance(row)">
               <el-icon><Wallet /></el-icon>
               预支
@@ -189,7 +203,7 @@
     <!-- 员工订单明细弹窗 -->
     <el-dialog
       v-model="detailVisible"
-      :title="`配送订单明细：${currentWorker?.workerName || ''}（${month}）`"
+      :title="`配送订单明细：${currentWorker?.workerName || ''}（${rangeLabel}）`"
       :width="dialogWidth"
       :close-on-click-modal="false"
       destroy-on-close
@@ -271,11 +285,18 @@ import { getFinanceAccounts } from '@/api/expense'
 import { formatMoney as fmtMoney } from '@/utils/format'
 import AccountSelect from '@/components/AccountSelect.vue'
 import AdvanceDialog from '@/components/AdvanceDialog.vue'
+import DateRangeFilter from '@/components/DateRangeFilter.vue'
+import { defaultRange, toQuery, rangeText } from '@/utils/dateRange'
 
 const loading = ref(false)
-const month = ref('')
+const rangeState = ref(defaultRange())
+// 单月视图下后端解析出的实际月份（用于发放/撤销；跨月区间为空）
+const currentMonth = ref('')
+const multiMonth = ref(false)
 const rows = ref([])
 const summary = reactive({ totalDeliveryFee: 0, workerCount: 0, orderCount: 0, totalPendingAdvance: 0 })
+
+const rangeLabel = computed(() => rangeText(rangeState.value))
 
 const employeeTypeLabel = (t) => ({ 1: '店长', 2: '配送员工', 3: '业务员' }[t] || '未知')
 const employeeTypeTagType = (t) => ({ 1: 'danger', 2: 'primary', 3: 'success' }[t] || 'info')
@@ -314,16 +335,18 @@ const detailTotal = computed(() => detailRows.value.reduce((s, x) => s + (x.deli
 const itemsTotal = computed(() => itemRows.value.reduce((s, x) => s + (x.deliveryFee || 0), 0))
 
 const fetchSummary = async () => {
-  if (!month.value) {
-    ElMessage.warning('请选择统计月份')
+  if (rangeState.value.range === 'custom' && !(rangeState.value.startDate && rangeState.value.endDate)) {
+    ElMessage.warning('请选择起止日期')
     return
   }
   loading.value = true
   try {
-    const res = await getSalarySummary({ month: month.value })
+    const res = await getSalarySummary(toQuery(rangeState.value))
     if (res.data) {
       rows.value = res.data.list || []
       Object.assign(summary, res.data.summary || {})
+      multiMonth.value = !!res.data.multiMonth
+      currentMonth.value = res.data.month || ''
     }
   } catch (e) {
     console.error('工资统计失败:', e)
@@ -370,7 +393,7 @@ const loadAccounts = async () => {
 // 打开发放弹窗：默认当前查看月份，加载该员工当月状态与金额
 const openPayDialog = async (row) => {
   currentWorker.value = row
-  payForm.month = month.value || ''
+  payForm.month = currentMonth.value || ''
   payForm.employeeType = row.employeeType || 2
   payForm.amount = row.due || 0
   payForm.pendingAdvance = row.pendingAdvance || 0
@@ -429,7 +452,7 @@ const submitPay = async () => {
 const handleRevoke = async (row) => {
   try {
     await ElMessageBox.confirm(
-      `确定撤销「${row.workerName}」${month.value} 工资发放（¥${fmtMoney(row.paidAmount)}）？账户余额将回补，状态回到未发放。`,
+      `确定撤销「${row.workerName}」${currentMonth.value} 工资发放（¥${fmtMoney(row.paidAmount)}）？账户余额将回补，状态回到未发放。`,
       '撤销发放确认',
       { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' }
     )
@@ -451,7 +474,7 @@ const viewDetail = async (row) => {
   detailLoading.value = true
   detailRows.value = []
   try {
-    const res = await getSalaryOrders({ month: month.value, workerId: row.workerId })
+    const res = await getSalaryOrders({ ...toQuery(rangeState.value), workerId: row.workerId })
     detailRows.value = res.data?.list || []
   } catch (e) {
     console.error('工资明细失败:', e)
@@ -479,8 +502,6 @@ const viewOrderItems = async (row) => {
 }
 
 onMounted(() => {
-  const now = new Date()
-  month.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   loadAccounts()
   fetchSummary()
 })

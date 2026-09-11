@@ -2,6 +2,7 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 const { parsePage } = require('../utils/pagination');
+const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
 
 // 预置支出类别
 const PRESET_CATEGORIES = ['运输', '仓储', '房租水电', '办公', '维修', '招待', '营销', '其他'];
@@ -65,19 +66,29 @@ function validateBody(body) {
   return null;
 }
 
-// 列表（筛选：月份/日期范围/类别/关键词，分页）
+// 列表（筛选：预设区间 / 月份 / 日期范围 / 类别 / 关键词，分页）
 async function getExpenses(req, res) {
   try {
-    const { month, startDate, endDate, category, keyword, page = 1, pageSize = 10 } = req.query;
+    const { month, range, startDate, endDate, category, keyword, page = 1, pageSize = 10 } = req.query;
     const { page: p, size, offset } = parsePage({ page, pageSize });
     const parts = [];
     const params = [];
-    if (month && /^\d{4}-\d{2}$/.test(month)) {
-      parts.push('DATE_FORMAT(expense_date, ?) = ?');
-      params.push('%Y-%m', month);
+    // 时间条件：range / month 走统一区间解析（month 为旧参数，等价整月）
+    //           直接传 startDate/endDate（无 range/month）时沿用原闭区间语义
+    if (range || month) {
+      const r = resolveRange({ range, month, startDate, endDate });
+      if (!r) {
+        return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+      }
+      const rw = buildRangeWhere('expense_date', r);
+      if (rw.clause) {
+        parts.push(rw.clause);
+        params.push(...rw.params);
+      }
+    } else {
+      if (startDate) { parts.push('expense_date >= ?'); params.push(startDate); }
+      if (endDate) { parts.push('expense_date <= ?'); params.push(endDate); }
     }
-    if (startDate) { parts.push('expense_date >= ?'); params.push(startDate); }
-    if (endDate) { parts.push('expense_date <= ?'); params.push(endDate); }
     if (category) { parts.push('category = ?'); params.push(category); }
     if (keyword) {
       parts.push('(expense_name LIKE ? OR remark LIKE ?)');
