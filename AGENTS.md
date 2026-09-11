@@ -17,6 +17,7 @@ Vue3 + Element Plus 前端（:5173）｜ Node.js + Express 后端（:3000）｜ 
 
 - [ ] 涉及**账户余额变动**的功能：必须遵守资金记账三联事务规范（`.workbuddy/memory/MEMORY.md` 第一条），任何例外都会造成账实不符。
 - [ ] **改库结构**：写幂等 `database/migration_*.sql` → 用 node+mysql2 执行（勿用 mysql.exe，中文乱码）→ `node backend/scripts/export_dump.js` 重导 `full_schema_data.sql`。
+  ⚠️ **`full_schema_data.sql` 自带 `CREATE DATABASE ... / USE nongfu_inventory;`**，直接 `mysql < dump` 会**打到正式库**（`DROP TABLE` + 重建），命令行指定的目标库会被 `USE` 覆盖。要导入到别的库做对比，必须加 `mysql --one-database=<db>` 或先剥掉这两行。**任何涉及生产库的写操作，先 `mysqldump` 备份再说**（2026-09-11 已因此出过一次事故）。
 - [ ] **改订单/定价/水票**：逻辑归 `services/orderPricingService.js`，不要往 orderController 里抄；改前跑 `node scripts/smoke_order_pricing.js`（基线 40/40），改后再跑。
 - [ ] **改营收/成本口径**：营收表达式唯一来源 `utils/revenueExpr.js`，前端只展示不计算；订单类型 4/6 营收走 machine_sales。
 - [ ] **写 controller**：`req.body` 一律驼峰单读（全局 normalizeBody 已归一），禁止蛇形别名回退；金额 `Math.round(n*100)/100`；分页 parseInt 内联（mysql2 不支持 `LIMIT ?`）。
@@ -41,5 +42,6 @@ stop.bat     # 一键停止
 - 订单取消 `canceled_at` ≠ 软删除 `status=0`，不是同一字段。
 - 库存负数是有意设计（仅盘库出库强制非负）。
 - 商品销售统计不带 range 参数时是「当月」口径，空表非 bug。
+- 统计类时间筛选统一走 `utils/dateRange.js`（后端）/`utils/dateRange.js`（前端）：预设键 `month/lastMonth/quarter/year/custom`，`start` 含 `end` 不含；旧 `month=YYYY-MM` 参数仍兼容（冒烟脚本依赖）。**跨月区间的工资按应发口径统计、发放/撤销按钮禁用** —— 发放记录是按自然月存的，别改成「先看是否发过再算金额」。
 - workers 与 salesmen（归档表）collation 不同，跨表比较需显式 `COLLATE utf8mb4_unicode_ci`。
 - `README.md` 与 `docs/superpowers/` 已过时，勿作为事实依据。
