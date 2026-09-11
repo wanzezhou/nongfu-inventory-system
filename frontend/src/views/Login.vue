@@ -1,73 +1,75 @@
 <template>
-  <div class="login-container">
-    <!-- 登录卡片 -->
-    <div class="login-card">
-      <!-- Logo 区域 -->
-      <div class="logo-section">
-        <div class="logo-wrapper">
-          <svg viewBox="0 0 32 32" class="logo-svg" fill="none">
-            <path d="M16 4C16 4 6 14 6 21C6 26.5 10.5 29 16 29C21.5 29 26 26.5 26 21C26 14 16 4 16 4Z" fill="#A8201A" opacity="0.9"/>
-            <path d="M16 10C16 10 10 16 10 21C10 23.8 12.5 25.5 16 25.5C19.5 25.5 22 23.8 22 21C22 16 16 10 16 10Z" fill="#ffffff" opacity="0.85"/>
-          </svg>
-        </div>
-        <h1 class="title font-serif">农夫山泉</h1>
-        <p class="subtitle">经销商管理系统</p>
-      </div>
+  <div class="login-page">
+    <!-- 水墨山泉动态背景 -->
+    <InkBackdrop class="login-ink" />
 
-      <!-- 表单区域 -->
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        class="login-form"
-        @submit.prevent="handleLogin"
-      >
-        <el-form-item prop="username">
-          <el-input
-            v-model="form.username"
-            placeholder="请输入用户名"
-            size="large"
-            :prefix-icon="User"
-            @keyup.enter="handleLogin"
-          />
-        </el-form-item>
-        <el-form-item prop="password">
-          <el-input
-            v-model="form.password"
-            type="password"
-            placeholder="请输入密码"
-            size="large"
-            :prefix-icon="Lock"
-            show-password
-            @keyup.enter="handleLogin"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button
-            type="primary"
-            size="large"
-            class="login-btn"
-            :loading="loading"
-            @click="handleLogin"
-          >
-            登 录
-          </el-button>
-        </el-form-item>
-      </el-form>
+    <main class="login-stage">
+      <!-- 品牌区 -->
+      <header class="brand">
+        <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+          <path class="mark-ridge" d="M2 30 L13 15.5 L19.5 23.5 L26 13.5 L38 30 Z" />
+          <path class="mark-water" d="M20 3.5 C20 3.5 27.2 13.2 27.2 18.9 C27.2 23 23.9 25.4 20 25.4 C16.1 25.4 12.8 23 12.8 18.9 C12.8 13.2 20 3.5 20 3.5 Z" />
+        </svg>
+        <h1 class="brand-title font-serif">农夫山泉</h1>
+        <p class="brand-sub">经销商业务管理系统</p>
+      </header>
 
-      <!-- 提示 -->
-      <div class="login-hint">
-        <span>默认账户：admin / admin123</span>
-      </div>
-    </div>
+      <!-- 登录卡片 -->
+      <section class="login-card">
+        <el-form
+          ref="formRef"
+          :model="form"
+          :rules="rules"
+          class="login-form"
+          @submit.prevent="handleLogin"
+        >
+          <el-form-item prop="username">
+            <el-input
+              v-model="form.username"
+              placeholder="请输入用户名"
+              size="large"
+              :prefix-icon="User"
+              @keyup.enter="handleLogin"
+            />
+          </el-form-item>
+          <el-form-item prop="password">
+            <el-input
+              v-model="form.password"
+              type="password"
+              placeholder="请输入密码"
+              size="large"
+              :prefix-icon="Lock"
+              show-password
+              @keyup.enter="handleLogin"
+            />
+          </el-form-item>
+          <el-form-item class="login-form-submit">
+            <el-button
+              type="primary"
+              size="large"
+              class="login-btn"
+              :loading="loading"
+              @click="handleLogin"
+            >
+              登 录
+            </el-button>
+          </el-form-item>
+        </el-form>
+
+        <p class="login-hint">默认账户：admin / admin123</p>
+      </section>
+    </main>
+
+    <footer class="login-foot">农夫山泉经销商进销存 · 内部系统</footer>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, Lock } from '@element-plus/icons-vue'
+import { Lock, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import InkBackdrop from '@/components/InkBackdrop.vue'
 import { login } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
@@ -107,89 +109,166 @@ async function handleLogin() {
 </script>
 
 <style scoped>
-.login-container {
-  min-height: 100vh;
+/* ---------------- 页面骨架 ---------------- */
+.login-page {
+  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
-  position: relative;
+  min-height: 100vh;
+  padding: 40px 20px 68px;
   overflow: hidden;
-  padding: 24px;
+  background: var(--bg);
 }
 
-/* 登录卡片 */
-.login-card {
-  width: 400px;
-  max-width: 94vw;
-  padding: 44px 40px 32px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+.login-ink {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.login-stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  width: 100%;
+}
+
+/* ---------------- 品牌区 ---------------- */
+.brand {
+  text-align: center;
   animation: fadeUp 0.4s ease-out both;
 }
 
-/* Logo 区域 */
-.logo-section {
-  text-align: center;
-  margin-bottom: 32px;
+.brand-mark {
+  display: block;
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 14px;
 }
 
-.logo-wrapper {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--primary);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-primary);
+/* SVG 通过 CSS 属性着色（表现属性不支持 var()） */
+.mark-ridge {
+  fill: var(--text-3);
+  opacity: 0.5;
 }
 
-.logo-svg {
-  width: 36px;
-  height: 36px;
+.mark-water {
+  fill: var(--primary);
 }
 
-.title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text);
-  margin: 0 0 4px 0;
-  letter-spacing: 2px;
-}
-
-.subtitle {
-  font-size: 13px;
-  color: var(--text-2);
+.brand-title {
   margin: 0;
-  letter-spacing: 2px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  color: var(--text);
 }
 
-/* 表单 */
-.login-form {
-  margin-bottom: 12px;
+.brand-sub {
+  margin: 8px 0 0;
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: var(--text-2);
+}
+
+/* ---------------- 登录卡片 ---------------- */
+.login-card {
+  width: 400px;
+  max-width: 94vw;
+  padding: 34px 34px 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: fadeUp 0.4s ease-out 0.06s both;
+}
+
+.login-form :deep(.el-form-item) {
+  margin-bottom: 20px;
+}
+
+.login-form :deep(.el-form-item__error) {
+  padding-top: 4px;
+}
+
+.login-form-submit {
+  margin-bottom: 16px;
 }
 
 .login-btn {
   width: 100%;
-  height: 44px;
+  height: 46px;
   font-size: 15px;
-  letter-spacing: 4px;
+  letter-spacing: 6px;
   border-radius: var(--radius-md);
+  transition: box-shadow 0.22s var(--ease-out-expo), background-color 0.22s var(--ease-out-expo);
 }
 
-/* 提示 */
+.login-btn:hover {
+  box-shadow: var(--shadow-primary);
+}
+
+.login-btn:active {
+  transform: translateY(1px);
+}
+
 .login-hint {
+  margin: 0;
   text-align: center;
   font-size: 12px;
   color: var(--text-3);
 }
 
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+/* ---------------- 页脚 ---------------- */
+.login-foot {
+  position: absolute;
+  bottom: 22px;
+  z-index: 1;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--text-3);
+}
+
+/* ---------------- 窄屏 ---------------- */
+@media (max-width: 768px) {
+  .login-page {
+    padding: 32px 16px 44px;
+  }
+
+  .login-stage {
+    gap: 20px;
+  }
+
+  .brand-mark {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 10px;
+  }
+
+  .brand-title {
+    font-size: 22px;
+    letter-spacing: 4px;
+  }
+
+  .brand-sub {
+    font-size: 11px;
+    letter-spacing: 2px;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 94vw;
+    padding: 26px 20px 18px;
+  }
+
+  .login-foot {
+    position: static;
+    margin-top: 18px;
+  }
 }
 </style>
