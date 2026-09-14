@@ -22,6 +22,9 @@ backend/.env
 # Runtime uploads
 backend/uploads/
 
+# 商品图片（用户上传的运行期内容，不进公开仓库）
+商品档案/
+
 # Agent working artifacts
 overview.md
 

@@ -303,9 +303,12 @@ const fetchProductOptions = async () => {
 const fetchSupplierOptions = async () => {
   try {
     const res = await getAllSuppliers()
-    if (res.data) {
-      supplierOptions.value = res.data || []
-    }
+    // 后端 /suppliers/all 返回原始行（蛇形 supplier_id / supplier_name），
+    // 这里统一归一为 { id, name }，供入库弹窗的 el-option 直接绑定
+    supplierOptions.value = (res.data || []).map((s) => ({
+      id: s.id || s.supplierId || s.supplier_id,
+      name: s.name || s.supplierName || s.supplier_name
+    })).filter((s) => s.id)
   } catch (error) {
     console.error('获取供应商列表失败:', error)
     supplierOptions.value = []

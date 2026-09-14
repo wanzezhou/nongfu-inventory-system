@@ -108,7 +108,6 @@ const MODULE_CONFIG = {
       { header: '员工姓名', db: 'worker_name', required: true },
       { header: '电话', db: 'phone' },
       { header: '员工类型', db: 'employee_type', type: 'number', default: 2 },
-      { header: '车辆类型', db: 'vehicle_type', type: 'number', default: 1 },
       { header: '固定月薪', db: 'monthly_salary', type: 'number' },
       { header: '开户银行', db: 'bank_name' },
       { header: '银行账号', db: 'bank_account' },
@@ -165,7 +164,7 @@ async function exportData(req, res) {
         LEFT JOIN workers dw ON o.worker_id = dw.worker_id
         ORDER BY o.created_at DESC
       `);
-      const orderTypeMap = { 1: '官方平台销售', 2: '直营水站销售', 3: '线下零售', 4: '量贩机供货', 6: '零售机供货' };
+      const orderTypeMap = { 1: '送水到府', 2: '直营水站销售', 3: '线下零售', 4: '量贩机供货', 5: '水公社', 6: '零售机供货' };
       const deliveryMap = { 1: '自有员工配送', 2: '水站配送', 3: '无需配送', 4: '零售机配送' };
 
       // 查询所有订单的商品明细
@@ -286,7 +285,9 @@ async function importData(req, res) {
 
     // 特殊处理订单模块
     if (moduleName === 'orders') {
-      const orderTypeMap = { '官方平台销售': 1, '直营水站销售': 2, '线下零售': 3, '量贩机供货': 4, '零售机供货': 6 };
+      const orderTypeMap = { '送水到府': 1, '直营水站销售': 2, '线下零售': 3, '量贩机供货': 4, '水公社': 5, '零售机供货': 6 };
+      // 兼容旧模板文案（2026-09-14 前的「官方平台销售」）
+      orderTypeMap['官方平台销售'] = 1;
       const deliveryMap = { '自有员工配送': 1, '水站配送': 2, '无需配送': 3, '零售机配送': 4 };
       let inserted = 0;
       let updated = 0;
@@ -535,7 +536,7 @@ async function downloadTemplate(req, res) {
   // 订单模板
   if (moduleName === 'orders') {
     const headers = ['订单号', '订单类型', '客户姓名', '客户电话', '客户地址', '订单金额', '配送费', '应收总额', '配送方式', '备注', '创建人'];
-    const sample = ['', '官方平台销售', '张三', '13800138000', '南京市XX区XX路', 100.00, 10.00, 110.00, '自有员工配送', '备注信息', '管理员'];
+    const sample = ['', '送水到府', '张三', '13800138000', '南京市XX区XX路', 100.00, 10.00, 110.00, '自有员工配送', '备注信息', '管理员'];
     const aoa = [headers, sample];
     const buffer = await writeWorkbook([{ name: '导入模板', data: aoa, width: 15 }]);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

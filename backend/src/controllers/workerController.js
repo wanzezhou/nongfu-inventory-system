@@ -14,7 +14,6 @@ function formatWorker(worker) {
     workerName: worker.worker_name,
     phone: worker.phone,
     employeeType: worker.employee_type,
-    vehicleType: worker.vehicle_type,
     commissionRate: worker.commission_rate != null ? Number(worker.commission_rate) : null,
     monthlySalary: worker.monthly_salary != null ? Number(worker.monthly_salary) : null,
     bankName: worker.bank_name,
@@ -27,7 +26,7 @@ function formatWorker(worker) {
 
 async function getWorkerList(req, res) {
   try {
-    const { keyword, status, vehicleType, employeeType, page = 1, pageSize = 10 } = req.query;
+    const { keyword, status, employeeType, page = 1, pageSize = 10 } = req.query;
 
     let whereClause = 'WHERE 1=1';
     const params = [];
@@ -40,11 +39,6 @@ async function getWorkerList(req, res) {
     if (status !== undefined && status !== '' && status !== null) {
       whereClause += ' AND status = ?';
       params.push(Number(status));
-    }
-
-    if (vehicleType !== undefined && vehicleType !== '' && vehicleType !== null) {
-      whereClause += ' AND vehicle_type = ?';
-      params.push(Number(vehicleType));
     }
 
     if (employeeType !== undefined && employeeType !== '' && employeeType !== null) {
@@ -72,7 +66,7 @@ async function getWorkerList(req, res) {
 
 async function getAllWorkers(req, res) {
   try {
-    const sql = 'SELECT worker_id, worker_name, phone, vehicle_type, employee_type, monthly_salary FROM workers WHERE status = 1 ORDER BY employee_type ASC, worker_name ASC';
+    const sql = 'SELECT worker_id, worker_name, phone, employee_type, monthly_salary FROM workers WHERE status = 1 ORDER BY employee_type ASC, worker_name ASC';
     const [rows] = await pool.execute(sql);
 
     const formattedList = rows.map(item => formatWorker(item));
@@ -110,8 +104,6 @@ async function createWorker(req, res) {
       phone,
       employeeType,
       employee_type,
-      vehicleType,
-      vehicle_type,
       bankName,
       bank_name,
       bankAccount,
@@ -123,7 +115,6 @@ async function createWorker(req, res) {
 
     const name = workerName || worker_name;
     const eType = employeeType !== undefined ? employeeType : (employee_type !== undefined ? employee_type : 2);
-    const vType = vehicleType !== undefined ? vehicleType : (vehicle_type !== undefined ? vehicle_type : 1);
     const bName = bankName !== undefined ? bankName : bank_name;
     const bAccount = bankAccount !== undefined ? bankAccount : bank_account;
 
@@ -135,16 +126,15 @@ async function createWorker(req, res) {
     const now = new Date();
 
     const sql = `INSERT INTO workers (
-      worker_id, worker_name, phone, employee_type, vehicle_type, commission_rate, monthly_salary,
+      worker_id, worker_name, phone, employee_type, commission_rate, monthly_salary,
       bank_name, bank_account, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       worker_id,
       name,
       phone || null,
       Number(eType) || 2,
-      Number(vType) || 1,
       // 提成比例仅业务员（类型3）使用，其他类型存 NULL
       Number(eType) === 3 ? (commissionRate !== undefined && commissionRate !== null ? Number(commissionRate) : 0) : null,
       // 固定月薪仅店长（类型1）/业务员（类型3）使用，其他类型存 NULL
@@ -178,8 +168,6 @@ async function updateWorker(req, res) {
       phone,
       employeeType,
       employee_type,
-      vehicleType,
-      vehicle_type,
       bankName,
       bank_name,
       bankAccount,
@@ -210,11 +198,6 @@ async function updateWorker(req, res) {
     if (eType !== undefined) {
       updateFields.push('employee_type = ?');
       values.push(Number(eType));
-    }
-    const vType = vehicleType !== undefined ? vehicleType : vehicle_type;
-    if (vType !== undefined) {
-      updateFields.push('vehicle_type = ?');
-      values.push(Number(vType));
     }
     // 提成比例仅业务员（类型3）使用；显式传值才更新
     if (commissionRate !== undefined) {

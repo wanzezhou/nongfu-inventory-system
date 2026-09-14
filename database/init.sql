@@ -110,14 +110,12 @@ CREATE TABLE workers (
     worker_id               VARCHAR(50)     NOT NULL COMMENT '员工ID，主键',
     worker_name             VARCHAR(50)     NOT NULL COMMENT '员工姓名',
     phone                   VARCHAR(20)     DEFAULT NULL COMMENT '联系电话',
-    vehicle_type            TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '配送车辆类型：1-电动车（终端零售），2-面包车（批量配送）',
     bank_name               VARCHAR(100)    DEFAULT NULL COMMENT '收款银行',
     bank_account            VARCHAR(50)     DEFAULT NULL COMMENT '收款账户',
     status                  TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '状态：0-离职，1-在职',
     created_at              DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at              DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (worker_id),
-    KEY idx_vehicle_type (vehicle_type),
     KEY idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='配送员工表';
 
@@ -164,7 +162,7 @@ CREATE TABLE purchase_records (
 -- ============================================================
 CREATE TABLE orders (
     order_id                VARCHAR(50)     NOT NULL COMMENT '订单ID，主键',
-    order_type              TINYINT(1)      NOT NULL COMMENT '订单类型：1-线上平台销售，2-线下水站分销，3-线下零售，4-量贩机供货，5-线下水站返货，6-零售机供货',
+    order_type              TINYINT(1)      NOT NULL COMMENT '订单类型：1-送水到府，2-直营水站销售，3-线下零售，4-量贩机供货，5-水公社，6-零售机供货',
     platform_type           VARCHAR(50)     DEFAULT NULL COMMENT '平台类型（订单类型=1时填写，如美团、饿了么）',
     platform_order_no       VARCHAR(100)    DEFAULT NULL COMMENT '平台订单号（订单类型=1时填写）',
     station_id              VARCHAR(50)     DEFAULT NULL COMMENT '水站ID（订单类型=2时填写，外键关联sub_stations表）',

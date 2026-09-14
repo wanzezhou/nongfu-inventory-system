@@ -96,11 +96,13 @@
           filterable
           style="width: 100%"
         >
+          <!-- supplierOptions 由父组件归一化为 { id, name }（后端 /suppliers/all 返回蛇形
+               supplier_id / supplier_name，直接绑会取到 undefined → 选项全空白） -->
           <el-option
             v-for="item in supplierOptions"
-            :key="item.id || item.supplierId"
-            :label="item.supplierName || item.name"
-            :value="item.id || item.supplierId"
+            :key="item.id"
+            :label="item.name"
+            :value="item.id"
           />
         </el-select>
       </el-form-item>
@@ -259,7 +261,7 @@ const handleStockInSubmit = async () => {
 const open = () => {
   stockInForm.productId = null
   stockInForm.items = []
-  stockInForm.supplierId = props.supplierOptions.length > 0 ? (props.supplierOptions[0].id || props.supplierOptions[0].supplierId) : null
+  stockInForm.supplierId = props.supplierOptions.length > 0 ? props.supplierOptions[0].id : null
   stockInForm.accountId = null
   stockInForm.remark = ''
   visible.value = true

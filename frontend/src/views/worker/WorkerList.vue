@@ -27,17 +27,6 @@
             <el-option label="业务员" :value="3" />
           </el-select>
         </el-form-item>
-        <el-form-item label="车辆类型">
-          <el-select
-            v-model="queryForm.vehicleType"
-            placeholder="全部类型"
-            clearable
-            style="width: 140px"
-          >
-            <el-option label="电动车" :value="1" />
-            <el-option label="面包车" :value="2" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="状态">
           <el-select
             v-model="queryForm.status"
@@ -97,13 +86,6 @@
           <template #default="{ row }">
             <span v-if="row.monthlySalary != null && (row.employeeType === 1 || row.employeeType === 3)" class="salary-text">¥{{ Number(row.monthlySalary).toFixed(2) }}</span>
             <span v-else class="muted">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="vehicleType" label="配送车辆" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.vehicleType === 1 ? 'primary' : 'success'" size="small">
-              {{ row.vehicleType === 1 ? '电动车' : '面包车' }}
-            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="bankName" label="收款银行" width="140">
@@ -179,12 +161,6 @@
             <el-option label="配送员工" :value="2" />
             <el-option label="业务员" :value="3" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="配送车辆" prop="vehicleType">
-          <el-radio-group v-model="workerForm.vehicleType">
-            <el-radio :value="1">电动车（终端零售）</el-radio>
-            <el-radio :value="2">面包车（批量配送）</el-radio>
-          </el-radio-group>
         </el-form-item>
         <el-form-item v-if="workerForm.employeeType === 3" label="提成比例(%)">
           <el-input-number
@@ -296,7 +272,6 @@ const employeeTypeTagType = (type) => {
 const queryForm = reactive({
   keyword: '',
   employeeType: null,
-  vehicleType: null,
   status: null
 })
 
@@ -309,7 +284,6 @@ const workerForm = reactive({
   workerName: '',
   phone: '',
   employeeType: 2,
-  vehicleType: 1,
   commissionRate: 0,
   monthlySalary: null,
   bankName: '',
@@ -327,7 +301,6 @@ const fetchData = async () => {
     const res = await getWorkerList({
       keyword: queryForm.keyword,
       employeeType: queryForm.employeeType,
-      vehicleType: queryForm.vehicleType,
       status: queryForm.status,
       page: pagination.page,
       pageSize: pagination.pageSize
@@ -354,7 +327,6 @@ const handleSearch = () => {
 const handleReset = () => {
   queryForm.keyword = ''
   queryForm.employeeType = null
-  queryForm.vehicleType = null
   queryForm.status = null
   pagination.page = 1
   fetchData()
@@ -375,7 +347,6 @@ const handleEdit = (row) => {
     workerName: row.workerName || row.name,
     phone: row.phone,
     employeeType: row.employeeType,
-    vehicleType: row.vehicleType,
     commissionRate: row.employeeType === 3 && row.commissionRate != null ? Number(row.commissionRate) : 0,
     monthlySalary: (row.employeeType === 1 || row.employeeType === 3) && row.monthlySalary != null ? Number(row.monthlySalary) : null,
     bankName: row.bankName,
@@ -437,7 +408,6 @@ const resetForm = () => {
     workerName: '',
     phone: '',
     employeeType: 2,
-    vehicleType: 1,
     commissionRate: 0,
     monthlySalary: null,
     bankName: '',

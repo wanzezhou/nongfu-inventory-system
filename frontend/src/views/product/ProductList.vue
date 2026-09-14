@@ -219,14 +219,21 @@
             <el-form-item label="商品图片" prop="image">
               <el-upload
                 class="avatar-uploader"
-                action="#"
+                :action="uploadAction"
+                :headers="uploadHeaders"
                 :show-file-list="false"
-                :auto-upload="false"
-                :on-change="handleImageChange"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+                :before-upload="beforeImageUpload"
+                :on-success="handleImageSuccess"
+                :on-error="handleImageError"
+                :disabled="imageUploading"
               >
-                <img v-if="productForm.image" :src="productForm.image" class="avatar" />
-                <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+                <div v-loading="imageUploading" class="avatar-wrap">
+                  <img v-if="productForm.image" :src="imagePreview" class="avatar" />
+                  <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+                </div>
               </el-upload>
+              <div class="upload-tip">支持 png / jpg / webp / gif / bmp，单张不超过 5MB</div>
             </el-form-item>
             <el-form-item label="状态" prop="status">
               <el-switch
@@ -305,7 +312,7 @@
 
 <script setup>
 import { usePagination } from '@/composables/usePagination'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete, Picture, Download, Upload } from '@element-plus/icons-vue'
 import {
@@ -313,8 +320,10 @@ import {
   addProduct,
   updateProduct,
   deleteProduct,
-  getCategoryList
+  getCategoryList,
+  uploadProductImage
 } from '@/api/product'
+import { useAuthStore } from '@/stores/auth'
 import { exportData, downloadBlob } from '@/api/excel'
 import ImportDialog from '@/components/ImportDialog.vue'
 
@@ -372,6 +381,71 @@ const productForm = reactive({
   workerStationDeliveryFee: 0,
   workerVendingDeliveryFee: 0
 })
+
+// ===== 商品图片上传 =====
+// 走 el-upload 的 http 直传，避免把 base64 塞进 JSON 请求体（会撞 express.json 的
+// 默认 100KB 上限 → 500 PayloadTooLargeError，且 image_url 是 varchar(500) 存不下 base64）
+const imageUploading = ref(false)
+const authStore = useAuthStore()
+const uploadAction = `${import.meta.env.VITE_API_BASE || '/api'}/products/upload-image`
+const uploadHeaders = computed(() => ({ Authorization: `Bearer ${authStore.token || ''}` }))
+
+// 后端地址（去掉 /api 后缀），用于静态图片预览
+const apiOrigin = (import.meta.env.VITE_API_BASE || '/api').replace(/\/api\/?$/, '')
+
+// 纠偏历史脏数据：http://localhost:3000http://localhost:3000/product_images/x.png
+function normalizeImageUrl(url) {
+  const m = url.match(/\/product_images\/[^/]+$/)
+  return m ? `${apiOrigin}${m[0]}` : url
+}
+
+// 表单里存的是相对路径（/product_images/xxx.png）；预览需拼上后端地址
+const imagePreview = computed(() => {
+  const img = productForm.image
+  if (!img) return ''
+  // 历史数据里存过完整 URL 或带重复前缀的地址，这里统一做一次纠偏
+  if (img.startsWith('http')) return normalizeImageUrl(img)
+  if (img.startsWith('/product_images/')) return `${apiOrigin}${img}`
+  return img
+})
+
+const beforeImageUpload = (file) => {
+  const isImage = /^image\//.test(file.type)
+  if (!isImage) {
+    ElMessage.error('只能上传图片文件')
+    return false
+  }
+  const under5M = file.size / 1024 / 1024 < 5
+  if (!under5M) {
+    ElMessage.error('图片大小不能超过 5MB')
+    return false
+  }
+  imageUploading.value = true
+  return true
+}
+
+const handleImageSuccess = (response) => {
+  imageUploading.value = false
+  // 上传接口返回 { code, message, data: { path, url, ... } }
+  if (response && response.code === 200 && response.data && response.data.path) {
+    productForm.image = response.data.path
+    ElMessage.success('图片上传成功')
+  } else {
+    ElMessage.error((response && response.message) || '图片上传失败')
+  }
+}
+
+const handleImageError = (err) => {
+  imageUploading.value = false
+  let msg = '图片上传失败'
+  try {
+    const parsed = JSON.parse(err.message)
+    if (parsed && parsed.message) msg = parsed.message
+  } catch {
+    // 非 JSON 响应（如 500 纯文本），保留默认文案
+  }
+  ElMessage.error(msg)
+}
 
 const basicRules = {
   code: [{ required: true, message: '请输入商品编码', trigger: 'blur' }],
@@ -484,8 +558,9 @@ const handleDelete = (row) => {
       ElMessage.success('删除成功')
       fetchData()
     } catch (error) {
+      // 失败分支必须如实报错，不得误报成功（历史遗留坑）
       console.error('删除失败:', error)
-      ElMessage.success('删除成功')
+      ElMessage.error(error.message || '删除失败')
       fetchData()
     }
   }).catch(() => {})
@@ -503,14 +578,6 @@ const handleStatusChange = async (row) => {
   } finally {
     statusLoading.value[row.id] = false
   }
-}
-
-const handleImageChange = (file) => {
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    productForm.image = e.target.result
-  }
-  reader.readAsDataURL(file.raw)
 }
 
 const resetForm = () => {
@@ -561,6 +628,12 @@ const handleSubmit = async () => {
   const valid = await validateAllForms()
   if (!valid) return
 
+  // 上传中不允许提交，否则会把上一张图的路径存进去
+  if (imageUploading.value) {
+    ElMessage.warning('图片正在上传，请稍候')
+    return
+  }
+
   submitLoading.value = true
   try {
     if (isEdit.value) {
@@ -573,9 +646,9 @@ const handleSubmit = async () => {
     dialogVisible.value = false
     fetchData()
   } catch (error) {
+    // 失败分支必须如实报错并保留弹窗，方便用户重试（历史遗留坑：曾误报成功）
     console.error('提交失败:', error)
-    ElMessage.success(isEdit.value ? '修改成功' : '新增成功')
-    dialogVisible.value = false
+    ElMessage.error(error.message || (isEdit.value ? '修改失败' : '新增失败'))
     fetchData()
   } finally {
     submitLoading.value = false
@@ -665,6 +738,21 @@ onMounted(() => {
   width: 100px;
   height: 100px;
   object-fit: cover;
+}
+
+.avatar-wrap {
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-tip {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin-top: 4px;
 }
 
 .product-thumb {

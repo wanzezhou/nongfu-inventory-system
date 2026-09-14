@@ -37,3 +37,20 @@ export function getCategoryList() {
     method: 'get'
   })
 }
+
+/**
+ * 上传商品图片（multipart/form-data）
+ * 返回 { path: '/product_images/xxx.png', url: 'http://.../product_images/xxx.png', ... }
+ * 商品保存时提交返回的 path（相对路径），不要提交 base64
+ */
+export function uploadProductImage(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request({
+    url: '/products/upload-image',
+    method: 'post',
+    data: formData,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000 // 图片上传放宽超时（默认 10s 对大图偏紧）
+  })
+}

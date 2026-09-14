@@ -5,6 +5,9 @@ const productController = require('../controllers/productController');
 // 获取分类列表
 router.get('/categories', productController.getCategoryList);
 
+// 上传商品图片（具体路径必须注册在通配 /:id 之前，否则被吞）
+router.post('/upload-image', productController.uploadProductImage, productController.handleUploadImage);
+
 // 获取商品列表
 router.get('/', productController.getProductList);
 

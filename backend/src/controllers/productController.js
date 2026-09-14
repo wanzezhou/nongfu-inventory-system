@@ -1,9 +1,94 @@
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
 const { parsePage } = require('../utils/pagination');
 const { generateId } = require('../utils/idGen');
 
 const generateProductId = () => generateId('P');
+
+// ===== 商品图片上传 =====
+// 图片落盘到「商品档案/商品图片/」，数据库只存相对路径（image_url varchar(500) 存不下 base64）。
+// 该目录同时由 app.js 的 express.static('/product_images') 对外提供访问。
+const PRODUCT_IMAGE_DIR = path.join(__dirname, '../../../商品档案/商品图片');
+
+// 允许的图片类型（按 MIME 白名单，不信任扩展名）
+const IMAGE_MIME_EXT = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/bmp': '.bmp'
+};
+
+function ensureImageDir() {
+  if (!fs.existsSync(PRODUCT_IMAGE_DIR)) {
+    fs.mkdirSync(PRODUCT_IMAGE_DIR, { recursive: true });
+  }
+  return PRODUCT_IMAGE_DIR;
+}
+
+const imageStorage = multer.diskStorage({
+  destination(req, file, cb) {
+    try {
+      cb(null, ensureImageDir());
+    } catch (err) {
+      cb(err);
+    }
+  },
+  filename(req, file, cb) {
+    // 扩展名以 MIME 白名单为准，避免用户端带奇形怪状的后缀
+    const ext = IMAGE_MIME_EXT[file.mimetype] || path.extname(file.originalname).toLowerCase() || '.png';
+    cb(null, `${generateId('IMG')}${ext}`);
+  }
+});
+
+const uploadProductImageRaw = multer({
+  storage: imageStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter(req, file, cb) {
+    if (IMAGE_MIME_EXT[file.mimetype]) return cb(null, true);
+    return cb(new Error('仅支持上传 png / jpg / webp / gif / bmp 格式的图片'));
+  }
+}).single('file');
+
+// 包装 multer：把 fileFilter / limits 抛出的错误转成 400 业务提示。
+// 不包装的话会冒泡成全局 500「服务器内部错误」，用户看不到真正原因（如「只支持图片」）。
+//
+// ⚠️ 磁盘存储下 multer 会**先落盘再校验大小**：超过 fileSize 限制时它抛
+// LIMIT_FILE_SIZE 并中止，但那个「超大半成品」已经写在磁盘上了。这里负责清掉，
+// 否则每被拒一次就多一个孤儿文件（曾经真实发生过）。
+function cleanupOrphanUpload(file) {
+  if (!file || !file.path) return;
+  try {
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+  } catch (e) {
+    console.error('清理上传孤儿文件失败:', file.path, e.message);
+  }
+}
+
+function uploadProductImage(req, res, next) {
+  uploadProductImageRaw(req, res, (err) => {
+    if (!err) return next();
+
+    // 清理可能已落盘的半成品文件
+    cleanupOrphanUpload(req.file);
+    if (Array.isArray(err.storageErrors)) {
+      err.storageErrors.forEach((se) => cleanupOrphanUpload(se.file));
+    }
+
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return error(res, '图片大小不能超过 5MB', 400);
+      }
+      return error(res, `图片上传失败：${err.message}`, 400);
+    }
+    // fileFilter 里自定义的 Error（格式不支持等）
+    return error(res, err.message || '图片上传失败', 400);
+  });
+}
 
 function getBaseUrl(req) {
   return `${req.protocol}://${req.get('host')}`;
@@ -324,11 +409,37 @@ async function getCategoryList(req, res) {
   }
 }
 
+// 上传商品图片：返回可供 <img src> 直接使用的相对路径
+// 前端拿到 path 后写入 productForm.image，随商品创建/更新一并提交
+async function handleUploadImage(req, res) {
+  try {
+    if (!req.file) {
+      return error(res, '未接收到图片文件', 400);
+    }
+    const relativePath = `/product_images/${req.file.filename}`;
+    return success(
+      res,
+      {
+        path: relativePath,
+        url: `${getBaseUrl(req)}${relativePath}`,
+        filename: req.file.filename,
+        size: req.file.size
+      },
+      '图片上传成功'
+    );
+  } catch (err) {
+    console.error('上传商品图片失败:', err);
+    return error(res, '上传商品图片失败: ' + err.message);
+  }
+}
+
 module.exports = {
   getProductList,
   getProductById,
   createProduct,
   updateProduct,
   deleteProduct,
-  getCategoryList
+  getCategoryList,
+  uploadProductImage,
+  handleUploadImage
 };
