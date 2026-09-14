@@ -22,10 +22,11 @@
             clearable
             style="width: 160px"
           >
-            <el-option label="官方平台销售" :value="1" />
+            <el-option label="送水到府" :value="1" />
             <el-option label="直营水站销售" :value="2" />
             <el-option label="线下零售" :value="3" />
             <el-option label="量贩机供货" :value="4" />
+            <el-option label="水公社" :value="5" />
             <el-option label="零售机供货" :value="6" />
           </el-select>
         </el-form-item>
@@ -98,14 +99,14 @@
         <el-table-column prop="customerName" label="客户/水站" min-width="130" />
         <el-table-column prop="orderAmount" label="订单金额" width="100" align="right">
           <template #default="{ row }">
-            <!-- 官方平台销售/机台供货不显示订单金额（2026-08-27） -->
+            <!-- 送水到府/机台供货不显示订单金额（2026-08-27） -->
             <span v-if="![1, 4, 6].includes(row.orderType)" class="money-text">¥{{ formatMoney(row.orderAmount) }}</span>
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
         <el-table-column prop="totalAmount" label="应收总额" width="100" align="right">
           <template #default="{ row }">
-            <!-- 官方平台销售/机台供货不显示应收总额（2026-08-27） -->
+            <!-- 送水到府/机台供货不显示应收总额（2026-08-27） -->
             <span v-if="![1, 4, 6].includes(row.orderType)" class="total-text">¥{{ formatMoney(row.totalAmount) }}</span>
             <span v-else class="text-muted">-</span>
           </template>

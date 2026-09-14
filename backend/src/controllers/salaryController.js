@@ -5,11 +5,14 @@
 //   应发不足时实发记为负数（挂账下月继续扣），撤销发放时反向还原预支。
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
-const { ORDER_TYPES } = require('../constants/order');
+// 导出订单类型常量，避免各处硬编码漂移
+const { ORDER_TYPES, VALID_ORDER_TYPES } = require('../constants/order');
+// 订单类型 SQL 片段（全部合法类型，含 5-水公社）
+const ORDER_TYPE_IN = `o.order_type IN (${VALID_ORDER_TYPES.join(',')})`;
 const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
 
 // 订单类型 -> 员工配送费费率（order_items 创建时快照的商品配送费）
-//   官方平台销售(1) / 线下零售(3)：工人零售配送费
+//   送水到府(1) / 线下零售(3) / 水公社(5)：工人零售配送费
 //   直营水站销售(2)：工人水站配送费
 //   量贩机供货(4) / 零售机供货(6)：工人零售机配送费
 function deliveryFeeExpr() {
@@ -18,6 +21,7 @@ function deliveryFeeExpr() {
       WHEN 2 THEN oi.worker_wholesale_delivery_fee
       WHEN 3 THEN oi.worker_retail_delivery_fee
       WHEN 4 THEN oi.worker_machine_delivery_fee
+      WHEN 5 THEN oi.worker_retail_delivery_fee
       WHEN 6 THEN oi.worker_machine_delivery_fee
       ELSE 0 END)`;
 }
@@ -26,7 +30,7 @@ function deliveryFeeExpr() {
 const BASE_ORDER_FILTER = `o.canceled_at IS NULL
     AND o.delivery_type IN (1, 2)
     AND o.worker_id IS NOT NULL
-    AND o.order_type IN (1,2,3,4,6)`;
+    AND ${ORDER_TYPE_IN}`;
 
 // 按整月过滤——工资发放/预支结算等「按月不可分割」的场景（参数：month）
 function commonWhere(month) {
@@ -241,7 +245,7 @@ async function getSalaryOrders(req, res) {
          LEFT JOIN products p ON p.product_id = oi.product_id
          WHERE oi.order_id IN (${placeholders})
            AND o.canceled_at IS NULL
-           AND o.order_type IN (1,2,3,4,6)
+           AND ${ORDER_TYPE_IN}
          ORDER BY oi.order_id, oi.item_id`,
         orderIds
       );

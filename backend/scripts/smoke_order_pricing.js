@@ -88,7 +88,7 @@ const approx = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
       return rows[0];
     };
 
-    // ---------- 用例1：类型1 官方平台 → 进货价 ----------
+    // ---------- 用例1：类型1 送水到府 → 进货价 ----------
     let r = await call('POST', '/orders', {
       orderType: 1, customerName: 'T1-平台', customerPhone: '13800000001',
       deliveryMethod: 1, items: [{ productId: pid, quantity: 3 }]
@@ -182,12 +182,42 @@ const approx = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
     }, token);
     assert(r.code === 400, '类型4无机台被拦截(400)');
 
-    // ---------- 用例8：类型5 已停用 → 400 ----------
+    // ---------- 用例8：类型5 水公社（2026-09-14 新增）→ 与线下零售同口径 ----------
+    // 8a：不传单价 → 回退商品档案零售价（测试商品零售价=20）
     r = await call('POST', '/orders', {
-      orderType: 5, customerName: 'T1-停用', customerPhone: '13800000007',
-      deliveryMethod: 1, items: [{ productId: pid, quantity: 1 }]
+      orderType: 5, customerName: 'T1-水公社A', customerPhone: '13800000007',
+      deliveryMethod: 1, items: [{ productId: pid, quantity: 2 }]
     }, token);
-    assert(r.code === 400, '类型5(已停用)被拦截(400)');
+    assert(r.code === 200, '类型5创建成功（不传单价）');
+    const o5a = r.data.id;
+    cleanupIds.orders.push(o5a);
+    it = await itemOf(o5a);
+    assert(approx(it.unit_price, 20) && approx(it.subtotal, 40), '类型5不传单价 → 回退零售价 20/40');
+    assert(approx(it.retail_price, 20), '类型5快照retail_price=零售价20');
+
+    // 8b：手填单价 33 → 以手填价成交，快照=手填价
+    r = await call('POST', '/orders', {
+      orderType: 5, customerName: 'T1-水公社B', customerPhone: '13800000008',
+      deliveryMethod: 1, items: [{ productId: pid, quantity: 2, unitPrice: 33 }]
+    }, token);
+    assert(r.code === 200, '类型5创建成功（手填单价33）');
+    const o5b = r.data.id;
+    cleanupIds.orders.push(o5b);
+    it = await itemOf(o5b);
+    assert(approx(it.unit_price, 33) && approx(it.subtotal, 66), '类型5手填价 33/66');
+    assert(approx(it.retail_price, 33), '类型5快照retail_price=手填成交价33');
+
+    // 8c：不支持水票抵扣 → 传 useTicket 应被忽略（pricing_type=1/ticket_qty=0，金额按全量）
+    r = await call('POST', '/orders', {
+      orderType: 5, customerName: 'T1-水公社C', customerPhone: '13800000009',
+      deliveryMethod: 1, items: [{ productId: pid, quantity: 2, useTicket: true, ticketQty: 2 }]
+    }, token);
+    assert(r.code === 200, '类型5创建成功（传水票参数）');
+    const o5c = r.data.id;
+    cleanupIds.orders.push(o5c);
+    it = await itemOf(o5c);
+    assert(Number(it.pricing_type) === 1 && Number(it.ticket_qty) === 0, '类型5不支持水票抵扣（pricing_type=1/ticket_qty=0）');
+    assert(approx(it.subtotal, 40), '类型5水票参数被忽略，小计仍按全量零售价=40');
 
     // ---------- 用例9：改单（类型2 抵扣单 改为 qty3/抵扣1） ----------
     r = await call('PUT', `/orders/${o2b}`, {
@@ -211,10 +241,12 @@ const approx = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
     assert(approx(await availTickets(), 2) && approx(await usedTickets(), 0), '取消后水票全部还原（可用2/已用0）');
   } finally {
     // ---------- 清理还原（直接 DB 清理，测试数据无外部关联） ----------
+    let cleanupOk = true;
     try {
       if (cleanupIds.orders.length) {
         const ph = cleanupIds.orders.map(() => '?').join(',');
         await pool.query(`DELETE FROM order_items WHERE order_id IN (${ph})`, cleanupIds.orders);
+        await pool.query(`DELETE FROM delivery_fee_settlement WHERE order_id IN (${ph})`, cleanupIds.orders);
         await pool.query(`DELETE FROM orders WHERE order_id IN (${ph})`, cleanupIds.orders);
       }
       if (stationId !== null && stationDebt0 !== null) {
@@ -223,14 +255,26 @@ const approx = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
       if (cleanupIds.ticketIds.length) {
         await pool.query('DELETE FROM water_tickets WHERE ticket_id IN (?)', [cleanupIds.ticketIds]);
       }
+      // 删商品前必须清空所有以 product_id 外键引用 products 的表（一律 ON DELETE RESTRICT），
+      // 否则 DELETE FROM products 会被 fk_item_product 等挡下抛 ER_ROW_IS_REFERENCED_2。
+      // 2026-09-14 教训：旧版只删了 inventory，改单产生的 order_items 孤儿明细残留 → 商品删不掉。
       for (const p of cleanupIds.productIds) {
+        await pool.query('DELETE FROM order_items WHERE product_id = ?', [p]);
+        await pool.query('DELETE FROM delivery_fee_settlement WHERE product_id = ?', [p]);
+        await pool.query('DELETE FROM machine_sales WHERE product_id = ?', [p]);
+        await pool.query('DELETE FROM stock_out_records WHERE product_id = ?', [p]);
+        await pool.query('DELETE FROM water_tickets WHERE product_id = ?', [p]);
+        await pool.query('DELETE FROM water_ticket_issuance WHERE product_id = ?', [p]);
         await pool.query('DELETE FROM inventory WHERE product_id = ?', [p]);
         await pool.query('DELETE FROM products WHERE product_id = ?', [p]);
       }
-      console.log('清理完成（测试商品/订单/水票已删除，水站欠款已还原）');
     } catch (e) {
-      console.log('清理异常:', e.message);
+      cleanupOk = false;
+      console.log('  ⚠️ 清理异常（测试数据可能残留）: ' + e.message);
     }
+    console.log(cleanupOk
+      ? '清理完成（测试商品/订单/水票已删除，水站欠款已还原）'
+      : '⚠️ 清理未完成，请检查上方异常');
     await pool.end();
   }
 

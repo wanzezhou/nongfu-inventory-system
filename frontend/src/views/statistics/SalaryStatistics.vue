@@ -8,7 +8,7 @@
           <el-icon><Search /></el-icon>
           查询
         </el-button>
-        <span class="filter-tip">按订单计算员工配送费：官方平台/线下零售=工人零售配送费；直营水站=工人水站配送费；量贩机/零售机=工人零售机配送费</span>
+        <span class="filter-tip">按订单计算员工配送费：送水到府/线下零售/水公社=工人零售配送费；直营水站=工人水站配送费；量贩机/零售机=工人零售机配送费</span>
       </div>
     </el-card>
 

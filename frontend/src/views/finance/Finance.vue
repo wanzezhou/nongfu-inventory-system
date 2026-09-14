@@ -274,7 +274,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Download, Plus, Delete, View,
-  Van, Goods, ShoppingCart, Coin, Wallet, Money, Ticket
+  Van, Goods, ShoppingCart, Wallet, Money, Ticket
 } from '@element-plus/icons-vue'
 import { getFinanceSummary, getFinanceOrders, getMachineSales, createMachineSale, deleteMachineSale, exportFinance } from '@/api/finance'
 import { getProductList } from '@/api/product'
@@ -282,7 +282,7 @@ import { getMachineStations } from '@/api/machineStation'
 import { getOrderDetail } from '@/api/order'
 import { downloadBlob } from '@/api/excel'
 
-// 当前营收类型（路由 props 传入：1-官方平台销售 2-直营水站销售 3-线下零售 4-量贩机供货 6-零售机供货）
+// 当前营收类型（路由 props 传入：1-送水到府 2-直营水站销售 3-线下零售 4-量贩机供货 5-水公社 6-零售机供货）
 const props = defineProps({
   orderType: { type: Number, required: true }
 })
@@ -339,10 +339,11 @@ const currentOrder = ref(null)
 
 // 指标卡定义（与后端口径一致）
 const ORDER_TYPE_NAME = {
-  1: '官方平台销售',
+  1: '送水到府',
   2: '直营水站销售',
   3: '线下零售',
   4: '量贩机',
+  5: '水公社',
   6: '零售机'
 }
 const CARD_META = {
@@ -350,7 +351,7 @@ const CARD_META = {
   2: { icon: Goods, cls: 'card-blue', desc: '返货价值 + 总包配送费 + 分销价合计' },
   3: { icon: ShoppingCart, cls: 'card-green', desc: '零售价之和（手动填写）' },
   4: { icon: Wallet, cls: 'card-gold', desc: '机台售价 × 销量（手动录入）' },
-  5: { icon: Coin, cls: 'card-purple', desc: '进货价 + 总包配送费' },
+  5: { icon: ShoppingCart, cls: 'card-purple', desc: '零售价之和（手动填写）' },
   6: { icon: Van, cls: 'card-teal', desc: '机台售价 × 销量（手动录入）' }
 }
 

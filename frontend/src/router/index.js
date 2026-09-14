@@ -126,6 +126,13 @@ const routes = [
         meta: { title: t('finance/platform'), requiresAuth: true }
       },
       {
+        path: 'finance/water-commune',
+        name: 'FinanceWaterCommune',
+        component: () => import('@/views/finance/Finance.vue'),
+        props: { orderType: 5 },
+        meta: { title: t('finance/water-commune'), requiresAuth: true }
+      },
+      {
         path: 'finance/distribution',
         name: 'FinanceDistribution',
         component: () => import('@/views/finance/Finance.vue'),

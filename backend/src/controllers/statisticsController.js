@@ -1,6 +1,7 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 const { writeWorkbook } = require('../utils/excel');
+const { ORDER_TYPES, VALID_ORDER_TYPES } = require('../constants/order');
 
 // 配送方式映射
 const DELIVERY_TYPES = {
@@ -95,13 +96,13 @@ function buildProductSalesQuery(query) {
     params.push(end);
   }
 
-  // 订单类型多选（销售统计默认排除返货 5，单独筛选时按选择）
+  // 订单类型多选（销售统计默认全部销售类订单，含 5-水公社；单独筛选时按选择）
   if (orderTypes.length > 0) {
     whereParts.push(`o.order_type IN (${orderTypes.map(() => '?').join(',')})`);
     params.push(...orderTypes);
   } else {
-    // 默认只统计销售类订单（排除返货 5）
-    whereParts.push('o.order_type IN (1,2,3,4,6)');
+    // 默认统计全部合法销售类订单（1/2/3/4/5/6）
+    whereParts.push(`o.order_type IN (${VALID_ORDER_TYPES.join(',')})`);
   }
 
   // 默认排除已取消订单（canceled_at 非空），保持统计口径一致

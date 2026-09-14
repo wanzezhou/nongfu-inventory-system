@@ -69,7 +69,7 @@
                 <td></td>
               </tr>
               <tr class="total-row">
-                <!-- 官方平台销售/机台供货：不显示金额（单价为进货价口径，2026-09-07） -->
+                <!-- 送水到府/机台供货：不显示金额（单价为进货价口径，2026-09-07） -->
                 <td colspan="4">合计：{{ noPrice ? '--' : totalAmountChinese }}</td>
                 <td align="center">{{ totalQuantity }}</td>
                 <td v-if="!noPrice"></td>
@@ -138,7 +138,7 @@ const isTicketItem = (item) => {
   return Number(props.order.orderType) === 2 && (Number(item.pricingType) === 2 || Number(item.ticketQty) > 0)
 }
 
-// 官方平台销售(1)/量贩机供货(4)/零售机供货(6)：不显示单价与金额（与详情弹窗口径一致）
+// 送水到府(1)/量贩机供货(4)/零售机供货(6)：不显示单价与金额（与详情弹窗口径一致）
 const noPrice = computed(() => [1, 4, 6].includes(Number(props.order.orderType)))
 
 const totalQuantity = computed(() => {

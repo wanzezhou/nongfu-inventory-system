@@ -6,10 +6,11 @@
  * 错误约定：业务校验失败抛 bizFail（err.business=true），
  * 由调用方 catch 统一 rollback 并返回 400；系统异常仍走 500。
  *
- * 定价口径（2026-08-27）：
- *   类型1 官方平台销售 → 进货价
+ * 定价口径（2026-08-27，2026-09-14 增补类型5）：
+ *   类型1 送水到府（原「官方平台销售」）→ 进货价
  *   类型2 直营水站销售 → 行级混合：水票抵扣件数按进货价（不计金额）+ 剩余件数按分销价（手填或档案分销价）
  *   类型3 线下零售     → 零售价（手填或档案零售价）
+ *   类型5 水公社       → 与线下零售同口径：零售价（手填或档案零售价），不支持水票抵扣
  *   类型4/6 机台供货   → 不计商品价格（价格在机台销量录入）
  *   delivery_fee 恒为 0
  */
@@ -112,7 +113,10 @@ function buildOrderItems({ orderType, items, productMap }) {
     switch (typeNum) {
       case 1: unitPrice = product.purchase_price; break;
       case 2: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price; break;
-      case 3: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price; break;
+      case 3:
+      case 5: // 水公社（2026-09-14）：与线下零售同口径——单价可手填，不填回退零售价
+        unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price;
+        break;
       case 4: // 量贩机供货：不计算商品价格（价格在机台销量录入）
       case 6: // 零售机供货：同上
         unitPrice = 0;
@@ -125,14 +129,14 @@ function buildOrderItems({ orderType, items, productMap }) {
       : unitPrice * quantity;
     orderAmount += subtotal;
 
-    // 快照价：水站分销(2)/线下零售(3) 的单价由前端手动填写，快照需用手填值，
+    // 快照价：水站分销(2)/线下零售(3)/水公社(5) 的单价由前端手动填写，快照需用手填值，
     // 否则财务统计（按 wholesale_price / retail_price）取到的是商品档案值而非成交值
     const snapshotWholesale =
       typeNum === 2 && itemUnitPrice !== null && !isNaN(itemUnitPrice) && itemUnitPrice >= 0
         ? itemUnitPrice
         : product.wholesale_price;
     const snapshotRetail =
-      typeNum === 3 && itemUnitPrice !== null && !isNaN(itemUnitPrice) && itemUnitPrice >= 0
+      (typeNum === 3 || typeNum === 5) && itemUnitPrice !== null && !isNaN(itemUnitPrice) && itemUnitPrice >= 0
         ? itemUnitPrice
         : product.retail_price;
 

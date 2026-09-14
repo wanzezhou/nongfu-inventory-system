@@ -224,7 +224,7 @@ async function createOrder(req, res) {
       return error(res, '订单类型、客户姓名、配送方式和商品明细不能为空', 400);
     }
 
-    // 校验订单类型（5-线下水站返货 已停用删除，2026-08-25）
+    // 校验订单类型（1/2/3/4/5/6；旧 5-线下水站返货 于 2026-08-25 删除，编号 5 于 2026-09-14 复用为「水公社」）
     if (!VALID_ORDER_TYPES.includes(typeNum)) {
       return error(res, '订单类型无效', 400);
     }
@@ -490,7 +490,7 @@ async function updateOrder(req, res) {
     const { id } = req.params;
     const p = normalizeOrderPayload(req.body);
 
-    // 校验订单类型（5-线下水站返货 已停用删除，2026-08-25）
+    // 校验订单类型（1/2/3/4/5/6；旧 5-线下水站返货 于 2026-08-25 删除，编号 5 于 2026-09-14 复用为「水公社」）
     // 注意：此时尚未 beginTransaction，不能调用 rollback（A3 修复）
     if (p.orderType !== undefined && p.orderType !== null) {
       if (!VALID_ORDER_TYPES.includes(Number(p.orderType))) {
