@@ -34,41 +34,40 @@ function assert(cond, name) {
   assert(login.data?.token, '管理员登录');
   const token = login.data.token;
 
-  // 找一个有水票记录的水站+商品组合，没有就造两张票
-  let [rows] = await pool.query(
-    "SELECT station_id, product_id FROM water_tickets WHERE status = 1 LIMIT 1"
+  // 自建测试对象（不依赖真实数据）：临时商品 + 临时水站 + 3 张 SMK 水票
+  // 历史教训：旧版在「库里恰好没有可用水票」时会走 else 分支去 SELECT products WHERE pricing_type ...
+  // —— pricing_type 是早已删除的列，该分支一旦执行必然 ER_BAD_FIELD_ERROR。
+  // 平时因库里有真实水票而被掩盖，水票被清空 / 全新部署时立刻暴露。这里统一改为自建，恒不依赖真实数据。
+  const productId = 'SMK' + Date.now();
+  const stationIdTmp = 'SMKST' + Date.now();
+  const nowIso = new Date().toISOString();
+  const monthStr = nowIso.slice(0, 7);
+
+  await pool.query(
+    `INSERT INTO products (product_id, product_name, product_code, category, purchase_price, wholesale_price,
+       retail_price, machine_price, status, created_at, updated_at)
+     VALUES (?, '冒烟-水票还原测试商品', ?, '冒烟', 10, 12, 15, 10, 1, NOW(), NOW())`,
+    [productId, productId]
   );
-  let stationId, productId;
-  if (rows.length > 0) {
-    stationId = rows[0].station_id;
-    productId = rows[0].product_id;
-    // 补足到 3 张可用票
-    const [[cnt]] = await pool.query(
-      "SELECT COUNT(*) c FROM water_tickets WHERE station_id=? AND product_id=? AND status=1",
-      [stationId, productId]
+  await pool.query(
+    `INSERT INTO sub_stations (station_id, station_name, contact_name, phone, status, created_at, updated_at)
+     VALUES (?, '冒烟-水票还原测试水站', '冒烟', '13800000000', 1, NOW(), NOW())`,
+    [stationIdTmp]
+  );
+  await pool.query(
+    'INSERT INTO inventory (product_id, quantity, updated_at) VALUES (?, 100, NOW()) ' +
+    'ON DUPLICATE KEY UPDATE quantity = quantity + 100',
+    [productId]
+  );
+  const stationId = stationIdTmp;
+  for (let i = 0; i < 3; i++) {
+    const tid = `WTSMK${Date.now()}${i}${Math.floor(Math.random() * 900 + 100)}`;
+    await pool.query(
+      "INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issued_at, issued_by, remark) VALUES (?,?,?,1,?,NOW(),'smoke','冒烟-水票还原测试')",
+      [tid, productId, stationId, monthStr]
     );
-    for (let i = cnt.c; i < 3; i++) {
-      const tid = `WTSMK${Date.now()}${i}${Math.floor(Math.random() * 900 + 100)}`;
-      await pool.query(
-        "INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issued_at, issued_by, remark) VALUES (?,?,?,1,?,NOW(),'smoke','冒烟-水票还原测试')",
-        [tid, productId, stationId, new Date().toISOString().slice(0, 7)]
-      );
-    }
-  } else {
-    // 找任意水站和商品
-    const [[st]] = await pool.query("SELECT station_id FROM sub_stations LIMIT 1");
-    const [[pd]] = await pool.query("SELECT product_id FROM products WHERE pricing_type IS NULL OR 1 LIMIT 1");
-    stationId = st.station_id;
-    productId = pd.product_id;
-    for (let i = 0; i < 3; i++) {
-      const tid = `WTSMK${Date.now()}${i}${Math.floor(Math.random() * 900 + 100)}`;
-      await pool.query(
-        "INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issued_at, issued_by, remark) VALUES (?,?,?,1,?,NOW(),'smoke','冒烟-水票还原测试')",
-        [tid, productId, stationId, new Date().toISOString().slice(0, 7)]
-      );
-    }
   }
-  console.log(`测试对象：水站 ${stationId} / 商品 ${productId}`);
+  console.log(`测试对象（自建）：水站 ${stationId} / 商品 ${productId}`);
 
   const countTickets = async (status) => {
     const [[r]] = await pool.query(

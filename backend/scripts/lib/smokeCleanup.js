@@ -25,10 +25,12 @@
 const MARKERS = {
   workers: "worker_name LIKE '冒烟%'",
   miniAccounts: "username LIKE 'smoke\\_%'",
-  products: "(product_name LIKE '冒烟%' OR product_code LIKE 'SMK%')",
+  products: "(product_name LIKE '冒烟%' OR product_name LIKE '%测试商品%' OR product_code LIKE 'SMK%' OR product_code LIKE 'TESTP%')",
   orders: "customer_name LIKE '冒烟%'",
   purchaseRecords: "(remark LIKE '%冒烟%' OR void_reason LIKE '%冒烟%')",
   txByRemark: "remark LIKE '%冒烟%'",
+  subStations: "(station_name LIKE '冒烟%' OR station_id LIKE 'SMKST%')",
+  users: "username LIKE 'smoke\\_%'",
 };
 
 async function cleanupSmokeResidue(pool, opts = {}) {
@@ -44,12 +46,16 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const smokeProducts = await pick(`SELECT product_id FROM products WHERE ${MARKERS.products}`);
     const smokeOrders = await pick(`SELECT order_id FROM orders WHERE ${MARKERS.orders}`);
     const smokePurchases = await pick(`SELECT purchase_id FROM purchase_records WHERE ${MARKERS.purchaseRecords}`);
+    const smokeStations = await pick(`SELECT station_id FROM sub_stations WHERE ${MARKERS.subStations}`);
+    const smokeUsers = await pick(`SELECT id FROM users WHERE ${MARKERS.users}`);
 
     const workerIds = smokeWorkers.map(r => r.worker_id);
     const accountIds = smokeAccounts.map(r => r.id);
     const productIds = smokeProducts.map(r => r.product_id);
     const orderIds = smokeOrders.map(r => r.order_id);
     const purchaseIds = smokePurchases.map(r => r.purchase_id);
+    const stationIds = smokeStations.map(r => r.station_id);
+    const userIds = smokeUsers.map(r => r.id);
 
     const txConds = [MARKERS.txByRemark];
     const txArgs = [];
@@ -66,6 +72,7 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const touched = [
       workerIds.length, accountIds.length, productIds.length,
       orderIds.length, purchaseIds.length, txIds.length, extraSalaryPayments.length,
+      stationIds.length, userIds.length,
     ].reduce((a, b) => a + b, 0);
     if (!touched) return { total: 0, resume: '无残留' };
 
@@ -116,6 +123,13 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     if (productIds.length) {
       await del('products', 'DELETE FROM products WHERE product_id IN (?)', [productIds]);
     }
+    // 冒烟自建水站：先删其关联水票（可能未被 remark 命中），再删水站本身
+    if (stationIds.length) {
+      await del('water_tickets', 'DELETE FROM water_tickets WHERE station_id IN (?)', [stationIds]);
+      await del('water_ticket_issuance', 'DELETE FROM water_ticket_issuance WHERE station_id IN (?)', [stationIds]);
+      await del('orders', 'DELETE FROM orders WHERE station_id IN (?)', [stationIds]);
+      await del('sub_stations', 'DELETE FROM sub_stations WHERE station_id IN (?)', [stationIds]);
+    }
     if (workerIds.length) {
       await del('financial_settlement', 'DELETE FROM financial_settlement WHERE worker_id IN (?)', [workerIds]);
       await del('orders', 'DELETE FROM orders WHERE worker_id IN (?) OR created_by IN (?)', [workerIds, workerIds]);
@@ -123,6 +137,10 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     }
     if (accountIds.length) {
       await del('mini_accounts', 'DELETE FROM mini_accounts WHERE id IN (?)', [accountIds]);
+    }
+    // 冒烟登录账号（users 表；smoke_* 前缀）
+    if (userIds.length) {
+      await del('users', 'DELETE FROM users WHERE id IN (?)', [userIds]);
     }
 
     // 按恒等式重算账户余额

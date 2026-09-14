@@ -75,8 +75,10 @@ const assert = (cond, name) => {
     const tx = await call('GET', '/finance-accounts/1/transactions?page=1&pageSize=1', null, staffToken);
     assert(tx.code === 200, 'staff 可读取账户流水');
   } finally {
-    await pool.query('DELETE FROM users WHERE username = ?', [uname]);
-    console.log('清理完成（临时 staff 用户已删除）');
+    // 按前缀清理，而非仅删本次的 uname —— 否则历史失败运行留下的 smoke_staff_* 会永久堆积
+    // （2026-09-14 发现：库里残留 smoke_staff_1789391704664，来自上一次运行）
+    const [r] = await pool.query("DELETE FROM users WHERE username LIKE 'smoke\\_staff\\_%'");
+    console.log(`清理完成（临时 staff 用户已删除 ${r.affectedRows} 个）`);
     await pool.end();
   }
 

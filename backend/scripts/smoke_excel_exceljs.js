@@ -82,7 +82,17 @@ async function main() {
   console.log('\n[导出] 商品销售统计');
   r = await getBuf(`/statistics/product-sales/export?range=all`);
   sheets = await parseXlsx(r.buf);
-  check('sheet「商品销售统计」表头=序号', sheets['商品销售统计'] && sheets['商品销售统计'][0][0] === '序号', JSON.stringify(Object.keys(sheets)));
+  // writeWorkbook 对空数据集只建 sheet 不写行：sheet key 存在但 aoa 为空数组。
+  // orders 为空（如刚做过数据清理）属合法状态，不应判为失败，更不应让脚本崩在 [0][0] 上。
+  const psSheet = sheets['商品销售统计'];
+  if (psSheet && psSheet.length) {
+    check('sheet「商品销售统计」表头=序号', psSheet[0][0] === '序号', JSON.stringify(Object.keys(sheets)));
+  } else {
+    // 空表：必须同时确认单据侧确实为 0，避免把「真实的 500/丢数据」误判成「空表正常」
+    const chk = await fetch(`${BASE}/statistics/product-sales?range=all`, { headers: H }).then(x => x.json());
+    const orderCount = chk.data && chk.data.summary && chk.data.summary.orderCount;
+    check('商品销售统计无数据时仍返回合法 xlsx（且单据数为0）', r.status === 200 && orderCount === 0, `status=${r.status} orderCount=${orderCount} keys=${JSON.stringify(Object.keys(sheets))}`);
+  }
 
   // ===== 6. 其他支出：模板 + xlsx 导出 + csv 导出 + csv 导入解析 =====
   console.log('\n[其他支出] 模板 / 导出 / CSV 导入');

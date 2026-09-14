@@ -67,7 +67,7 @@ async function main() {
       "SELECT id, username FROM mini_accounts WHERE username LIKE 'smoke\\_%'"
     );
     const smokeProducts = await pick(
-      "SELECT product_id, product_code, product_name FROM products WHERE product_name LIKE '冒烟%' OR product_code LIKE 'SMK%'"
+      "SELECT product_id, product_code, product_name FROM products WHERE product_name LIKE '冒烟%' OR product_name LIKE '%测试商品%' OR product_code LIKE 'SMK%' OR product_code LIKE 'TESTP%'"
     );
     const smokeOrders = await pick(
       "SELECT order_id, customer_name FROM orders WHERE customer_name LIKE '冒烟%'"
@@ -271,6 +271,8 @@ async function main() {
     if (accountIds.length) {
       await del('mini_accounts', 'DELETE FROM mini_accounts WHERE id IN (?)', [accountIds]);
     }
+    // 3.7b 冒烟后台账号（users 表；smoke_* 前缀，含 smoke_staff_* 临时鉴权用户）
+    await del('users(smoke_*)', "DELETE FROM users WHERE username LIKE 'smoke\\_%'");
 
     // ============ 4. 重算账户余额并校验恒等式 ============
     line();
