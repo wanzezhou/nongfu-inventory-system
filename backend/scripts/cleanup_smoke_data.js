@@ -12,6 +12,7 @@
  *   4. orders             冒烟-水票还原 测试订单（及其 order_items）
  *   5. purchase_records   冒烟入库单 / 冒烟清理盘库单（含已作废单）
  *   6. finance_transactions 上述采购单的收支流水 + 冒烟预充值 + 用户确认删除的测试工资发放流水
+ *      + **订单营收入账孤儿流水**（需求 5 上线后，老脚本用原生 SQL 直删订单绕过回冲所致）
  *   7. salary_payments    用户确认删除的测试工资发放单
  *   8. inventory          冒烟商品库存行
  *
@@ -153,6 +154,13 @@ async function main() {
     const ordersByWorker = workerIds.length
       ? await pick('SELECT order_id FROM orders WHERE worker_id IN (?) OR created_by IN (?)', [workerIds, workerIds])
       : [];
+    // 订单营收入账（需求 5）的孤儿流水：部分老冒烟脚本用原生 SQL 直删订单，
+    // 绕过 DELETE /orders 的回冲逻辑 → related_module='order_revenue' 的流水成悬挂数据。
+    const orphanRevenueTx = await pick(
+      `SELECT tx_id, account_id, amount, related_id FROM finance_transactions
+       WHERE related_module = 'order_revenue'
+         AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = finance_transactions.related_id)`
+    );
 
     // ============ 2. 打印清理计划 ============
     head(`冒烟残留清理计划　${APPLY ? '【实际执行】' : '【预演 · 不修改数据】'}`);
@@ -163,6 +171,7 @@ async function main() {
       ['orders（冒烟订单）', smokeOrders.map(r => `${r.order_id}/${r.customer_name}`)],
       ['purchase_records（冒烟入库单）', smokePurchases.map(r => `${r.purchase_id}(status=${r.status})`)],
       ['finance_transactions（冒烟流水）', [].concat(txByPurchase, txByRemark, txBySalary).filter((v, i, a) => a.findIndex(x => x.tx_id === v.tx_id) === i).map(r => `${r.tx_no}/${r.tx_type}/${r.amount}`)],
+      ['finance_transactions（营收入账孤儿流水）', orphanRevenueTx.map(r => `${r.tx_id}/${r.related_id}/${r.amount}`)],
       ['salary_payments（确认删除的测试发放）', salaries.map(r => `${r.payment_id}/${r.worker_name}/${r.amount}`)],
       ['order_items（冒烟订单明细）', [].concat(orderItems, orderItemsByProduct).map(r => `#${r.item_id}`)],
       ['inventory（冒烟商品库存行）', invRows.map(r => `#${r.inventory_id}`)],
@@ -255,6 +264,13 @@ async function main() {
     // 3.4 资金流水（先于业务单删除）
     if (txIds.length) {
       await del('finance_transactions', 'DELETE FROM finance_transactions WHERE tx_id IN (?)', [txIds]);
+    }
+    // 3.4b 订单营收入账的孤儿流水（关联订单已不存在）
+    if (orphanRevenueTx.length) {
+      await del('finance_transactions(order_revenue 孤儿)',
+        `DELETE FROM finance_transactions
+         WHERE related_module = 'order_revenue'
+           AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = finance_transactions.related_id)`);
     }
     // 3.5 业务单
     if (purchaseIds.length) {

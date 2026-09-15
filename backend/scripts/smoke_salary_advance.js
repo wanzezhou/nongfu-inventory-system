@@ -15,6 +15,7 @@
  */
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const BASE = 'http://localhost:3000/api';
+const { revertOrderRevenueBySql } = require('./lib/smokeCleanup');
 
 async function call(method, path, body, token) {
   const res = await fetch(BASE + path, {
@@ -265,6 +266,9 @@ const approx = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
       }
       if (cleanup.orders.length) {
         const ph = cleanup.orders.map(() => '?').join(',');
+        // 需求 5：订单创建即营收入账。原生 SQL 直删订单会绕过 DELETE /orders 的回冲，
+        // 必须先手动回冲 order_revenue 流水 + 还原余额。
+        await revertOrderRevenueBySql(pool, cleanup.orders);
         await pool.query(`DELETE FROM order_items WHERE order_id IN (${ph})`, cleanup.orders);
         await pool.query(`DELETE FROM orders WHERE order_id IN (${ph})`, cleanup.orders);
       }

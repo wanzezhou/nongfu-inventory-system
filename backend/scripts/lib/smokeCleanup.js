@@ -114,6 +114,16 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     if (txIds.length) {
       await del('finance_transactions', 'DELETE FROM finance_transactions WHERE tx_id IN (?)', [txIds]);
     }
+    // 订单营收入账流水（需求 5）的孤儿：
+    // 多个老冒烟脚本（smoke_order_pricing / smoke_a6_revenue / smoke_salary_advance）
+    // 会用**原生 SQL 直删订单**，绕过 DELETE /orders 的回冲逻辑，
+    // 于是 related_module='order_revenue' 的流水成了悬挂数据，且账户余额被抬高。
+    // 这里按「关联订单已不存在」清理，随后统一按恒等式重算余额即可自愈。
+    await del('finance_transactions', `DELETE FROM finance_transactions
+      WHERE related_module = 'order_revenue'
+        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = finance_transactions.related_id)`);
+    // 订单已不存在却仍留在 water_tickets.order_id 上的悬挂引用（同理由直删订单造成）
+    await conn.query('UPDATE water_tickets SET order_id = NULL WHERE order_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = water_tickets.order_id)');
     if (purchaseIds.length) {
       await del('purchase_records', 'DELETE FROM purchase_records WHERE purchase_id IN (?)', [purchaseIds]);
     }
@@ -180,4 +190,46 @@ async function cleanupSmokeResidue(pool, opts = {}) {
   }
 }
 
-module.exports = { cleanupSmokeResidue, MARKERS };
+/**
+ * 按「订单已不存在」清理订单营收入账孤儿流水（需求 5 上线后的配套工具）。
+ *
+ * 场景：老冒烟脚本用**原生 SQL 直删订单**（不经 DELETE /orders 接口），
+ *      而订单创建时已按需求 5 写入了 order_revenue 流水 + 抬高账户余额，
+ *      于是这些流水成了悬挂数据、余额虚高。
+ *
+ * 两种用法：
+ *   - 删除订单**之前**调用 `revertOrderRevenueBySql(pool, orderIds)`：把这些订单的
+ *     入账逐笔回补余额并删除流水（推荐，语义最清晰）；
+ *   - 任意时机调用 `sweepOrphanOrderRevenue(pool)`：按「关联订单已不存在」兜底清扫。
+ *
+ * @param {import('mysql2/promise').Pool} pool
+ * @param {Array<string>} orderIds 即将被删除的订单号
+ * @returns {Promise<number>} 回冲金额合计
+ */
+async function revertOrderRevenueBySql(pool, orderIds) {
+  if (!orderIds || !orderIds.length) return 0;
+  const [txs] = await pool.query(
+    `SELECT tx_id, account_id, amount FROM finance_transactions
+     WHERE related_module = 'order_revenue' AND related_id IN (?)`,
+    [orderIds]
+  );
+  let reverted = 0;
+  for (const t of txs) {
+    await pool.query('UPDATE finance_accounts SET current_balance = current_balance - ? WHERE account_id = ?', [Number(t.amount), t.account_id]);
+    await pool.query('DELETE FROM finance_transactions WHERE tx_id = ?', [t.tx_id]);
+    reverted += Number(t.amount) || 0;
+  }
+  return Math.round(reverted * 100) / 100;
+}
+
+/** 清扫「关联订单已不存在」的营收入账孤儿流水（幂等，可重复执行） */
+async function sweepOrphanOrderRevenue(pool) {
+  const [res] = await pool.query(
+    `DELETE FROM finance_transactions
+     WHERE related_module = 'order_revenue'
+       AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = finance_transactions.related_id)`
+  );
+  return res.affectedRows || 0;
+}
+
+module.exports = { cleanupSmokeResidue, MARKERS, revertOrderRevenueBySql, sweepOrphanOrderRevenue };
