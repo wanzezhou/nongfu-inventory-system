@@ -183,6 +183,96 @@ const routes = [
         name: 'BarrelConfig',
         component: () => import('@/views/barrel/BarrelConfig.vue'),
         meta: { title: t('barrel/config'), requiresAuth: true }
+      },
+      // ── 成本统计（按订单类型分页，共用 CostTypeDetail 组件）────────────
+      {
+        path: 'cost/platform',
+        name: 'CostPlatform',
+        component: () => import('@/views/cost/CostTypeDetail.vue'),
+        props: { orderType: 1, typeName: '送水到府' },
+        meta: { title: t('cost/platform'), requiresAuth: true }
+      },
+      {
+        path: 'cost/water-commune',
+        name: 'CostWaterCommune',
+        component: () => import('@/views/cost/CostTypeDetail.vue'),
+        props: { orderType: 5, typeName: '水公社' },
+        meta: { title: t('cost/water-commune'), requiresAuth: true }
+      },
+      {
+        path: 'cost/distribution',
+        name: 'CostDistribution',
+        component: () => import('@/views/cost/CostTypeDetail.vue'),
+        props: { orderType: 2, typeName: '直营水站销售' },
+        meta: { title: t('cost/distribution'), requiresAuth: true }
+      },
+      {
+        path: 'cost/retail',
+        name: 'CostRetail',
+        component: () => import('@/views/cost/CostTypeDetail.vue'),
+        props: { orderType: 3, typeName: '线下零售' },
+        meta: { title: t('cost/retail'), requiresAuth: true }
+      },
+      {
+        path: 'cost/bulk-machine',
+        name: 'CostBulkMachine',
+        component: () => import('@/views/cost/CostTypeDetail.vue'),
+        props: { orderType: 4, typeName: '量贩机', machineType: 1 },
+        meta: { title: t('cost/bulk-machine'), requiresAuth: true }
+      },
+      {
+        path: 'cost/retail-machine',
+        name: 'CostRetailMachine',
+        component: () => import('@/views/cost/CostTypeDetail.vue'),
+        props: { orderType: 6, typeName: '零售机', machineType: 2 },
+        meta: { title: t('cost/retail-machine'), requiresAuth: true }
+      },
+      // ── 利润统计（按订单类型分页，共用 ProfitTypeDetail 组件）──────────
+      {
+        path: 'profit',
+        redirect: '/profit/platform'
+      },
+      {
+        path: 'profit/platform',
+        name: 'ProfitPlatform',
+        component: () => import('@/views/profit/ProfitTypeDetail.vue'),
+        props: { orderType: 1, typeName: '送水到府' },
+        meta: { title: t('profit/platform'), requiresAuth: true }
+      },
+      {
+        path: 'profit/water-commune',
+        name: 'ProfitWaterCommune',
+        component: () => import('@/views/profit/ProfitTypeDetail.vue'),
+        props: { orderType: 5, typeName: '水公社' },
+        meta: { title: t('profit/water-commune'), requiresAuth: true }
+      },
+      {
+        path: 'profit/distribution',
+        name: 'ProfitDistribution',
+        component: () => import('@/views/profit/ProfitTypeDetail.vue'),
+        props: { orderType: 2, typeName: '直营水站销售' },
+        meta: { title: t('profit/distribution'), requiresAuth: true }
+      },
+      {
+        path: 'profit/retail',
+        name: 'ProfitRetail',
+        component: () => import('@/views/profit/ProfitTypeDetail.vue'),
+        props: { orderType: 3, typeName: '线下零售' },
+        meta: { title: t('profit/retail'), requiresAuth: true }
+      },
+      {
+        path: 'profit/bulk-machine',
+        name: 'ProfitBulkMachine',
+        component: () => import('@/views/profit/ProfitTypeDetail.vue'),
+        props: { orderType: 4, typeName: '量贩机', machineType: 1 },
+        meta: { title: t('profit/bulk-machine'), requiresAuth: true }
+      },
+      {
+        path: 'profit/retail-machine',
+        name: 'ProfitRetailMachine',
+        component: () => import('@/views/profit/ProfitTypeDetail.vue'),
+        props: { orderType: 6, typeName: '零售机', machineType: 2 },
+        meta: { title: t('profit/retail-machine'), requiresAuth: true }
       }
     ]
   }

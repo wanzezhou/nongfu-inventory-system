@@ -39,9 +39,26 @@ export const menuGroups = [
     type: 'group', index: '/cost', title: '成本统计', icon: Coin,
     items: [
       { index: '/cost/summary', title: '成本汇总', icon: TrendCharts },
-      { index: '/cost/station', title: '直营水站成本统计', icon: OfficeBuilding },
+      { index: '/cost/platform', title: '送水到府', icon: Van },
+      { index: '/cost/water-commune', title: '水公社', icon: ShoppingCart },
+      { index: '/cost/distribution', title: '直营水站销售', icon: Goods },
+      { index: '/cost/retail', title: '线下零售', icon: ShoppingCart },
+      { index: '/cost/bulk-machine', title: '量贩机', icon: Wallet },
+      { index: '/cost/retail-machine', title: '零售机', icon: Van },
+      { index: '/cost/station', title: '水站成本明细', icon: OfficeBuilding },
       { index: '/cost/expenses', title: '其他支出', icon: Wallet },
       { index: '/salary', title: '工资统计', icon: Money }
+    ]
+  },
+  {
+    type: 'group', index: '/profit', title: '利润统计', icon: TrendCharts,
+    items: [
+      { index: '/profit/platform', title: '送水到府', icon: Van },
+      { index: '/profit/water-commune', title: '水公社', icon: ShoppingCart },
+      { index: '/profit/distribution', title: '直营水站销售', icon: Goods },
+      { index: '/profit/retail', title: '线下零售', icon: ShoppingCart },
+      { index: '/profit/bulk-machine', title: '量贩机', icon: Wallet },
+      { index: '/profit/retail-machine', title: '零售机', icon: Van }
     ]
   },
   { type: 'item', index: '/water-tickets', title: '水站账户管理', icon: Ticket },
