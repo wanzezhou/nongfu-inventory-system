@@ -1,6 +1,6 @@
 <template>
   <el-container class="main-layout">
-    <el-aside :width="isCollapse ? '64px' : '220px'" class="sidebar">
+    <el-aside :width="asideWidth" class="sidebar" :class="{ resizing: isResizing }">
       <div class="logo">
         <div class="logo-icon" v-if="!isCollapse">
           <svg viewBox="0 0 32 32" class="logo-svg" fill="none">
@@ -45,6 +45,15 @@
         <span class="sidebar-footer-text">南京市晟之溪商贸有限公司</span>
         <span class="sidebar-footer-subtext">NONGFU SPRING</span>
       </div>
+      <!-- 宽度拖拽手柄（折叠态隐藏） -->
+      <div
+        v-show="!isCollapse"
+        class="sidebar-resizer"
+        :class="{ dragging: isResizing }"
+        @mousedown.prevent="startResize"
+        @dblclick="resetWidth"
+        title="拖拽调整宽度，双击恢复默认"
+      ></div>
     </el-aside>
 
     <el-container>
@@ -106,7 +115,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Fold, Expand } from '@element-plus/icons-vue'
@@ -116,7 +125,75 @@ import { menuGroups } from './menuConfig'
 
 const route = useRoute()
 const router = useRouter()
-const isCollapse = ref(false)
+
+// —— 侧边栏偏好（折叠态 + 宽度）持久化到 localStorage ——
+const SIDEBAR_KEY = 'sidebar_pref'
+const DEFAULT_WIDTH = 220
+const MIN_WIDTH = 160
+const MAX_WIDTH = 360
+
+function loadSidebarPref() {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_KEY)
+    if (!raw) return {}
+    const p = JSON.parse(raw)
+    return p && typeof p === 'object' ? p : {}
+  } catch (e) {
+    return {}
+  }
+}
+
+const _pref = loadSidebarPref()
+// 无历史偏好时：窄屏默认收起，宽屏默认展开
+const isNarrow = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+const isCollapse = ref(_pref.collapsed === undefined ? isNarrow : !!_pref.collapsed)
+const sidebarWidth = ref(
+  Number.isFinite(_pref.width) ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, _pref.width)) : DEFAULT_WIDTH
+)
+const isResizing = ref(false)
+
+const asideWidth = computed(() => (isCollapse.value ? '64px' : `${sidebarWidth.value}px`))
+
+function saveSidebarPref() {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, JSON.stringify({
+      collapsed: isCollapse.value,
+      width: sidebarWidth.value
+    }))
+  } catch (e) { /* 隐私模式等场景忽略 */ }
+}
+
+watch([isCollapse, sidebarWidth], saveSidebarPref)
+
+// 宽度拖拽：mousemove 期间同步跟手，mouseup 落库（watch 已负责持久化）
+function startResize() {
+  isResizing.value = true
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+  document.addEventListener('mousemove', onResizeMove)
+  document.addEventListener('mouseup', stopResize)
+}
+
+function onResizeMove(e) {
+  if (!isResizing.value) return
+  // 侧边栏贴左，clientX 即为期望宽度
+  const w = Math.round(e.clientX)
+  sidebarWidth.value = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w))
+}
+
+function stopResize() {
+  isResizing.value = false
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+  document.removeEventListener('mousemove', onResizeMove)
+  document.removeEventListener('mouseup', stopResize)
+}
+
+function resetWidth() {
+  sidebarWidth.value = DEFAULT_WIDTH
+}
+
+onBeforeUnmount(stopResize)
 
 const activeMenu = computed(() => route.path)
 

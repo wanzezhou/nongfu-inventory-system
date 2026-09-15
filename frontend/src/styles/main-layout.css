@@ -18,6 +18,29 @@
   position: relative;
 }
 
+/* 拖拽调宽手柄（贴合右边缘，双击恢复默认） */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.18s ease;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer.dragging {
+  background: rgba(168, 32, 26, 0.28);
+}
+
+/* 拖拽期间禁止宽度过渡，保证跟手（否则会有 0.5s 延迟） */
+.sidebar.resizing {
+  transition: none;
+}
+
 .logo {
   height: 68px;
   display: flex;
@@ -321,4 +344,13 @@
   font-weight: 600;
   border-left-color: var(--primary);
   border-radius: 0 10px 10px 0;
+}
+
+/* ===== 窄屏适配：默认收起，拖拽手柄禁用 ===== */
+@media (max-width: 768px) {
+  .sidebar-resizer { display: none; }
+  .logo { padding: 0 10px; gap: 8px; }
+  .header { padding: 0 12px; }
+  .breadcrumb { display: none; }
+  .current-date { display: none; }
 }
