@@ -30,6 +30,7 @@ const MARKERS = {
   purchaseRecords: "(remark LIKE '%冒烟%' OR void_reason LIKE '%冒烟%')",
   txByRemark: "remark LIKE '%冒烟%'",
   subStations: "(station_name LIKE '冒烟%' OR station_id LIKE 'SMKST%')",
+  machineStations: "(station_name LIKE '冒烟%' OR machine_id LIKE 'SMKM%')",
   users: "username LIKE 'smoke\\_%'",
 };
 
@@ -47,6 +48,7 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const smokeOrders = await pick(`SELECT order_id FROM orders WHERE ${MARKERS.orders}`);
     const smokePurchases = await pick(`SELECT purchase_id FROM purchase_records WHERE ${MARKERS.purchaseRecords}`);
     const smokeStations = await pick(`SELECT station_id FROM sub_stations WHERE ${MARKERS.subStations}`);
+    const smokeMachines = await pick(`SELECT machine_id FROM machine_stations WHERE ${MARKERS.machineStations}`);
     const smokeUsers = await pick(`SELECT id FROM users WHERE ${MARKERS.users}`);
 
     const workerIds = smokeWorkers.map(r => r.worker_id);
@@ -55,6 +57,7 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const orderIds = smokeOrders.map(r => r.order_id);
     const purchaseIds = smokePurchases.map(r => r.purchase_id);
     const stationIds = smokeStations.map(r => r.station_id);
+    const machineIds = smokeMachines.map(r => r.machine_id);
     const userIds = smokeUsers.map(r => r.id);
 
     const txConds = [MARKERS.txByRemark];
@@ -72,7 +75,7 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const touched = [
       workerIds.length, accountIds.length, productIds.length,
       orderIds.length, purchaseIds.length, txIds.length, extraSalaryPayments.length,
-      stationIds.length, userIds.length,
+      stationIds.length, machineIds.length, userIds.length,
     ].reduce((a, b) => a + b, 0);
     if (!touched) return { total: 0, resume: '无残留' };
 
@@ -137,6 +140,11 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     }
     if (accountIds.length) {
       await del('mini_accounts', 'DELETE FROM mini_accounts WHERE id IN (?)', [accountIds]);
+    }
+    // 冒烟自建机台：先删其销量记录（可能未被 remark/sale_date 命中），再删机台本身
+    if (machineIds.length) {
+      await del('machine_sales', 'DELETE FROM machine_sales WHERE machine_id IN (?)', [machineIds]);
+      await del('machine_stations', 'DELETE FROM machine_stations WHERE machine_id IN (?)', [machineIds]);
     }
     // 冒烟登录账号（users 表；smoke_* 前缀）
     if (userIds.length) {

@@ -126,6 +126,11 @@ async function main() {
     const machineSales = productIds.length
       ? await pick('SELECT sale_id FROM machine_sales WHERE product_id IN (?)', [productIds])
       : [];
+    // 冒烟自建机台（SMKM* 前缀 / 名称含冒烟）—— 2026-09-15 起纳入口径
+    const smokeMachines = await pick(
+      "SELECT machine_id, station_name FROM machine_stations WHERE machine_id LIKE 'SMKM%' OR station_name LIKE '冒烟%'"
+    );
+    const machineIds = smokeMachines.map(r => r.machine_id);
     const stockOuts = productIds.length
       ? await pick('SELECT record_id FROM stock_out_records WHERE product_id IN (?)', [productIds])
       : [];
@@ -162,6 +167,7 @@ async function main() {
       ['order_items（冒烟订单明细）', [].concat(orderItems, orderItemsByProduct).map(r => `#${r.item_id}`)],
       ['inventory（冒烟商品库存行）', invRows.map(r => `#${r.inventory_id}`)],
       ['water_tickets（2099/脚本标记水票）', ticketMarkers.map(r => `${r.ticket_id}(${r.month}/${r.issued_by})`)],
+      ['machine_stations（冒烟机台）', smokeMachines.map(r => `${r.machine_id}/${r.station_name}`)],
       ['其他零散关联', [].concat(machineSales.map(r => `machine_sales/${r.sale_id}`), stockOuts.map(r => `stock_out_records/${r.record_id}`), tickets.map(r => `water_tickets/${r.ticket_id}`), ticketIssues.map(r => `water_ticket_issuance/${r.issuance_id}`), ticketsByOrder.map(r => `water_tickets/${r.ticket_id}`), dfSettleByOrder.map(r => `dfs/${r.settlement_id}`), dfSettleByProduct.map(r => `dfs/${r.settlement_id}`), finSettle.map(r => `fin#${r.settlement_id}`), salaryLinks.map(r => `spa/${r.payment_id}`), ordersByWorker.map(r => `orders/${r.order_id}`))],
     ];
     for (const [label, items] of plan) {
@@ -236,6 +242,11 @@ async function main() {
     // 3.2b 标记水票（2099 未来月份 / 脚本 issued_by / 冒烟备注）
     if (ticketMarkers.length) {
       await del('water_tickets(marked)', 'DELETE FROM water_tickets WHERE ticket_id IN (?)', [ticketMarkers.map(r => r.ticket_id)]);
+    }
+    // 3.2c 冒烟机台：先删其销量，再删机台本身
+    if (machineIds.length) {
+      await del('machine_sales(by machine)', 'DELETE FROM machine_sales WHERE machine_id IN (?)', [machineIds]);
+      await del('machine_stations', 'DELETE FROM machine_stations WHERE machine_id IN (?)', [machineIds]);
     }
     // 3.3 工资发放子孙
     if (EXTRA_SALARY_PAYMENT_IDS.length) {
