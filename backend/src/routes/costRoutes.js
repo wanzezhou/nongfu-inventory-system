@@ -3,16 +3,10 @@ const router = express.Router();
 const costController = require('../controllers/costController');
 const auth = require('../middleware/auth');
 
-// ---- 遗留接口（直营水站抵扣成本，保留向后兼容）----
-// 直营水站成本统计（按月）：按水站汇总水票抵扣成本
-router.get('/station-summary', auth, costController.getStationSummary);
-// 指定水站当月抵扣订单明细
-router.get('/station-orders', auth, costController.getStationOrders);
-// 订单内水票抵扣商品行成本
-router.get('/order-items', auth, costController.getOrderItems);
-
 // ---- 需求 4（2026-09-15）：按订单类型的成本统计 ----
 // ⚠️ 具体路径必须定义在通配之前
+// 注：原 station-summary / station-orders / order-items 三遗留接口已于 2026-09-15（晚）
+//     随「水站成本明细」页面删除，口径并入 /overview 与 /by-type。
 // 成本总览（全部类型横向对比）
 router.get('/overview', auth, costController.getCostOverview);
 // 机台成本（machineType 1=量贩机 / 2=零售机）

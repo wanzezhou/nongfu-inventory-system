@@ -1,33 +1,8 @@
 import request from './request'
 
-// 直营水站成本统计：按水站汇总水票抵扣成本（月份 YYYY-MM）
-export function getStationCostSummary(params) {
-  return request({
-    url: '/cost/station-summary',
-    method: 'get',
-    params
-  })
-}
-
-// 指定水站当月抵扣订单明细
-export function getStationCostOrders(params) {
-  return request({
-    url: '/cost/station-orders',
-    method: 'get',
-    params
-  })
-}
-
-// 订单内水票抵扣商品行成本
-export function getCostOrderItems(params) {
-  return request({
-    url: '/cost/order-items',
-    method: 'get',
-    params
-  })
-}
-
 // ---- 需求 4（2026-09-15）：按订单类型的成本统计 ----
+// 注：原 station-summary / station-orders / order-items 三接口（直营水站成本明细页）
+//     已于 2026-09-15 随「水站成本明细」入口一并删除，口径并入 /cost/overview + /cost/by-type。
 
 // 成本总览（全部类型横向对比）
 export function getCostOverview(params) {

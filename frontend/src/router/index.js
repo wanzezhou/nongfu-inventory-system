@@ -35,12 +35,6 @@ const routes = [
         meta: { title: t('salary'), requiresAuth: true }
       },
       {
-        path: 'cost/station',
-        name: 'StationCost',
-        component: () => import('@/views/cost/StationCost.vue'),
-        meta: { title: t('cost/station'), requiresAuth: true }
-      },
-      {
         path: 'cost/summary',
         name: 'CostSummary',
         component: () => import('@/views/cost/CostSummary.vue'),

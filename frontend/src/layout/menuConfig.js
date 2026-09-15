@@ -45,11 +45,10 @@ export const menuGroups = [
       { index: '/cost/retail', title: '线下零售', icon: ShoppingCart },
       { index: '/cost/bulk-machine', title: '量贩机', icon: Wallet },
       { index: '/cost/retail-machine', title: '零售机', icon: Van },
-      { index: '/cost/station', title: '水站成本明细', icon: OfficeBuilding },
-      { index: '/cost/expenses', title: '其他支出', icon: Wallet },
-      { index: '/salary', title: '工资统计', icon: Money }
+      { index: '/cost/expenses', title: '其他支出', icon: Wallet }
     ]
   },
+  { type: 'item', index: '/salary', title: '工资统计', icon: Money },
   {
     type: 'group', index: '/profit', title: '利润统计', icon: TrendCharts,
     items: [
