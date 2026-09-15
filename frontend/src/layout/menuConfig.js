@@ -25,14 +25,19 @@ export const menuGroups = [
     ]
   },
   {
-    type: 'group', index: '/finance-management', title: '财务管理', icon: Money,
+    type: 'group', index: '/finance', title: '营收统计', icon: Money,
     items: [
       { index: '/finance/platform', title: '送水到府', icon: Van },
       { index: '/finance/water-commune', title: '水公社', icon: ShoppingCart },
       { index: '/finance/distribution', title: '直营水站销售', icon: Goods },
       { index: '/finance/retail', title: '线下零售', icon: ShoppingCart },
       { index: '/finance/bulk-machine', title: '量贩机', icon: Wallet },
-      { index: '/finance/retail-machine', title: '零售机', icon: Van },
+      { index: '/finance/retail-machine', title: '零售机', icon: Van }
+    ]
+  },
+  {
+    type: 'group', index: '/cost', title: '成本统计', icon: Coin,
+    items: [
       { index: '/cost/summary', title: '成本汇总', icon: TrendCharts },
       { index: '/cost/station', title: '直营水站成本统计', icon: OfficeBuilding },
       { index: '/cost/expenses', title: '其他支出', icon: Wallet },
