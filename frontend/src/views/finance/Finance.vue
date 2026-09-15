@@ -88,10 +88,25 @@
 
         <el-tab-pane v-if="isMachineType" label="机台销量明细" name="machine">
           <div class="tab-toolbar">
-            <span class="tab-hint">量贩机/零售机销量在各自系统中显示，此处为手动录入（营收 = 机台售价 × 销量）</span>
-            <el-button type="primary" @click="openCreate">
-              <el-icon><Plus /></el-icon>录入销量
-            </el-button>
+            <span class="tab-hint">量贩机/零售机营收与订单脱钩，此处手动录入或 Excel 一键导入（营收 = 销售单价 × 销量）</span>
+            <div class="toolbar-actions">
+              <el-button @click="handleDownloadTemplate">
+                <el-icon><Download /></el-icon>下载模板
+              </el-button>
+              <el-button :loading="importing" @click="triggerImport">
+                <el-icon><Upload /></el-icon>一键导入
+              </el-button>
+              <input
+                ref="importInputRef"
+                type="file"
+                accept=".xlsx,.csv"
+                style="display: none"
+                @change="handleImportFile"
+              />
+              <el-button type="primary" @click="openCreate">
+                <el-icon><Plus /></el-icon>录入销量
+              </el-button>
+            </div>
           </div>
           <el-table :data="machineRows" v-loading="machineLoading" border stripe size="small">
             <el-table-column prop="saleDate" label="销售日期" width="105" />
@@ -273,10 +288,13 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Search, Refresh, Download, Plus, Delete, View,
+  Search, Refresh, Download, Upload, Plus, Delete, View,
   Van, Goods, ShoppingCart, Wallet, Money, Ticket
 } from '@element-plus/icons-vue'
-import { getFinanceSummary, getFinanceOrders, getMachineSales, createMachineSale, deleteMachineSale, exportFinance } from '@/api/finance'
+import {
+  getFinanceSummary, getFinanceOrders, getMachineSales, createMachineSale, deleteMachineSale,
+  exportFinance, importMachineSales, downloadMachineSaleTemplate
+} from '@/api/finance'
 import { getProductList } from '@/api/product'
 import { getMachineStations } from '@/api/machineStation'
 import { getOrderDetail } from '@/api/order'
@@ -290,6 +308,8 @@ const props = defineProps({
 const loading = ref(false)
 const machineLoading = ref(false)
 const exporting = ref(false)
+const importing = ref(false)
+const importInputRef = ref(null)
 
 // 机台类型页面（4-量贩机/6-零售机）默认机台销量 Tab
 const isMachineType = computed(() => props.orderType === 4 || props.orderType === 6)
@@ -459,6 +479,60 @@ const handleExport = async () => {
     ElMessage.error('导出失败')
   } finally {
     exporting.value = false
+  }
+}
+
+// ---- 机台销量 Excel 一键导入 ----
+const triggerImport = () => {
+  if (importInputRef.value) importInputRef.value.value = ''
+  importInputRef.value?.click()
+}
+
+const handleDownloadTemplate = async () => {
+  try {
+    const res = await downloadMachineSaleTemplate()
+    downloadBlob(res.data, '机台销量导入模板.xlsx')
+  } catch (error) {
+    console.error('模板下载失败:', error)
+    ElMessage.error('模板下载失败')
+  }
+}
+
+const handleImportFile = async (e) => {
+  const file = e.target.files && e.target.files[0]
+  if (!file) return
+  if (!/\.(xlsx|csv)$/i.test(file.name)) {
+    ElMessage.warning('仅支持 .xlsx / .csv 文件')
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('文件不能超过 5MB')
+    return
+  }
+  const form = new FormData()
+  form.append('file', file)
+  importing.value = true
+  try {
+    const res = await importMachineSales(form)
+    const { inserted = 0, skipped = 0, errors = [] } = res.data || {}
+    if (skipped > 0) {
+      ElMessageBox.alert(
+        `成功导入 ${inserted} 条，跳过 ${skipped} 条。\n\n跳过原因：\n${errors.join('\n')}`,
+        '导入结果',
+        { confirmButtonText: '知道了', customClass: 'import-result-box' }
+      )
+    } else {
+      ElMessage.success(`成功导入 ${inserted} 条`)
+    }
+    fetchSummary()
+    fetchMachine()
+  } catch (error) {
+    // 逐行校验失败时后端会带回明细，直接展示
+    const msg = error?.response?.data?.message || error?.message || '导入失败'
+    ElMessageBox.alert(msg, '导入失败', { confirmButtonText: '知道了' }).catch(() => {})
+  } finally {
+    importing.value = false
+    if (importInputRef.value) importInputRef.value.value = ''
   }
 }
 
@@ -712,6 +786,22 @@ watch(() => props.orderType, () => {
 .tab-hint {
   font-size: 12px;
   color: var(--text-2);
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .tab-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .toolbar-actions {
+    justify-content: flex-end;
+  }
 }
 
 .revenue-text {

@@ -211,7 +211,15 @@ async function getFinanceSummary(req, res) {
       machineParts.push('sale_date BETWEEN ? AND ?');
       machineParams.push(start, end);
     }
-    const machineWhere = isOrderType ? 'WHERE 1=0' : (machineParts.length ? 'WHERE ' + machineParts.join(' AND ') : '');
+    // 机台查询条件：
+    //   订单类型 1/2/3/5 → 不查机台（1=0）；
+    //   机台类型 4/6     → 查对应机台类型（1=量贩机 / 2=零售机）；
+    //   未指定类型       → 查全部机台。
+    // 注：此前用 isOrderType 判定会误伤 4/6（4/6 也在 VALID_ORDER_TYPES 里），
+    //     导致「传 orderType=4 时机台营收恒为 0」——2026-09-15 修正。
+    const machineWhere = (isOrderType && !isMachineType)
+      ? 'WHERE 1=0'
+      : (machineParts.length ? 'WHERE ' + machineParts.join(' AND ') : '');
     const [machineRows] = await pool.execute(
       `SELECT machine_type, ROUND(SUM(sale_price * quantity), 2) AS revenue, SUM(quantity) AS total_qty
        FROM machine_sales

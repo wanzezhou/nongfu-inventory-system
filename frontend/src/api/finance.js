@@ -15,5 +15,15 @@ export const createMachineSale = (data) => request.post('/finance/machine-sales'
 // 删除机台销量
 export const deleteMachineSale = (id) => request.delete(`/finance/machine-sales/${id}`)
 
+// 机台销量一键导入（Excel）
+export const importMachineSales = (formData) =>
+  request.post('/finance/machine-sales/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+
+// 下载机台销量导入模板
+export const downloadMachineSaleTemplate = () =>
+  request.get('/finance/machine-sales/template', { responseType: 'blob' })
+
 // 一键导出
 export const exportFinance = (params) => request.get('/finance/export', { params, responseType: 'blob' })
