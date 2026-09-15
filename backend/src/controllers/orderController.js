@@ -9,6 +9,8 @@ const {
   writeOffTickets, restoreWrittenOffTickets, deductInventoryForSale,
   restoreSalesEffects, addStationDebt
 } = require('../services/orderPricingService');
+// 订单营收入账（财务管理 V2 · 需求 5，2026-09-15）：创建入账 / 改单先冲回再重记 / 取消与删除整单回冲
+const { postOrderRevenue, revertOrderRevenue } = require('../services/orderRevenuePosting');
 
 // 生成订单ID：SZX + 年月日 + 5位序号（每天从00001开始递增）
 async function generateOrderId(connection) {
@@ -340,6 +342,17 @@ async function createOrder(req, res) {
       await addStationDebt(connection, p.stationId, orderAmount, now);
     }
 
+    // 营收入账（财务管理 V2 · 需求 5）：订单创建时即入账，同事务写流水 + 改余额
+    // 直营水站销售按实际发生拆两笔（水票抵扣→农夫上单账户 / 未抵扣→晟之溪公户）；
+    // 类型4/6 机台供货不入账（营收走 machine_sales 手动录入）。
+    // 入账不受余额限制；账户停用会抛 business 错误并整体回滚。
+    await postOrderRevenue(
+      connection,
+      { order_id: orderId, order_type: typeNum, customer_name: p.customerName },
+      orderItems,
+      (req.user && (req.user.username || req.user.id)) || null
+    );
+
     // 提交事务
     await connection.commit();
 
@@ -407,6 +420,9 @@ async function deleteOrder(req, res) {
     // 还原该订单核销的水票（status 2→1，清空核销关联），避免取消订单永久损失水票
     await restoreWrittenOffTickets(connection, id);
 
+    // 冲回该订单的营收入账（财务管理 V2 · 需求 5）：账随订单消失，保证恒等式
+    await revertOrderRevenue(connection, id);
+
     // 更新订单状态为已取消
     const updateSql = 'UPDATE orders SET canceled_at = ?, updated_at = ? WHERE order_id = ?';
     await connection.execute(updateSql, [new Date(), new Date(), id]);
@@ -461,6 +477,9 @@ async function hardDeleteOrder(req, res) {
     // 还原该订单核销的水票（status 2→1），必须在删除订单前执行（依赖 order_id 关联）
     await restoreWrittenOffTickets(connection, id);
 
+    // 冲回该订单的营收入账（财务管理 V2 · 需求 5）：删除订单即等同于退款，账须一并消失
+    await revertOrderRevenue(connection, id);
+
     // 物理删除订单明细
     await connection.execute('DELETE FROM order_items WHERE order_id = ?', [id]);
 
@@ -513,6 +532,9 @@ async function updateOrder(req, res) {
     const [oldItems] = await connection.execute('SELECT * FROM order_items WHERE order_id = ?', [id]);
     await restoreSalesEffects(connection, oldOrder, oldItems);
 
+    // 冲回旧账（财务管理 V2 · 需求 5）：改单采用「先冲回旧账、再按新单重新入账」
+    await revertOrderRevenue(connection, id);
+
     // 还原旧订单核销的水票（status 2→1）：先全部释放，新明细核销在下方按新票量重新执行（F3 修复）
     await restoreWrittenOffTickets(connection, id);
 
@@ -552,6 +574,14 @@ async function updateOrder(req, res) {
     if (Number(p.orderType) === 2 && p.stationId) {
       await addStationDebt(connection, p.stationId, orderAmount);
     }
+
+    // 按新单重新入账（财务管理 V2 · 需求 5）：与创建同口径
+    await postOrderRevenue(
+      connection,
+      { order_id: id, order_type: Number(p.orderType), customer_name: p.customerName },
+      orderItems,
+      (req.user && (req.user.username || req.user.id)) || null
+    );
 
     await connection.commit();
     return success(res, null, '订单修改成功');
