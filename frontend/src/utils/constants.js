@@ -13,3 +13,25 @@ export const ORDER_TYPE_TEXT = {
 }
 
 export const VALID_ORDER_TYPES = [1, 2, 3, 4, 5, 6]
+
+/**
+ * 公司账户类型字典（与后端 financeAccountController.ACCOUNT_TYPES 保持一致）
+ * 1-4  资金账户：晟之溪公户 / 水公社公户 / 微信 / 其他
+ * 5-7  已停用（2026-09-15 合并至 8）
+ * 8-10 2026-09-15 财务管理 V2 新增：农夫上单账户 / 量贩机账户 / 零售机账户
+ */
+export const ACCOUNT_TYPE_TEXT = {
+  1: '晟之溪公户',
+  2: '水公社公户',
+  3: '微信',
+  4: '其他',
+  5: '可上单信用余额',
+  6: '可上单折扣余额',
+  7: '自有费用余额',
+  8: '农夫上单账户',
+  9: '量贩机账户',
+  10: '零售机账户'
+}
+
+/** 新增账户时可选的类型（已停用的 5/6/7 不再可选） */
+export const SELECTABLE_ACCOUNT_TYPES = [1, 2, 3, 4, 8, 9, 10]

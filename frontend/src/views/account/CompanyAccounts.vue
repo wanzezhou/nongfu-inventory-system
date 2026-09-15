@@ -56,7 +56,7 @@
       <el-form ref="createRef" :model="createForm" :rules="baseRules" label-width="90px">
         <el-form-item label="账户类型" prop="accountType">
           <el-select v-model="createForm.accountType" placeholder="选择类型" style="width: 100%;">
-            <el-option v-for="(n, t) in ACCOUNT_TYPE_MAP" :key="t" :label="n" :value="Number(t)" />
+            <el-option v-for="opt in accountTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="账户名称" prop="accountName">
@@ -192,11 +192,11 @@ import {
   getAccounts, createAccount, updateAccount, deleteAccount,
   adjustAccount, transferBetween, getAccountTransactions
 } from '@/api/account'
+import { ACCOUNT_TYPE_TEXT, SELECTABLE_ACCOUNT_TYPES } from '@/utils/constants'
 
-const ACCOUNT_TYPE_MAP = {
-  1: '晟之溪公户', 2: '水公社公户', 3: '微信', 4: '其他',
-  5: '可上单信用余额', 6: '可上单折扣余额', 7: '自有费用余额'
-}
+const ACCOUNT_TYPE_MAP = ACCOUNT_TYPE_TEXT
+// 新增账户下拉：仅列出可选类型（5/6/7 已停用，不再可选）
+const accountTypeOptions = SELECTABLE_ACCOUNT_TYPES.map((t) => ({ value: t, label: ACCOUNT_TYPE_TEXT[t] }))
 
 const loading = ref(false)
 const accounts = ref([])
@@ -230,13 +230,13 @@ const fetchAccounts = async () => {
 
 // ---- 新增 ----
 const createVisible = ref(false)
-const createForm = reactive({ accountType: 5, accountName: '', bankName: '', bankAccount: '', initialBalance: 0, remark: '' })
+const createForm = reactive({ accountType: 8, accountName: '', bankName: '', bankAccount: '', initialBalance: 0, remark: '' })
 const baseRules = {
   accountName: [{ required: true, message: '请输入账户名称', trigger: 'blur' }],
   accountType: [{ required: true, message: '请选择账户类型', trigger: 'change' }]
 }
 const openCreate = () => {
-  Object.assign(createForm, { accountType: 5, accountName: '', bankName: '', bankAccount: '', initialBalance: 0, remark: '' })
+  Object.assign(createForm, { accountType: 8, accountName: '', bankName: '', bankAccount: '', initialBalance: 0, remark: '' })
   createVisible.value = true
 }
 const submitCreate = async () => {
