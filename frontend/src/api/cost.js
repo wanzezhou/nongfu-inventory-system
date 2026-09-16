@@ -23,3 +23,13 @@ export function getMachineCost(params) {
 export function getCostOrderLines(params) {
   return request({ url: '/cost/order-lines', method: 'get', params })
 }
+
+// 单类型成本 / 机台成本导出（含商品明细）；参数：orderType 或 machineType + range
+export function exportCost(params) {
+  return request({ url: '/cost/export', method: 'get', params, responseType: 'blob' })
+}
+
+// 成本汇总页导出（各类型对比 + 其他支出 + 直营水站成本 + 员工工资）
+export function exportCostSummary(params) {
+  return request({ url: '/cost/export/summary', method: 'get', params, responseType: 'blob' })
+}

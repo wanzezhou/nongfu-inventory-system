@@ -28,6 +28,9 @@
         <el-button @click="handleReset">
           <el-icon><Refresh /></el-icon>重置
         </el-button>
+        <el-button type="success" :loading="exporting" @click="handleExport">
+          <el-icon><Download /></el-icon>导出
+        </el-button>
       </div>
       <div class="filter-hint">
         成本口径：<b>{{ label.main }}</b> —— {{ label.desc }}。统计范围：<b>{{ rangeLabel }}</b>，均不含已取消订单。
@@ -139,9 +142,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Money, Wallet, TrendCharts, Goods } from '@element-plus/icons-vue'
+import { Search, Refresh, Money, Wallet, TrendCharts, Goods, Download } from '@element-plus/icons-vue'
 import { toQuery, rangeText } from '@/utils/dateRange'
-import { getCostByType, getMachineCost, getCostOrderLines } from '@/api/cost'
+import { getCostByType, getMachineCost, getCostOrderLines, exportCost } from '@/api/cost'
+import { downloadBlob } from '@/api/excel'
 
 const props = defineProps({
   orderType: { type: Number, required: true },
@@ -243,6 +247,27 @@ const handleReset = () => {
   query.range = 'month'
   customRange.value = []
   fetchData()
+}
+
+// 导出：跟随当前筛选（时间范围 + 订单类型/机台类型），单文件多 sheet（汇总 + 商品明细）
+const exporting = ref(false)
+const handleExport = async () => {
+  if (query.range === 'custom' && !(customRange.value?.[0] && customRange.value?.[1])) {
+    ElMessage.warning('请选择起止日期')
+    return
+  }
+  exporting.value = true
+  try {
+    const res = await exportCost(buildParams())
+    const tag = props.typeName || (isMachineType.value ? '机台' : `类型${props.orderType}`)
+    downloadBlob(res.data, `成本_${tag}_${Date.now()}.xlsx`)
+    ElMessage.success('导出成功')
+  } catch (e) {
+    // 失败提示由响应拦截器统一弹出（blob 分支会解析后端 message）
+    console.error('成本导出失败:', e)
+  } finally {
+    exporting.value = false
+  }
 }
 
 onMounted(() => fetchData())

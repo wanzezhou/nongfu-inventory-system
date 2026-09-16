@@ -6,45 +6,15 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 // 导出订单类型常量，避免各处硬编码漂移
-const { ORDER_TYPES, VALID_ORDER_TYPES } = require('../constants/order');
-// 订单类型 SQL 片段（全部合法类型，含 5-水公社）
-const ORDER_TYPE_IN = `o.order_type IN (${VALID_ORDER_TYPES.join(',')})`;
+const { ORDER_TYPES } = require('../constants/order');
 const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/dateRange');
-
-// 订单类型 -> 员工配送费费率（order_items 创建时快照的商品配送费）
-//   送水到府(1) / 线下零售(3) / 水公社(5)：工人零售配送费
-//   直营水站销售(2)：工人水站配送费
-//   量贩机供货(4) / 零售机供货(6)：工人零售机配送费
-function deliveryFeeExpr() {
-  return `(CASE o.order_type
-      WHEN 1 THEN oi.worker_retail_delivery_fee
-      WHEN 2 THEN oi.worker_wholesale_delivery_fee
-      WHEN 3 THEN oi.worker_retail_delivery_fee
-      WHEN 4 THEN oi.worker_machine_delivery_fee
-      WHEN 5 THEN oi.worker_retail_delivery_fee
-      WHEN 6 THEN oi.worker_machine_delivery_fee
-      ELSE 0 END)`;
-}
-
-// 通用过滤（不含时间条件）：排除已取消、无需配送(delivery_type=3)、未指定员工、非业务订单
-const BASE_ORDER_FILTER = `o.canceled_at IS NULL
-    AND o.delivery_type IN (1, 2)
-    AND o.worker_id IS NOT NULL
-    AND ${ORDER_TYPE_IN}`;
-
-// 按整月过滤——工资发放/预支结算等「按月不可分割」的场景（参数：month）
-function commonWhere(month) {
-  return `${BASE_ORDER_FILTER}
-    AND DATE_FORMAT(o.created_at, '%Y-%m') = ?`;
-}
-
-// 按时间范围过滤——统计场景（rw 来自 utils/dateRange.buildRangeWhere）
-function commonWhereRange(rw) {
-  return `${BASE_ORDER_FILTER}
-    AND ${rw.clause}`;
-}
-
-const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+const { writeWorkbook } = require('../utils/excel');
+// 工资口径（配送费表达式 / 订单过滤 / 应发计算 / 员工汇总）单一来源：
+// services/salarySummary.js —— 工资统计页、工资导出、成本汇总导出共用同一套口径
+const {
+  ORDER_TYPE_IN, deliveryFeeExpr, BASE_ORDER_FILTER,
+  commonWhere, commonWhereRange, calcDue, round2, loadSalarySummary
+} = require('../services/salarySummary');
 
 function genPaymentId() {
   return 'PAY' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 1000).toString(36).toUpperCase();
@@ -80,11 +50,6 @@ async function calcWorkerFee(conn, workerId, month) {
   return Number(rows[0].calc_fee) || 0;
 }
 
-// 员工应发工资（2026-09-09 起）：全员 = 当月配送费；其他工资发放时手动设置金额
-function calcDue(worker, deliveryFee) {
-  return deliveryFee;
-}
-
 // 员工未结清预支列表（按预支日期/ID 顺序，供结算抵扣）与待扣总额
 async function loadPendingAdvances(conn, workerId) {
   const [rows] = await conn.execute(
@@ -97,112 +62,15 @@ async function loadPendingAdvances(conn, workerId) {
   return { advances: rows, pending: round2(pending) };
 }
 
-// 按员工汇总应发（时间范围）——全部在职员工：应发 = 区间内配送费（2026-09-09 起）
-// 跨月区间的「已发放」口径：按 salary_month 落在区间内判定，汇总该区间内的发放金额与覆盖月份
+// 按员工汇总应发（时间范围）—— 口径与取数见 services/salarySummary.js（工资导出共用同一份）
 async function getSalarySummary(req, res) {
   try {
     const r = resolveRange(req.query);
     if (!r) {
       return error(res, RANGE_INVALID_MSG, 400);
     }
-    const multiMonth = !r.isSingleMonth;
-    const rw = buildRangeWhere('o.created_at', r);
-    const feeExpr = deliveryFeeExpr();
-    const [rows] = await pool.execute(
-      `SELECT w.worker_id, w.worker_name, w.phone, w.employee_type, w.monthly_salary,
-              COALESCE(s.order_count, 0) AS order_count,
-              COALESCE(s.total_qty, 0) AS total_qty,
-              COALESCE(s.calc_fee, 0) AS calc_fee,
-              COALESCE(adv.pending, 0) AS pending_advance,
-              p.payment_id, p.paid_amount, p.pay_count, p.pay_months,
-              p.paid_account, p.paid_at, p.pay_remark
-       FROM workers w
-       LEFT JOIN (
-         SELECT o.worker_id,
-                COUNT(DISTINCT o.order_id) AS order_count,
-                SUM(oi.quantity) AS total_qty,
-                ROUND(SUM(${feeExpr} * oi.quantity), 2) AS calc_fee
-         FROM orders o
-         JOIN order_items oi ON o.order_id = oi.order_id
-         WHERE ${commonWhereRange(rw)}
-         GROUP BY o.worker_id
-       ) s ON s.worker_id = w.worker_id
-       LEFT JOIN (
-         SELECT worker_id, ROUND(SUM(amount - deducted_amount), 2) AS pending
-         FROM salary_advances WHERE deducted_amount < amount GROUP BY worker_id
-       ) adv ON adv.worker_id = w.worker_id
-       LEFT JOIN (
-         SELECT worker_id,
-                MIN(payment_id) AS payment_id,
-                ROUND(SUM(amount), 2) AS paid_amount,
-                COUNT(*) AS pay_count,
-                GROUP_CONCAT(DISTINCT salary_month ORDER BY salary_month) AS pay_months,
-                MAX(account_name) AS paid_account,
-                MAX(paid_at) AS paid_at,
-                MAX(remark) AS pay_remark
-         FROM salary_payments
-         WHERE salary_month >= ? AND salary_month <= ?
-         GROUP BY worker_id
-       ) p ON p.worker_id = w.worker_id
-       WHERE w.status = 1
-       ORDER BY w.employee_type ASC, w.worker_name ASC`,
-      [...rw.params, r.startMonth, r.endMonth]
-    );
-
-    const list = rows.map((row) => {
-      const payCount = Number(row.pay_count) || 0;
-      const paid = payCount > 0;
-      const deliveryFee = Number(row.calc_fee) || 0;
-      const due = round2(calcDue(row, deliveryFee));
-      const pendingAdvance = round2(row.pending_advance);
-      const net = round2(due - pendingAdvance);
-      const paidAmount = paid ? round2(row.paid_amount) : null;
-      // 汇总口径：
-      //   单月 —— 沿用原逻辑（已发放取发放快照金额，未发放取实发 net）
-      //   跨月 —— 取应发口径（区间内配送费合计），逐月发放状态由 paidMonths 单独展示，
-      //           避免「部分月已发」时用发放额掩盖了未发月份的应发成本
-      const payAmount = multiMonth ? due : (paid ? paidAmount : net);
-      return {
-        workerId: row.worker_id,
-        workerName: row.worker_name,
-        phone: row.phone || '',
-        employeeType: Number(row.employee_type),
-        orderCount: Number(row.order_count) || 0,
-        totalQty: Number(row.total_qty) || 0,
-        calcFee: deliveryFee,
-        // 应发：全员 = 区间内配送费（发放时可手动调整）
-        due,
-        pendingAdvance,
-        // 实发 = 应发 - 待扣预支（可为负：挂账下月继续扣）
-        net,
-        payAmount,
-        paid,
-        multiMonth,
-        paymentId: row.payment_id || null,
-        paidAmount,
-        paidMonthCount: payCount,
-        paidMonths: row.pay_months ? String(row.pay_months).split(',') : [],
-        paidAccount: row.paid_account || '',
-        paidAt: row.paid_at || null,
-        payRemark: row.pay_remark || ''
-      };
-    });
-
-    const summary = {
-      totalDeliveryFee: round2(list.reduce((s, x) => s + x.payAmount, 0)),
-      workerCount: list.length,
-      orderCount: list.reduce((s, x) => s + x.orderCount, 0),
-      totalPendingAdvance: round2(list.reduce((s, x) => s + x.pendingAdvance, 0)),
-      paidWorkerCount: list.filter((x) => x.paid).length
-    };
-
-    return success(res, {
-      list,
-      summary,
-      range: r,
-      multiMonth,
-      month: r.isSingleMonth ? r.startMonth : undefined
-    });
+    const { list, summary, multiMonth, month } = await loadSalarySummary(r);
+    return success(res, { list, summary, range: r, multiMonth, month });
   } catch (e) {
     console.error('getSalarySummary error:', e);
     return error(res, '工资统计查询失败', 500);
@@ -638,8 +506,135 @@ async function deleteAdvance(req, res) {
   }
 }
 
+// 员工类型展示名（与前端 SalaryStatistics.vue 的 employeeTypeLabel 一致）
+const EMPLOYEE_TYPE_TEXT = { 1: '店长', 2: '配送员工', 3: '业务员' };
+
+/**
+ * 工资统计一键导出
+ * GET /api/salary/export?range=month
+ * sheet：工资汇总（口径说明）/ 员工工资汇总 / 配送订单明细 / 配送商品明细
+ *
+ * ⚠️ 与工资统计页同源：员工汇总走 services/salarySummary.loadSalarySummary(r)，
+ *    订单与商品明细复用同一 deliveryFeeExpr / commonWhereRange，避免口径漂移。
+ */
+async function exportSalary(req, res) {
+  try {
+    const r = resolveRange(req.query);
+    if (!r) {
+      return error(res, RANGE_INVALID_MSG, 400);
+    }
+    const { list, summary, multiMonth } = await loadSalarySummary(r);
+    const rw = buildRangeWhere('o.created_at', r);
+    const feeExpr = deliveryFeeExpr();
+
+    // 1) 汇总与口径说明
+    const overviewSheet = [
+      { 项目: '统计范围', 数值: `${r.start} ~ ${r.end}` },
+      { 项目: '应发工资总额', 数值: summary.totalDeliveryFee },
+      { 项目: '参与员工', 数值: summary.workerCount },
+      { 项目: '配送订单数', 数值: summary.orderCount },
+      { 项目: '待扣预支', 数值: summary.totalPendingAdvance },
+      {
+        项目: '汇总口径',
+        数值: multiMonth
+          ? '跨月区间：按应发口径（区间内配送费合计），发放状态按 salary_month 落在区间内汇总'
+          : '单月：已发放取发放快照金额，未发放取实发金额（应发 − 待扣预支）'
+      },
+      { 项目: '配送费规则', 数值: '送水到府/线下零售/水公社=工人零售配送费；直营水站=工人水站配送费；量贩机/零售机=工人零售机配送费' }
+    ];
+
+    // 2) 员工工资汇总
+    const workerSheet = list.map((x) => ({
+      员工姓名: x.workerName,
+      员工类型: EMPLOYEE_TYPE_TEXT[x.employeeType] || '未知',
+      联系电话: x.phone,
+      配送订单数: x.orderCount,
+      配送件数: x.totalQty,
+      区间配送费: x.calcFee,
+      应发工资: x.due,
+      待扣预支: x.pendingAdvance,
+      实发金额: x.net,
+      发放状态: x.paid ? '已发放' : '未发放',
+      已发金额: x.paidAmount === null ? '' : x.paidAmount,
+      发放月份: (x.paidMonths || []).join('、'),
+      发放账户: x.paidAccount,
+      发放时间: x.paidAt ? String(x.paidAt) : '',
+      备注: x.payRemark
+    }));
+
+    // 3) 配送订单明细（全部员工，按员工聚合到订单）
+    const [orderRows] = await pool.execute(
+      `SELECT o.worker_id, w.worker_name, o.order_id, o.order_type, o.customer_name, o.contact_name, o.created_at,
+              SUM(oi.quantity) AS total_qty,
+              ROUND(SUM(${feeExpr} * oi.quantity), 2) AS delivery_fee
+       FROM orders o
+       JOIN order_items oi ON o.order_id = oi.order_id
+       LEFT JOIN workers w ON w.worker_id = o.worker_id
+       WHERE ${commonWhereRange(rw)}
+       GROUP BY o.worker_id, w.worker_name, o.order_id, o.order_type, o.customer_name, o.contact_name, o.created_at
+       ORDER BY w.worker_name ASC, o.created_at DESC`,
+      rw.params
+    );
+    const orderSheet = orderRows.map((x) => ({
+      员工姓名: x.worker_name || '',
+      订单号: x.order_id,
+      订单类型: ORDER_TYPES[x.order_type] || `类型${x.order_type}`,
+      客户: x.customer_name || '',
+      联系人: x.contact_name || '',
+      件数: Number(x.total_qty) || 0,
+      配送费: Number(x.delivery_fee) || 0,
+      下单时间: x.created_at
+    }));
+
+    // 4) 配送商品明细（商品行：配送费率快照 × 数量）
+    const [itemRows] = await pool.execute(
+      `SELECT w.worker_name, o.order_id, o.order_type, o.created_at,
+              p.product_name, p.specification, p.unit,
+              oi.quantity,
+              ${feeExpr} AS fee_per_unit,
+              ROUND(${feeExpr} * oi.quantity, 2) AS delivery_fee
+       FROM orders o
+       JOIN order_items oi ON o.order_id = oi.order_id
+       LEFT JOIN products p ON p.product_id = oi.product_id
+       LEFT JOIN workers w ON w.worker_id = o.worker_id
+       WHERE ${commonWhereRange(rw)}
+       ORDER BY w.worker_name ASC, o.created_at DESC, oi.item_id`,
+      rw.params
+    );
+    const itemSheet = itemRows.map((x) => ({
+      员工姓名: x.worker_name || '',
+      订单号: x.order_id,
+      订单类型: ORDER_TYPES[x.order_type] || `类型${x.order_type}`,
+      商品名称: x.product_name || '-',
+      规格: x.specification || '',
+      单位: x.unit || '',
+      数量: Number(x.quantity) || 0,
+      配送费率: Number(x.fee_per_unit) || 0,
+      配送费: Number(x.delivery_fee) || 0,
+      下单时间: x.created_at
+    }));
+
+    const buffer = await writeWorkbook([
+      { name: '汇总与口径', data: overviewSheet, widths: [16, 60] },
+      { name: '员工工资汇总', data: workerSheet },
+      { name: '配送订单明细', data: orderSheet },
+      { name: '配送商品明细', data: itemSheet }
+    ]);
+
+    const fileName = `工资统计_${r.start}_${r.end}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    // 中文文件名需按 RFC 5987 编码，否则 Node 报 ERR_INVALID_CHAR
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    return res.send(buffer);
+  } catch (e) {
+    console.error('exportSalary error:', e);
+    return error(res, '导出失败', 500);
+  }
+}
+
 module.exports = {
   getSalarySummary, getSalaryOrders, getSalaryOrderItems,
   getWorkerSummary, paySalary, revokeSalaryPayment,
-  getAdvances, createAdvance, deleteAdvance
+  getAdvances, createAdvance, deleteAdvance,
+  exportSalary
 };

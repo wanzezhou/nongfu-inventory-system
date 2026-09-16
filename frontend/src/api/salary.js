@@ -62,4 +62,12 @@ export function createSalaryAdvance(data) {
   })
 }
 
-// 撤销预支（仅未参与结算的预支）
+// 工资统计一键导出（员工工资汇总 + 配送订单明细 + 配送商品明细）
+export function exportSalary(params) {
+  return request({
+    url: '/salary/export',
+    method: 'get',
+    params,
+    responseType: 'blob'
+  })
+}

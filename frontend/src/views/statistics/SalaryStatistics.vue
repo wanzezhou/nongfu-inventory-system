@@ -8,6 +8,10 @@
           <el-icon><Search /></el-icon>
           查询
         </el-button>
+        <el-button type="success" :loading="exporting" @click="handleExport">
+          <el-icon><Download /></el-icon>
+          导出
+        </el-button>
         <span class="filter-tip">按订单计算员工配送费：送水到府/线下零售/水公社=工人零售配送费；直营水站=工人水站配送费；量贩机/零售机=工人零售机配送费</span>
       </div>
     </el-card>
@@ -279,8 +283,9 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, User, Money, List, View, Lock, RefreshLeft, Wallet } from '@element-plus/icons-vue'
-import { getSalarySummary, getSalaryOrders, getSalaryOrderItems, getWorkerSalarySummary, payWorkerSalary, revokeSalaryPayment } from '@/api/salary'
+import { Search, User, Money, List, View, Lock, RefreshLeft, Wallet, Download } from '@element-plus/icons-vue'
+import { getSalarySummary, getSalaryOrders, getSalaryOrderItems, getWorkerSalarySummary, payWorkerSalary, revokeSalaryPayment, exportSalary } from '@/api/salary'
+import { downloadBlob } from '@/api/excel'
 import { getFinanceAccounts } from '@/api/expense'
 import { formatMoney as fmtMoney } from '@/utils/format'
 import AccountSelect from '@/components/AccountSelect.vue'
@@ -358,6 +363,26 @@ const fetchSummary = async () => {
 
 const handleSearch = () => {
   fetchSummary()
+}
+
+// 导出：员工工资汇总 + 配送订单明细 + 配送商品明细，跟随当前时间范围
+const exporting = ref(false)
+const handleExport = async () => {
+  if (rangeState.value.range === 'custom' && !(rangeState.value.startDate && rangeState.value.endDate)) {
+    ElMessage.warning('请选择起止日期')
+    return
+  }
+  exporting.value = true
+  try {
+    const res = await exportSalary(toQuery(rangeState.value))
+    downloadBlob(res.data, `工资统计_${Date.now()}.xlsx`)
+    ElMessage.success('导出成功')
+  } catch (e) {
+    // 失败提示由响应拦截器统一弹出（blob 分支会解析后端 message）
+    console.error('工资统计导出失败:', e)
+  } finally {
+    exporting.value = false
+  }
 }
 
 // ---- 工资发放 ----
@@ -676,5 +701,26 @@ onMounted(() => {
   background: var(--el-color-info-light-8);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
+}
+
+/* 窄屏：筛选区纵向堆叠，按钮与提示占满整行 */
+@media (max-width: 768px) {
+  .filter-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-form .el-button {
+    margin-left: 0 !important;
+  }
+  .filter-form .el-button + .el-button {
+    margin-top: 8px;
+  }
+  .filter-tip {
+    margin-left: 0;
+    margin-top: 10px;
+  }
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

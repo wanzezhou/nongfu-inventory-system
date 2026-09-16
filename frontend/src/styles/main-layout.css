@@ -351,6 +351,8 @@
   .sidebar-resizer { display: none; }
   .logo { padding: 0 10px; gap: 8px; }
   .header { padding: 0 12px; }
+  /* 与三级标签栏（NavTabs）保持同一左右内边距，避免手机端浪费横向空间 */
+  .main-content { padding: 14px; }
   .breadcrumb { display: none; }
   .current-date { display: none; }
 }

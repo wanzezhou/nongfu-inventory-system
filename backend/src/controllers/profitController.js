@@ -22,7 +22,9 @@ const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/dateRange');
 const { ORDER_TYPES, VALID_ORDER_TYPES } = require('../constants/order');
-const { itemRevenueExpr } = require('../utils/revenueExpr');
+const { writeWorkbook } = require('../utils/excel');
+const { loadProfitItemLines, loadCostItemLines } = require('../utils/itemLines');
+const { itemRevenueExpr, stationRevenue1Expr, stationRevenue2Expr } = require('../utils/revenueExpr');
 const {
   costExpr, stationCost1Expr, stationCost2Expr, itemCostExpr,
   retailCostAExpr, retailCostBExpr
@@ -45,23 +47,14 @@ const PROFIT_LABELS = {
 };
 
 /**
- * 单类型利润
- * GET /api/profit/by-type?orderType=1&range=month
+ * 单类型利润取数（页面查询与导出共用，避免导出另写一套口径）
+ * 仅处理订单类类型 1/2/3/5；机台类型 4/6 见 loadMachineProfit。
+ * @returns {Promise<{list: object[], summary: object}>}
  */
-async function getProfitByType(req, res) {
-  try {
-    const wantType = Number(req.query.orderType);
-    if (!VALID_ORDER_TYPES.includes(wantType)) return error(res, '订单类型无效', 400);
-    const r = resolveRange(req.query);
-    if (!r) return error(res, RANGE_INVALID_MSG, 400);
-    const rw = buildRangeWhere('o.created_at', r);
+async function loadProfitByType(r, wantType) {
+  const rw = buildRangeWhere('o.created_at', r);
 
-    // 机台类型（4/6）：营收来自 machine_sales，成本来自机台供货订单
-    if (wantType === 4 || wantType === 6) {
-      return getMachineProfit(req, res, wantType, r);
-    }
-
-    if (wantType === 2) {
+  if (wantType === 2) {
       // 直营水站：营收1/营收2 + 成本1/成本2 分别聚合
       const [rows] = await pool.execute(
         `SELECT t.order_id, t.created_at, t.station_id, t.customer_name,
@@ -73,8 +66,8 @@ async function getProfitByType(req, res) {
                 t.total_qty, t.ticket_qty
          FROM (
            SELECT o.order_id, o.created_at, o.station_id, o.customer_name,
-                  SUM(${revenue1Expr()}) AS revenue1,
-                  SUM(${revenue2Expr()}) AS revenue2,
+                  SUM(${stationRevenue1Expr()}) AS revenue1,
+                  SUM(${stationRevenue2Expr()}) AS revenue2,
                   SUM(${stationCost1Expr()}) AS cost1,
                   SUM(${stationCost2Expr()}) AS cost2,
                   SUM(oi.quantity) AS total_qty,
@@ -115,10 +108,7 @@ async function getProfitByType(req, res) {
         orderCount: list.length,
         totalQty: list.reduce((s, x) => s + x.totalQty, 0)
       };
-      return success(res, {
-        list, summary, orderType: 2, typeName: ORDER_TYPES[2],
-        label: PROFIT_LABELS[2], range: r, start: r.start, end: r.end
-      });
+      return { list, summary };
     }
 
     // 类型1/3/5：营收 − 成本
@@ -165,6 +155,27 @@ async function getProfitByType(req, res) {
       orderCount: list.length,
       totalQty: list.reduce((s, x) => s + x.totalQty, 0)
     };
+  return { list, summary };
+}
+
+// 单类型利润（页面接口）
+async function getProfitByType(req, res) {
+  try {
+    const wantType = Number(req.query.orderType);
+    if (!VALID_ORDER_TYPES.includes(wantType)) return error(res, '订单类型无效', 400);
+    const r = resolveRange(req.query);
+    if (!r) return error(res, RANGE_INVALID_MSG, 400);
+
+    // 机台类型（4/6）：营收来自 machine_sales，成本来自机台供货订单
+    if (wantType === 4 || wantType === 6) {
+      const { list, summary, note } = await loadMachineProfit(r, wantType);
+      return success(res, {
+        list, summary, note, orderType: wantType, typeName: ORDER_TYPES[wantType],
+        label: PROFIT_LABELS[wantType], range: r, start: r.start, end: r.end
+      });
+    }
+
+    const { list, summary } = await loadProfitByType(r, wantType);
     return success(res, {
       list, summary, orderType: wantType, typeName: ORDER_TYPES[wantType],
       label: PROFIT_LABELS[wantType], range: r, start: r.start, end: r.end
@@ -175,19 +186,12 @@ async function getProfitByType(req, res) {
   }
 }
 
-// 直营水站：营收1 = 水票抵扣商品的（进货价 + 总包配送费）
-function revenue1Expr() {
-  return `IF(oi.ticket_qty > 0,
-             (oi.purchase_price + oi.total_delivery_fee) * oi.ticket_qty,
-             IF(oi.pricing_type = 2, (oi.purchase_price + oi.total_delivery_fee) * oi.quantity, 0))`;
-}
-// 直营水站：营收2 = 未抵扣商品的分销价合计
-function revenue2Expr() {
-  return `oi.wholesale_price * (oi.quantity - IF(oi.ticket_qty > 0, oi.ticket_qty, IF(oi.pricing_type = 2, oi.quantity, 0)))`;
-}
+// 直营水站：营收1 / 营收2 表达式已上移至 utils/revenueExpr.js
+// （stationRevenue1Expr / stationRevenue2Expr）—— 利润统计与利润导出共用同一份口径。
 
 // 机台利润（量贩机/零售机）：营收按 machine_sales.sale_date，成本按机台供货订单 o.created_at
-async function getMachineProfit(req, res, orderType, r) {
+// ⚠️ 机台营收与成本时间口径不同属预期（machine_sales 人工录入、不强制关联订单），见文件头说明
+async function loadMachineProfit(r, orderType) {
   const machineType = MACHINE_OF_ORDER_TYPE[orderType];
 
   // 机台营收（按销量日期）
@@ -224,11 +228,11 @@ async function getMachineProfit(req, res, orderType, r) {
     supplyQty: Number(costRows[0] ? costRows[0].total_qty : 0) || 0
   };
 
-  return success(res, {
-    list: [], summary, orderType, typeName: ORDER_TYPES[orderType],
-    label: PROFIT_LABELS[orderType], range: r, start: r.start, end: r.end,
+  return {
+    list: [],
+    summary,
     note: '机台营收按销量日期统计，机台成本按供货订单日期统计'
-  });
+  };
 }
 
 // 利润总览（全部类型横向对比）：供「利润汇总」页使用
@@ -268,7 +272,7 @@ async function getProfitOverview(req, res) {
               ROUND(SUM(t.revenue2 - t.cost2), 2) AS profit2
        FROM (
          SELECT o.order_id,
-                SUM(${revenue1Expr()}) AS revenue1, SUM(${revenue2Expr()}) AS revenue2,
+                SUM(${stationRevenue1Expr()}) AS revenue1, SUM(${stationRevenue2Expr()}) AS revenue2,
                 SUM(${stationCost1Expr()}) AS cost1, SUM(${stationCost2Expr()}) AS cost2
          FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
          WHERE o.order_type = 2 AND o.canceled_at IS NULL AND ${rw.clause}
@@ -358,4 +362,187 @@ async function loadStationNames(conn, ids) {
   return map;
 }
 
-module.exports = { getProfitByType, getProfitOverview, PROFIT_LABELS };
+// ===========================================================================
+// 利润统计一键导出（2026-09-16 晚 2）
+// GET /api/profit/export?orderType=1..6&range=month
+//   订单类 1/2/3/5 → sheet：汇总与口径 / 利润明细(订单) / 商品明细(营收·成本·利润)
+//   机台类 4/6     → sheet：汇总与口径 / 机台利润汇总 / 机台销量明细 / 供货商品成本明细
+// ⚠️ 与利润统计页同源：订单汇总走 loadProfitByType / loadMachineProfit，
+//    商品行口径走 utils/itemLines.js（内部复用 costExpr / revenueExpr 单源表达式）。
+// ===========================================================================
+async function exportProfit(req, res) {
+  try {
+    const wantType = Number(req.query.orderType);
+    if (!VALID_ORDER_TYPES.includes(wantType)) return error(res, '订单类型无效', 400);
+    const r = resolveRange(req.query);
+    if (!r) return error(res, RANGE_INVALID_MSG, 400);
+
+    const typeName = ORDER_TYPES[wantType];
+    const label = PROFIT_LABELS[wantType];
+    const isMachine = wantType === 4 || wantType === 6;
+
+    const { list, summary } = isMachine
+      ? await loadMachineProfit(r, wantType)
+      : await loadProfitByType(r, wantType);
+
+    // ---- sheet 1：汇总与口径 ----
+    const overviewRows = [
+      { 项目: '统计类型', 数值: typeName },
+      { 项目: '统计范围', 数值: `${r.start} ~ ${r.end}` },
+      { 项目: '利润口径', 数值: label.main },
+      { 项目: '计算公式', 数值: label.formula },
+      { 项目: '口径说明', 数值: label.desc },
+      { 项目: '营收', 数值: summary.revenue },
+      { 项目: '成本合计', 数值: summary.costTotal },
+      { 项目: '利润', 数值: summary.profit }
+    ];
+    if (wantType === 2) {
+      overviewRows.push(
+        { 项目: '营收1（返货价值+总包配送费）', 数值: summary.revenue1 },
+        { 项目: '成本1（水票抵扣商品）', 数值: summary.cost1 },
+        { 项目: '利润1', 数值: summary.profit1 },
+        { 项目: '营收2（分销价合计）', 数值: summary.revenue2 },
+        { 项目: '成本2（未抵扣商品）', 数值: summary.cost2 },
+        { 项目: '利润2', 数值: summary.profit2 }
+      );
+    }
+    if (isMachine) {
+      overviewRows.push(
+        { 项目: '机台销量（件）', 数值: summary.saleQty },
+        { 项目: '供货件数', 数值: summary.supplyQty },
+        { 项目: '时间口径', 数值: '机台营收按销量日期，机台成本按供货订单日期（两者不同属预期）' }
+      );
+    } else {
+      overviewRows.push(
+        { 项目: '订单数', 数值: summary.orderCount },
+        { 项目: '商品件数', 数值: summary.totalQty }
+      );
+    }
+    const sheets = [{ name: '汇总与口径', data: overviewRows, widths: [26, 62] }];
+
+    if (isMachine) {
+      // ---- 机台：利润汇总（单行） + 销量明细（营收侧） + 供货商品成本明细 ----
+      sheets.push({
+        name: '机台利润汇总',
+        data: [{
+          统计类型: typeName,
+          机台营收: summary.revenue,
+          机台成本: summary.costTotal,
+          利润: summary.profit,
+          机台销量件数: summary.saleQty,
+          供货订单数: summary.orderCount,
+          供货件数: summary.supplyQty
+        }]
+      });
+
+      const machineType = MACHINE_OF_ORDER_TYPE[wantType];
+      // ⚠️ machine_stations 也有 machine_type 列，此处必须带 s. 前缀，否则 ER_NON_UNIQ_ERROR
+      const mp = ['s.machine_type = ?', 's.sale_date >= ? AND s.sale_date < ?'];
+      const [saleRows] = await pool.execute(
+        `SELECT s.sale_date, s.quantity, s.sale_price, s.remark,
+                m.station_name, p.product_name, p.specification, p.unit
+         FROM machine_sales s
+         LEFT JOIN machine_stations m ON m.machine_id = s.machine_id
+         LEFT JOIN products p ON p.product_id = s.product_id
+         WHERE ${mp.join(' AND ')}
+         ORDER BY s.sale_date DESC, s.created_at DESC`,
+        [machineType, r.start, r.end]
+      );
+      sheets.push({
+        name: '机台销量明细',
+        data: saleRows.map((x) => ({
+          销售日期: x.sale_date,
+          机台: x.station_name || '',
+          商品: x.product_name || '',
+          规格: x.specification || '',
+          单位: x.unit || '',
+          销量: Number(x.quantity) || 0,
+          售价: round2(x.sale_price),
+          营收: round2(Number(x.sale_price) * Number(x.quantity)),
+          备注: x.remark || ''
+        }))
+      });
+
+      // 机台成本的商品行（口径与成本页一致：类型4 = 进货价+工人零售机配送费；类型6 = 进货价）
+      const costLines = await loadCostItemLines(pool, { orderType: wantType, rw: buildRangeWhere('o.created_at', r) });
+      sheets.push({
+        name: '供货商品成本明细',
+        data: costLines.map((x) => ({
+          机台: x.machineName || '',
+          订单号: x.orderId,
+          商品名称: x.productName,
+          规格: x.spec,
+          单位: x.unit,
+          数量: x.quantity,
+          进货价: x.purchasePrice,
+          工人配送费: x.workerMachineFee,
+          行成本: x.costTotal,
+          下单时间: x.createTime
+        }))
+      });
+    } else {
+      // ---- 订单类：订单级利润明细 + 商品行明细 ----
+      const orderSheet = list.map((x) => {
+        const row = {
+          订单号: x.orderId,
+          数量: x.totalQty
+        };
+        if (wantType === 2) {
+          row.水站 = x.stationName || '-';
+          row.营收1 = x.revenue1;
+          row.成本1 = x.cost1;
+          row.利润1 = x.profit1;
+          row.营收2 = x.revenue2;
+          row.成本2 = x.cost2;
+          row.利润2 = x.profit2;
+        } else {
+          row.客户 = x.customerName || '-';
+          row.营收 = x.revenue;
+          if (wantType === 3) {
+            row.成本A = x.costA;
+            row.成本B = x.costB;
+          }
+        }
+        row.成本合计 = x.costTotal;
+        row.利润 = x.profitTotal;
+        row.下单时间 = x.createTime;
+        return row;
+      });
+      sheets.push({ name: '利润明细', data: orderSheet });
+
+      const lines = await loadProfitItemLines(pool, { orderType: wantType, rw: buildRangeWhere('o.created_at', r) });
+      const itemSheet = lines.map((x) => {
+        const row = {
+          订单号: x.orderId,
+          客户或水站: (wantType === 2 ? x.stationName : x.customerName) || '-',
+          商品名称: x.productName,
+          规格: x.spec,
+          单位: x.unit,
+          数量: x.quantity
+        };
+        if (wantType === 2) {
+          row.营收1 = x.revenue1;
+          row.营收2 = x.revenue2;
+        }
+        row.营收 = x.revenue;
+        row.成本 = x.costTotal;
+        row.利润 = x.profit;
+        row.下单时间 = x.createTime;
+        return row;
+      });
+      sheets.push({ name: '商品明细', data: itemSheet });
+    }
+
+    const buffer = await writeWorkbook(sheets);
+    const fileName = `利润_${typeName}_${r.start}_${r.end}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    // 中文文件名需按 RFC 5987 编码，否则 Node 报 ERR_INVALID_CHAR
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    return res.send(buffer);
+  } catch (e) {
+    console.error('exportProfit error:', e);
+    return error(res, '导出失败', 500);
+  }
+}
+
+module.exports = { getProfitByType, getProfitOverview, exportProfit, PROFIT_LABELS };

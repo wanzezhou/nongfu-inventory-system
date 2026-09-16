@@ -2,6 +2,9 @@
 // financialController（营收汇总/明细/导出）与 orderController（订单详情）
 // 共用本表达式，前端不再有任何营收计算实现（只展示后端返回值）。
 //
+// 2026-09-16（晚 2）：直营水站「营收1 / 营收2」两段拆分表达式由 profitController
+//   上移至此（利润统计与利润导出共用，避免导出另写一套口径）。
+//
 // 口径说明（2026-08-27 确认，2026-09-14 增补类型5）：
 //   总包配送费按商品算：商品档案 total_delivery_fee × 数量（订单 delivery_fee 已停用为 0，不作为营收配送费来源）
 //   类型1 送水到府（原「官方平台销售」）：营收 = Σ((进货价 + 总包配送费) × 数量)
@@ -25,4 +28,17 @@ function itemRevenueExpr() {
       ELSE 0 END)`;
 }
 
-module.exports = { itemRevenueExpr };
+/** 直营水站（类型2）营收1 = 水票抵扣商品的（进货价 + 总包配送费） */
+function stationRevenue1Expr() {
+  return `IF(oi.ticket_qty > 0,
+             (oi.purchase_price + oi.total_delivery_fee) * oi.ticket_qty,
+             IF(oi.pricing_type = 2, (oi.purchase_price + oi.total_delivery_fee) * oi.quantity, 0))`;
+}
+
+/** 直营水站（类型2）营收2 = 未抵扣商品的分销价合计 */
+function stationRevenue2Expr() {
+  return `oi.wholesale_price * (oi.quantity - IF(oi.ticket_qty > 0, oi.ticket_qty, IF(oi.pricing_type = 2, oi.quantity, 0)))`;
+}
+
+module.exports = { itemRevenueExpr, stationRevenue1Expr, stationRevenue2Expr };
+

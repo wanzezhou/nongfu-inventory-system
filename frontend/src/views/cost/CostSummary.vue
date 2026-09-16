@@ -7,6 +7,9 @@
         <el-button type="primary" style="margin-left: 12px;" @click="fetchData">
           <el-icon><Search /></el-icon>查询
         </el-button>
+        <el-button type="success" :loading="exporting" @click="handleExport">
+          <el-icon><Download /></el-icon>导出
+        </el-button>
         <span class="tip">成本合计 = 直营水站成本（成本1 水票抵扣商品 + 成本2 未抵扣商品） + 员工工资（订单配送费） + 其他支出</span>
       </div>
     </el-card>
@@ -95,15 +98,17 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Money, Wallet, OfficeBuilding, TrendCharts } from '@element-plus/icons-vue'
+import { Search, Money, Wallet, OfficeBuilding, TrendCharts, Download } from '@element-plus/icons-vue'
 import DateRangeFilter from '@/components/DateRangeFilter.vue'
 import { defaultRange, toQuery, rangeText } from '@/utils/dateRange'
-import { getCostOverview, getCostByType } from '@/api/cost'
+import { getCostOverview, getCostByType, exportCostSummary } from '@/api/cost'
+import { downloadBlob } from '@/api/excel'
 import { getSalarySummary } from '@/api/salary'
 import { getExpenses } from '@/api/expense'
 
 const rangeState = ref(defaultRange())
 const loading = ref(false)
+const exporting = ref(false)
 const activeTab = ref('expense')
 const summary = reactive({ stationCost: 0, salaryCost: 0, otherExpense: 0, expenseCount: 0 })
 const stationRows = ref([])
@@ -185,6 +190,25 @@ const fetchData = async () => {
 onMounted(() => {
   fetchData()
 })
+
+// 导出：成本汇总页全部表格（各类型对比 / 直营水站成本 / 其他支出 / 员工工资），跟随当前时间范围
+const handleExport = async () => {
+  if (rangeState.value.range === 'custom' && !(rangeState.value.startDate && rangeState.value.endDate)) {
+    ElMessage.warning('请选择起止日期')
+    return
+  }
+  exporting.value = true
+  try {
+    const res = await exportCostSummary(toQuery(rangeState.value))
+    downloadBlob(res.data, `成本汇总_${Date.now()}.xlsx`)
+    ElMessage.success('导出成功')
+  } catch (e) {
+    // 失败提示由响应拦截器统一弹出（blob 分支会解析后端 message）
+    console.error('成本汇总导出失败:', e)
+  } finally {
+    exporting.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -257,5 +281,26 @@ onMounted(() => {
 .fee-text {
   color: var(--gold);
   font-weight: 600;
+}
+
+/* 窄屏：筛选区纵向堆叠，按钮与提示占满整行 */
+@media (max-width: 768px) {
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-row .el-button {
+    margin-left: 0 !important;
+  }
+  .filter-row .el-button + .el-button {
+    margin-top: 8px;
+  }
+  .tip {
+    margin-left: 0;
+    margin-top: 10px;
+  }
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

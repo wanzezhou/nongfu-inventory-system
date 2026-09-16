@@ -17,8 +17,8 @@
       <el-menu
         :default-active="activeMenu"
         :collapse="isCollapse"
-        router
         class="sidebar-menu"
+        @select="handleMenuSelect"
       >
         <!-- 菜单树来自 menuConfig.js（单一数据源，A8）；router meta.title 同源 -->
         <template v-for="entry in menuGroups" :key="entry.index">
@@ -84,6 +84,9 @@
         </div>
       </el-header>
 
+      <!-- 三级菜单：财务管理下各统计页的页面级入口（内容区顶部） -->
+      <NavTabs />
+
       <el-main class="main-content">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
@@ -121,7 +124,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Fold, Expand } from '@element-plus/icons-vue'
 import { changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
-import { menuGroups } from './menuConfig'
+import { menuGroups, tabGroupOf, FINANCE_GROUP_TITLE } from './menuConfig'
+import NavTabs from './NavTabs.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -195,16 +199,38 @@ function resetWidth() {
 
 onBeforeUnmount(stopResize)
 
-const activeMenu = computed(() => route.path)
+// 侧边栏高亮：三级页面回落到其所属二级入口（/fm/<key>），其余页面按路径本身高亮
+const activeMenu = computed(() => {
+  const g = tabGroupOf(route.path)
+  return g ? `/fm/${g.key}` : route.path
+})
 
-// —— 面包屑：分组标题 → 页面标题（数据源 menuConfig.js） ——
+// 菜单跳转：财务管理二级项的 index 是虚拟键（/fm/xxx），真实目标在 to 字段
+const handleMenuSelect = (index) => {
+  for (const g of menuGroups) {
+    if (g.type !== 'group') continue
+    const item = g.items.find((i) => i.index === index)
+    if (item) {
+      router.push(item.to || item.index)
+      return
+    }
+  }
+  router.push(index)
+}
+
+// —— 面包屑：一级分组 →（三级页面再带二级组） → 页面标题（数据源 menuConfig.js） ——
 const breadcrumb = computed(() => {
   const path = route.path
-  for (const g of menuGroups) {
-    if (g.type === 'group' && g.items.some((i) => i.index === path)) {
-      return [g.title, route.meta.title]
+  const g = tabGroupOf(path)
+  if (g) {
+    const tab = g.tabs.find((t) => t.index === path)
+    return [FINANCE_GROUP_TITLE, g.title, tab ? tab.title : route.meta.title]
+  }
+  for (const mg of menuGroups) {
+    if (mg.type === 'group' && mg.items.some((i) => i.index === path)) {
+      return [mg.title, route.meta.title]
     }
-    if (g.type === 'item' && g.index === path) return [route.meta.title]
+    if (mg.type === 'item' && mg.index === path) return [route.meta.title]
   }
   return [route.meta.title || '首页']
 })

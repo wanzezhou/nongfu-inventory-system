@@ -13,6 +13,8 @@ router.get('/order-items', auth, salaryController.getSalaryOrderItems);
 router.get('/worker-summary', auth, salaryController.getWorkerSummary);
 // 工资预支列表（筛选员工/状态）
 router.get('/advances', auth, salaryController.getAdvances);
+// 一键导出（员工工资汇总 + 配送订单明细 + 配送商品明细）
+router.get('/export', auth, salaryController.exportSalary);
 // 确认发放（记录发放 + 公司账户支出）
 router.post('/pay', auth, salaryController.paySalary);
 // 预支登记（公司账户支出 + 员工挂账）

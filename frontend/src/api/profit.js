@@ -9,3 +9,8 @@ export function getProfitOverview(params) {
 export function getProfitByType(params) {
   return request({ url: '/profit/by-type', method: 'get', params })
 }
+
+// 利润导出（含商品明细）；参数：orderType + range
+export function exportProfit(params) {
+  return request({ url: '/profit/export', method: 'get', params, responseType: 'blob' })
+}

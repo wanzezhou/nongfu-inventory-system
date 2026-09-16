@@ -16,4 +16,10 @@ router.get('/order-lines', auth, costController.getCostOrderLines);
 // 单类型成本统计（orderType=1..6）
 router.get('/by-type', auth, costController.getCostByType);
 
+// ---- 一键导出（2026-09-16 晚 2）----
+// 成本汇总页导出（各类型对比 + 其他支出 + 直营水站成本 + 员工工资）
+router.get('/export/summary', auth, costController.exportCostSummary);
+// 单类型成本 / 机台成本导出（含商品明细）；两者路径不同，与 '/export/summary' 无通配冲突
+router.get('/export', auth, costController.exportCost);
+
 module.exports = router;
