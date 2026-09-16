@@ -35,14 +35,16 @@ async function setSetting(key, value, remark) {
 
 /**
  * 解析销售单打印使用的店长
- * @returns {Promise<{workerId:string|null, workerName:string, phone:string, source:'setting'|'fallback'|'none'}>}
+ * @returns {Promise<{workerId:string|null, workerName:string, phone:string, workerStatus:number|null, source:'setting'|'fallback'|'none'}>}
  *   source: setting=取自配置 / fallback=配置缺失或失效后回退 / none=系统内无可用店长
+ *   workerStatus: 该员工状态（1 在职 / 0 离职）。配置指向的员工即便已离职也照用（不静默换人），
+ *                 仅把状态透出给前端提示，避免「打了离职员工的电话」这种情况悄无声息。
  */
 async function resolvePrintManager() {
   const configured = await getSetting(PRINT_MANAGER_KEY);
   if (configured) {
     const [rows] = await pool.execute(
-      'SELECT worker_id, worker_name, phone FROM workers WHERE worker_id = ?',
+      'SELECT worker_id, worker_name, phone, status FROM workers WHERE worker_id = ?',
       [configured]
     );
     if (rows.length) {
@@ -50,6 +52,7 @@ async function resolvePrintManager() {
         workerId: rows[0].worker_id,
         workerName: rows[0].worker_name || '',
         phone: rows[0].phone || '',
+        workerStatus: Number(rows[0].status),
         source: 'setting'
       };
     }
@@ -66,11 +69,12 @@ async function resolvePrintManager() {
       workerId: fallback[0].worker_id,
       workerName: fallback[0].worker_name || '',
       phone: fallback[0].phone || '',
+      workerStatus: 1,
       source: 'fallback'
     };
   }
 
-  return { workerId: null, workerName: '', phone: '', source: 'none' };
+  return { workerId: null, workerName: '', phone: '', workerStatus: null, source: 'none' };
 }
 
 module.exports = {

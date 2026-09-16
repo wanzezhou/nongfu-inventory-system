@@ -167,7 +167,7 @@
 // 订单列表页（2026-09-09 拆分）：只负责列表查询/分页/操作编排。
 // 表单域逻辑见 OrderFormDialog.vue，详情展示见 OrderDetailDialog.vue。
 import { usePagination } from '@/composables/usePagination'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Delete, View, Edit, Download, Upload } from '@element-plus/icons-vue'
 import { getOrders, getOrderDetail, hardDeleteOrder } from '@/api/order'
@@ -177,6 +177,9 @@ import OrderDetailDialog from './OrderDetailDialog.vue'
 import { exportData, downloadBlob } from '@/api/excel'
 import ImportDialog from '@/components/ImportDialog.vue'
 import { formatMoney, getOrderTypeText, getOrderTypeTagType } from './orderText'
+import { useOrderStore } from '@/stores/order'
+
+const orderStore = useOrderStore()
 
 const exporting = ref(false)
 const importDialogVisible = ref(false)
@@ -264,6 +267,9 @@ const handleEdit = async (row) => {
     ElMessage.error('获取订单详情失败')
   }
 }
+
+// 全局悬浮「新建订单」按钮保存成功后（stores/order 的 savedTick 自增），刷新本页表格
+watch(() => orderStore.savedTick, () => { fetchData() })
 
 // 表单保存成功后：刷新列表；「提交/保存并打印」时拉详情打开打印预览
 const onOrderSaved = async ({ print, savedId }) => {

@@ -83,6 +83,7 @@
             :key="w.workerId"
             :label="`${w.workerName}（${w.phone || '无电话'}）`"
             :value="w.workerId"
+            :disabled="!!w.disabled"
           />
         </el-select>
         <span class="pm-tip">所有订单打印的「店长联系电话」统一使用该员工{{ pmSourceText }}</span>
@@ -286,10 +287,12 @@ const printManagerOptions = ref([])
 const pmLoading = ref(false)
 
 const pmSourceText = computed(() => {
-  const s = printManagerInfo.value?.source
+  const info = printManagerInfo.value
+  const s = info?.source
   if (s === 'fallback') return '（当前为回退值：第一位启用的店长，请确认后重新选择）'
   if (s === 'none') return '（系统内暂无启用的店长，打印时电话将为空）'
-  if (printManagerInfo.value?.phone) return `（${printManagerInfo.value.phone}）`
+  if (info?.workerStatus === 0) return '（⚠️ 该员工已离职，打印仍会使用其电话，建议重新选择）'
+  if (info?.phone) return `（${info.phone}）`
   return '（该员工未填联系电话，打印时电话将为空）'
 })
 
@@ -297,9 +300,23 @@ const loadPrintManager = async () => {
   pmLoading.value = true
   try {
     const [pmRes, wsRes] = await Promise.all([getPrintManager(), getAllWorkers()])
-    printManagerInfo.value = pmRes.data || null
-    printManagerId.value = pmRes.data?.workerId || ''
-    printManagerOptions.value = wsRes.data || []
+    const info = pmRes.data || null
+    printManagerInfo.value = info
+    printManagerId.value = info?.workerId || ''
+
+    // /workers/all 只返在职员工；若当前配置指向的员工已离职（或不在该列表里），
+    // 需要把它补进选项，否则 el-select 找不到匹配项会退化成显示裸 workerId。
+    // 该补位项置 disabled：可见、可显示名称，但不允许再次选中（后端也拒绝离职员工）。
+    const options = wsRes.data || []
+    if (info?.workerId && !options.some((w) => w.workerId === info.workerId)) {
+      options.unshift({
+        workerId: info.workerId,
+        workerName: `${info.workerName || info.workerId}${info.workerStatus === 0 ? '（离职）' : ''}`,
+        phone: info.phone,
+        disabled: true
+      })
+    }
+    printManagerOptions.value = options
   } catch (error) {
     console.error('获取打印店长配置失败:', error)
   } finally {
@@ -315,7 +332,9 @@ const handlePrintManagerChange = async (workerId) => {
     printManagerId.value = res.data?.workerId || ''
     ElMessage.success(res.message || '销售单打印店长已更新')
   } catch (error) {
-    // 保存失败不得误报成功：回读后端当前值，把选择器拨回真实状态
+    // 保存失败不得误报成功：提示后端业务文案，并回读后端当前值把选择器拨回真实状态
+    console.error('保存打印店长失败:', error)
+    toastIfHttpError(error, '保存失败，请稍后重试')
     await loadPrintManager()
   } finally {
     pmLoading.value = false
@@ -430,19 +449,37 @@ const handleEdit = (row) => {
   dialogVisible.value = true
 }
 
+// 后端业务文案统一取法：
+//   HTTP 4xx/5xx（error.response 存在）→ request.js 拦截器只打日志，需页面自己提示
+//   信封错误（HTTP 200 + code!==200）→ 拦截器已弹提示，页面不再重复弹
+const bizMessage = (error, fallback) => error?.response?.data?.message || error?.message || fallback
+const toastIfHttpError = (error, fallback) => {
+  if (error?.response) ElMessage.error(bizMessage(error, fallback))
+}
+
+// 删除员工：后端「能真删就真删，否则设为离职」
+//   mode='hard' → 该员工无任何历史单据，已物理删除
+//   mode='soft' → 有历史单据（订单/结算/工资），转为「离职」保留，列表仍会看到他（状态为离职）
 const handleDelete = (row) => {
-  ElMessageBox.confirm('确定要删除该员工吗？删除后状态变为离职。', '删除确认', {
-    confirmButtonText: '确定',
+  ElMessageBox.confirm('确定要删除该员工吗？无历史单据的员工将被直接删除；存在订单/结算/工资记录的员工将转为「离职」保留。', '删除确认', {
+    confirmButtonText: '确定删除',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async () => {
     try {
-      await deleteWorker(row.workerId || row.id)
-      ElMessage.success('删除成功')
+      const res = await deleteWorker(row.workerId || row.id)
+      const mode = res.data?.mode
+      if (mode === 'hard') {
+        ElMessage.success(res.message || '员工已删除')
+      } else {
+        // 未真正删除 —— 用 warning 级提示，避免让人误以为列表会少一行
+        ElMessage.warning(res.message || '该员工存在历史单据，已转为「离职」保留')
+      }
       fetchData()
     } catch (error) {
+      // 失败绝不误报成功（原实现此处也提示「删除成功」，是「提示成功但表格没变」的原因之一）
       console.error('删除失败:', error)
-      ElMessage.success('删除成功')
+      toastIfHttpError(error, '删除失败，请稍后重试')
       fetchData()
     }
   }).catch(() => {})

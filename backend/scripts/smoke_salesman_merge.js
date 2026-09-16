@@ -6,6 +6,7 @@
  *  3. 非业务员类型 commission_rate 保持 NULL
  *  4. 历史迁移数据（SM 前缀）可经员工接口正常访问
  *  5. 前端构建产物不再引用 salesman 路由（menuConfig 派生检查在 build 断言中做）
+ *  6. 员工删除语义（2026-09-16 起）：无引用 → 物理删除；有单据引用 → 转离职(status=0)
  */
 const BASE = process.env.SMOKE_BASE || 'http://localhost:3000';
 const { pool } = require('../src/config/db');
@@ -60,20 +61,36 @@ async function api(method, url, body, token) {
   const kid = keeper.data?.data?.id || keeper.data?.data?.workerId;
   ok(keeper.data?.data?.commissionRate === null, '配送员工（type=2）传提成仍落 NULL');
 
-  console.log('== 4) 清理 ==');
+  console.log('== 4) 删除语义：「无引用→物理删除，有引用→转离职」 ==');
+  // 2026-09-16 起后端改为「能真删就真删，否则设离职」：
+  //   本脚本的业务员/配送员都没有任何订单/结算引用 → 应被**物理删除**（列表里查不到）
   await api('DELETE', `/api/workers/${wid}`, null, token);
   await api('DELETE', `/api/workers/${kid}`, null, token);
-  // 后端删除为软删除（status=0 离职），列表仍可见但状态应为离职
   const after = await api('GET', '/api/workers?employeeType=3&pageSize=50', null, token);
   const afterList = after.data?.data?.list || after.data?.data || [];
-  const deletedRow = afterList.find(w => w.id === wid);
-  ok(deletedRow && deletedRow.status === 0, '冒烟业务员软删除生效（status=0 离职）');
+  ok(!afterList.some(w => w.id === wid), '无引用的业务员已被物理删除（列表中不存在）');
+
+  // 有历史单据的员工只能软删（离职）：复用既有 ST001 场景不可靠，这里直接造一条引用
+  const withRef = await api('POST', '/api/workers', {
+    workerName: '冒烟有单据员工', phone: '13999999997', employeeType: 2
+  }, token);
+  const rid = withRef.data?.data?.id || withRef.data?.data?.workerId;
+  await pool.query(
+    `INSERT INTO orders (order_id, order_type, worker_id, delivery_type, customer_name, order_amount,
+       delivery_fee, total_receivable, canceled_at, created_at, updated_at)
+     VALUES ('SMK_SALESMAN_REF', 1, ?, 1, '冒烟引用', 0, 0, 0, NOW(), NOW(), NOW())`,
+    [rid]
+  );
+  await api('DELETE', `/api/workers/${rid}`, null, token);  const [refRow] = await pool.query('SELECT status FROM workers WHERE worker_id = ?', [rid]);
+  ok(refRow.length === 1 && Number(refRow[0].status) === 0, '有单据引用的员工转为离职（status=0，行保留）');
+  await pool.query('DELETE FROM orders WHERE order_id = ?', ['SMK_SALESMAN_REF']);
+  await pool.query('DELETE FROM workers WHERE worker_id = ?', [rid]);
 
   console.log(`\n结果: ${pass} pass / ${fail} fail`);
 })()
   .catch(e => { console.error('SMOKE ERROR:', e); fail++; })
   .finally(async () => {
-    // 兜底：业务 DELETE 是软删除清不掉，这里物理删除冒烟员工，避免堆积在员工列表
+    // 兜底：若中途断言失败/异常，可能留下未清理的冒烟员工（有引用的会转为离职行）
     await cleanupSmokeResidue(pool);
     await pool.end();
     process.exit(fail ? 1 : 0);

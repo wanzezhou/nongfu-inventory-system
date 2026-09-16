@@ -96,6 +96,9 @@
       </el-main>
     </el-container>
 
+    <!-- 全局悬浮「新建订单」快捷按钮（可拖动，位置记忆） -->
+    <FloatingCreateOrder />
+
     <!-- 修改密码弹窗 -->
     <el-dialog v-model="passwordDialog" title="修改密码" width="400px" :close-on-click-modal="false">
       <el-form label-width="80px">
@@ -126,6 +129,7 @@ import { changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { menuGroups, tabGroupOf, FINANCE_GROUP_TITLE } from './menuConfig'
 import NavTabs from './NavTabs.vue'
+import FloatingCreateOrder from '@/components/FloatingCreateOrder.vue'
 
 const route = useRoute()
 const router = useRouter()

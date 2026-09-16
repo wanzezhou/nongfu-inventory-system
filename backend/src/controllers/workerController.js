@@ -253,22 +253,93 @@ async function updateWorker(req, res) {
   }
 }
 
+// 员工删除（2026-09-16 重做）：**能真删就真删，否则设为离职**
+// ---------------------------------------------------------------------------
+// 背景：orders.created_by / orders.worker_id / financial_settlement.worker_id 都是
+//       指向 workers 的外键（RESTRICT），有历史单据的员工物理删不掉，硬删会破坏
+//       历史可追溯性。而「误建的员工」没有任何引用，应当能真正删掉。
+// 规则：① 下列引用表全部为 0 → **物理 DELETE**（并清理 system_settings 中指向它的配置）
+//       ② 任一引用表 > 0      → **软删（status=0 离职）**，并返回引用清单供前端提示
+// 响应：{ mode: 'hard'|'soft', workerId, workerName, references: [{label, count}] }
+// ---------------------------------------------------------------------------
+const WORKER_REF_TABLES = [
+  { table: 'orders', column: 'created_by', label: '订单（创建人）' },
+  { table: 'orders', column: 'worker_id', label: '订单（配送员工）' },
+  { table: 'financial_settlement', column: 'worker_id', label: '财务结算' },
+  { table: 'salary_payments', column: 'worker_id', label: '工资发放' },
+  { table: 'salary_advances', column: 'worker_id', label: '工资预支' },
+  { table: 'staff_salaries', column: 'worker_id', label: '员工工资表' }
+];
+
+async function findWorkerReferences(conn, workerId) {
+  const refs = [];
+  for (const r of WORKER_REF_TABLES) {
+    try {
+      const [rows] = await conn.execute(
+        `SELECT COUNT(*) AS n FROM \`${r.table}\` WHERE \`${r.column}\` = ?`,
+        [workerId]
+      );
+      const n = Number(rows[0].n) || 0;
+      if (n > 0) refs.push({ label: r.label, count: n });
+    } catch (e) {
+      // 表不存在（历史库差异）时跳过，不阻断删除判定
+      if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    }
+  }
+  return refs;
+}
+
 async function deleteWorker(req, res) {
+  const connection = await pool.getConnection();
   try {
     const { id } = req.params;
 
-    const [existing] = await pool.execute('SELECT worker_id, status FROM workers WHERE worker_id = ?', [id]);
+    const [existing] = await connection.execute(
+      'SELECT worker_id, worker_name, status FROM workers WHERE worker_id = ?',
+      [id]
+    );
     if (existing.length === 0) {
       return error(res, '员工不存在', 404);
     }
+    const { worker_id: workerId, worker_name: workerName } = existing[0];
 
-    const sql = 'UPDATE workers SET status = 0, updated_at = ? WHERE worker_id = ?';
-    await pool.execute(sql, [new Date(), id]);
+    const references = await findWorkerReferences(connection, workerId);
 
-    return success(res, null, '员工删除成功');
+    if (references.length === 0) {
+      // —— 无任何引用：物理删除 ——
+      await connection.beginTransaction();
+      try {
+        // 清理配置表中指向该员工的悬挂引用（首个使用方：销售单打印店长）
+        // 清理后 resolvePrintManager() 会自动回退为「第一位启用的店长」
+        await connection.execute(
+          `UPDATE system_settings SET setting_value = NULL WHERE setting_key = 'print_manager_worker_id' AND setting_value = ?`,
+          [workerId]
+        );
+        await connection.execute('DELETE FROM workers WHERE worker_id = ?', [workerId]);
+        await connection.commit();
+      } catch (e) {
+        await connection.rollback();
+        throw e;
+      }
+      return success(res, { mode: 'hard', workerId, workerName, references }, `员工「${workerName}」已删除`);
+    }
+
+    // —— 有历史单据：只能软删（离职），保留可追溯性 ——
+    await connection.execute(
+      'UPDATE workers SET status = 0, updated_at = ? WHERE worker_id = ?',
+      [new Date(), workerId]
+    );
+    const detail = references.map((r) => `${r.label} ${r.count} 条`).join('、');
+    return success(
+      res,
+      { mode: 'soft', workerId, workerName, references },
+      `员工「${workerName}」存在历史单据（${detail}），已转为「离职」保留而非删除`
+    );
   } catch (err) {
     console.error('删除员工失败:', err);
     return error(res, '删除员工失败: ' + err.message);
+  } finally {
+    connection.release();
   }
 }
 
