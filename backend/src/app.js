@@ -26,6 +26,7 @@ const profitRoutes = require('./routes/profitRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const financeAccountRoutes = require('./routes/financeAccountRoutes');
 const barrelRoutes = require('./routes/barrelRoutes');
+const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -115,6 +116,7 @@ app.use('/api/profit', profitRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/finance-accounts', financeAccountRoutes);
 app.use('/api/barrel', barrelRoutes);
+app.use('/api/system-settings', systemSettingsRoutes);
 
 // 根路由
 app.get('/', (req, res) => {

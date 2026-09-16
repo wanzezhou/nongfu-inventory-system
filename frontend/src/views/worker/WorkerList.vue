@@ -67,6 +67,27 @@
     </el-card>
 
     <el-card class="table-card" shadow="never">
+      <!-- 销售单打印店长（全局设置，非筛选条件）：决定所有订单打印时页脚的「店长联系电话」 -->
+      <div class="print-manager-bar">
+        <span class="pm-label">销售单打印店长</span>
+        <el-select
+          v-model="printManagerId"
+          size="small"
+          class="pm-select"
+          placeholder="请选择在职员工"
+          :loading="pmLoading"
+          @change="handlePrintManagerChange"
+        >
+          <el-option
+            v-for="w in printManagerOptions"
+            :key="w.workerId"
+            :label="`${w.workerName}（${w.phone || '无电话'}）`"
+            :value="w.workerId"
+          />
+        </el-select>
+        <span class="pm-tip">所有订单打印的「店长联系电话」统一使用该员工{{ pmSourceText }}</span>
+      </div>
+
       <el-table
         :data="tableData"
         style="width: 100%"
@@ -221,15 +242,17 @@
 
 <script setup>
 import { usePagination } from '@/composables/usePagination'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete, Download, Upload, Wallet } from '@element-plus/icons-vue'
 import {
   getWorkerList,
   addWorker,
   updateWorker,
-  deleteWorker
+  deleteWorker,
+  getAllWorkers
 } from '@/api/worker'
+import { getPrintManager, updatePrintManager } from '@/api/systemSettings'
 import { exportData, downloadBlob } from '@/api/excel'
 import ImportDialog from '@/components/ImportDialog.vue'
 import AdvanceDialog from '@/components/AdvanceDialog.vue'
@@ -252,6 +275,50 @@ const handleExport = async () => {
     downloadBlob(response.data, `员工数据_${Date.now()}.xlsx`)
   } catch { } finally {
     exporting.value = false
+  }
+}
+
+// ---- 销售单打印店长（全局设置）----
+// 口径：所有订单类型打印时，「店长联系电话」都取这里选中的员工（后端 services/systemSettings.js）
+const printManagerId = ref('')
+const printManagerInfo = ref(null)
+const printManagerOptions = ref([])
+const pmLoading = ref(false)
+
+const pmSourceText = computed(() => {
+  const s = printManagerInfo.value?.source
+  if (s === 'fallback') return '（当前为回退值：第一位启用的店长，请确认后重新选择）'
+  if (s === 'none') return '（系统内暂无启用的店长，打印时电话将为空）'
+  if (printManagerInfo.value?.phone) return `（${printManagerInfo.value.phone}）`
+  return '（该员工未填联系电话，打印时电话将为空）'
+})
+
+const loadPrintManager = async () => {
+  pmLoading.value = true
+  try {
+    const [pmRes, wsRes] = await Promise.all([getPrintManager(), getAllWorkers()])
+    printManagerInfo.value = pmRes.data || null
+    printManagerId.value = pmRes.data?.workerId || ''
+    printManagerOptions.value = wsRes.data || []
+  } catch (error) {
+    console.error('获取打印店长配置失败:', error)
+  } finally {
+    pmLoading.value = false
+  }
+}
+
+const handlePrintManagerChange = async (workerId) => {
+  pmLoading.value = true
+  try {
+    const res = await updatePrintManager(workerId)
+    printManagerInfo.value = res.data || null
+    printManagerId.value = res.data?.workerId || ''
+    ElMessage.success(res.message || '销售单打印店长已更新')
+  } catch (error) {
+    // 保存失败不得误报成功：回读后端当前值，把选择器拨回真实状态
+    await loadPrintManager()
+  } finally {
+    pmLoading.value = false
   }
 }
 
@@ -426,6 +493,7 @@ const resetForm = () => {
 
 onMounted(() => {
   fetchData()
+  loadPrintManager()
 })
 </script>
 
@@ -451,6 +519,40 @@ onMounted(() => {
 
 .table-card {
   border-radius: var(--radius-md);
+}
+
+/* 销售单打印店长（全局设置条） */
+.print-manager-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.print-manager-bar .pm-label {
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.print-manager-bar .pm-select {
+  width: 220px;
+}
+
+.print-manager-bar .pm-tip {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+@media (max-width: 768px) {
+  .print-manager-bar .pm-select {
+    width: 100%;
+  }
 }
 
 .pagination-wrapper {

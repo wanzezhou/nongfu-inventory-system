@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const dashboardController = require('../controllers/dashboardController');
 
-// 获取与时间无关的统计（库存总金额 / 待配送订单）
+// 获取与时间无关的统计（当前仅「库存总金额」）
 router.get('/summary', dashboardController.getSummary);
 
 // 周期指标（总销量 / 总订单数 / 总营收 / 总成本 / 工资统计 / 总利润）

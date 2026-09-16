@@ -1,7 +1,7 @@
 // 仪表盘数据接口（2026-09-16 重构）
 // ---------------------------------------------------------------------------
 // 两类数据：
-//   ① /summary —— 与时间无关的卡片（库存总金额 / 待配送订单），随页面刷新一次
+//   ① /summary —— 与时间无关的卡片（当前仅「库存总金额」），随页面刷新一次
 //   ② /metrics —— 周期卡片（总销量 / 总订单数 / 总营收 / 总成本 / 工资统计 / 总利润）
 //      周期由前端按卡片选择（月/季/年），故本接口接受 range 参数，一次返回该周期全部指标；
 //      前端对同一 range 只请求一次，多张卡片共用同一份结果
@@ -28,7 +28,8 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 // 全部合法订单类型的 SQL 片段（由常量派生，禁硬编码 IN 列表）
 const ORDER_TYPE_IN = `o.order_type IN (${VALID_ORDER_TYPES.join(',')})`;
 
-// 获取与时间无关的统计（库存总金额 / 待配送订单）
+// 获取与时间无关的统计（当前仅「库存总金额」）
+// 注：原「待配送订单」查询已于 2026-09-16（晚 4）随卡片下线一并移除（业务方确认不使用）
 async function getSummary(req, res) {
   try {
     // totalInventoryValue：库存金额 = Σ max(库存,0) × 进货价，仅统计启用商品
@@ -41,21 +42,9 @@ async function getSummary(req, res) {
     `);
     const totalInventoryValue = inventoryRows[0].totalInventoryValue;
 
-    // pendingOrders（待配送数）：自有员工配送(delivery_type=1)且未分配配送员(worker_id IS NULL)且未取消
-    const [pendingRows] = await pool.execute(`
-      SELECT COUNT(*) as pendingOrders
-      FROM orders
-      WHERE delivery_type = 1
-      AND worker_id IS NULL
-      AND canceled_at IS NULL
-    `);
-    const pendingOrders = pendingRows[0].pendingOrders;
-
-    // 注：原「本月销售额」卡片已由「总营收（可选月/季/年）」取代（2026-09-16），故不再返回 monthSales
-    return success(res, {
-      totalInventoryValue,
-      pendingOrders
-    });
+    // 历史说明：原「本月销售额」(monthSales) 已由「总营收（可选月/季/年）」取代（9/16 晚 3）；
+    //          「水站欠款总额」已于 9/16 随卡片下线。
+    return success(res, { totalInventoryValue });
   } catch (err) {
     console.error('获取统计数据失败:', err);
     return error(res, '获取统计数据失败: ' + err.message);

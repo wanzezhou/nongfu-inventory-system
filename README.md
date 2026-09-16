@@ -151,9 +151,15 @@ npm run dev
 ### 仪表盘 `/api/dashboard`
 | 方法 | 路径 | 说明 |
 | :--- | :--- | :--- |
-| GET | `/api/dashboard/summary` | 与时间无关的卡片：库存总金额、待配送订单 |
+| GET | `/api/dashboard/summary` | 与时间无关的卡片：库存总金额 |
 | GET | `/api/dashboard/metrics?range=month\|quarter\|year` | 周期指标：总销量 / 总订单数 / 总营收 / 总成本 / 工资统计 / 总利润 |
 | GET | `/api/dashboard/trend` | 月销售趋势（本年度 1~12 月，按商品件数） |
+
+### 系统配置 `/api/system-settings`
+| 方法 | 路径 | 说明 |
+| :--- | :--- | :--- |
+| GET | `/api/system-settings/print-manager` | 销售单打印店长（当前生效值 + 来源） |
+| PUT | `/api/system-settings/print-manager` | 设置销售单打印店长（`{workerId}`，传空则回退为第一位启用的店长） |
 
 ## 订单类型说明
 

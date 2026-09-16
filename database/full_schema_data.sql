@@ -1,7 +1,7 @@
 -- ============================================================
 -- 农富库存管理系统 - 全量数据库（结构 + 数据）
 -- 由 backend/scripts/export_dump.js 自动导出
--- 共 33 张表
+-- 共 34 张表
 -- ============================================================
 CREATE DATABASE IF NOT EXISTS nongfu_inventory DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_unicode_ci;
 USE nongfu_inventory;
@@ -1105,6 +1105,20 @@ INSERT INTO `suppliers` (`supplier_id`, `supplier_name`, `contact_name`, `phone`
 INSERT INTO `suppliers` (`supplier_id`, `supplier_name`, `contact_name`, `phone`, `address`, `bank_name`, `bank_account`, `account_name`, `tax_number`, `invoice_title`, `status`, `remark`, `created_at`, `updated_at`) VALUES ('SUP004', '玄武湖贸易有限公司', '赵总', '025-88880004', '南京市玄武区珠江路', NULL, NULL, NULL, NULL, NULL, 1, NULL, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 INSERT INTO `suppliers` (`supplier_id`, `supplier_name`, `contact_name`, `phone`, `address`, `bank_name`, `bank_account`, `account_name`, `tax_number`, `invoice_title`, `status`, `remark`, `created_at`, `updated_at`) VALUES ('SUP005', '苏南食品供应链', '孙经理', '025-88880005', '南京市建邺区奥体大街', NULL, NULL, NULL, NULL, NULL, 1, NULL, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 -- 5 行
+
+-- ----------------------------
+-- 表结构: system_settings
+-- ----------------------------
+DROP TABLE IF EXISTS `system_settings`;
+CREATE TABLE `system_settings` (
+  `setting_key` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '配置键',
+  `setting_value` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '配置值（统一存字符串）',
+  `remark` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '配置说明',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`setting_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置（键值对）';
+INSERT INTO `system_settings` (`setting_key`, `setting_value`, `remark`, `updated_at`) VALUES ('print_manager_worker_id', 'W001', '销售单打印「店长联系电话」使用的员工ID；为空时回退为第一位启用的店长', '2026-09-16 22:38:15.000');
+-- 1 行
 
 -- ----------------------------
 -- 表结构: users

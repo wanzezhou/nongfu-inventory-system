@@ -92,7 +92,7 @@ const cardRanges = reactive(loadRanges())
 // ---------------------------------------------------------------------------
 // 数据
 // ---------------------------------------------------------------------------
-const summaryData = ref({ totalInventoryValue: 0, pendingOrders: 0 })
+const summaryData = ref({ totalInventoryValue: 0 })
 // 周期指标按 range 缓存：多张卡片选同一周期时只发一次请求
 const metricsMap = reactive({})
 
@@ -175,19 +175,10 @@ const cardList = computed(() => [
     value: formatMoney(metricOf('profit').profit),
     dotColor: 'var(--primary)',
     desc: `${rangeTextOf('profit')} · 总营收 − 总成本（不重复扣工资）`
-  },
-  {
-    key: 'pending',
-    label: '待配送订单',
-    prefix: '',
-    unit: '单',
-    value: String(summaryData.value.pendingOrders ?? 0),
-    dotColor: 'var(--primary)',
-    desc: '自有配送且未分配配送员'
   }
 ])
 
-// 卡片栅格等分：优先 4 列、其次 3 列，保证末行不留空（8 张 → 4×2，9 张 → 3×3）
+// 卡片栅格等分：优先 4 列、其次 3 列，保证末行不留空（7 张 → 4+3，8 张 → 4×2）
 const cardSpan = computed(() => {
   const n = cardList.value.length || 1
   if (n <= 4) return 24 / n

@@ -222,7 +222,7 @@ GROUP BY order_type
 ORDER BY order_type;
 ```
 
-统计待配送订单数量（自有员工配送且未分配配送员、未取消）：
+统计待配送订单数量（自有员工配送且未分配配送员、未取消）——注：仪表盘该卡片已于 2026-09-16 下线，此 SQL 仅作通用查询示例：
 ```sql
 SELECT COUNT(*) AS pending_count
 FROM orders

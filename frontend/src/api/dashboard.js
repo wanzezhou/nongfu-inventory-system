@@ -1,6 +1,6 @@
 import request from './request'
 
-// 与时间无关的统计（库存总金额 / 待配送订单）
+// 与时间无关的统计（当前仅「库存总金额」）
 export function getDashboardSummary() {
   return request({
     url: '/dashboard/summary',
