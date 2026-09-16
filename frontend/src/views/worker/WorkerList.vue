@@ -25,6 +25,7 @@
             <el-option label="店长" :value="1" />
             <el-option label="配送员工" :value="2" />
             <el-option label="业务员" :value="3" />
+            <el-option label="管理员" :value="4" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -84,7 +85,7 @@
         </el-table-column>
         <el-table-column prop="monthlySalary" label="固定月薪" width="110" align="right">
           <template #default="{ row }">
-            <span v-if="row.monthlySalary != null && (row.employeeType === 1 || row.employeeType === 3)" class="salary-text">¥{{ Number(row.monthlySalary).toFixed(2) }}</span>
+            <span v-if="row.monthlySalary != null && hasMonthlySalary(row.employeeType)" class="salary-text">¥{{ Number(row.monthlySalary).toFixed(2) }}</span>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
@@ -160,6 +161,7 @@
             <el-option label="店长" :value="1" />
             <el-option label="配送员工" :value="2" />
             <el-option label="业务员" :value="3" />
+            <el-option label="管理员" :value="4" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="workerForm.employeeType === 3" label="提成比例(%)">
@@ -172,7 +174,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item v-if="workerForm.employeeType === 1 || workerForm.employeeType === 3" label="固定月薪">
+        <el-form-item v-if="hasMonthlySalary(workerForm.employeeType)" label="固定月薪">
           <el-input-number
             v-model="workerForm.monthlySalary"
             :min="0"
@@ -260,12 +262,17 @@ const dialogTitle = ref('')
 const isEdit = ref(false)
 const formRef = ref(null)
 
+// 固定月薪适用的员工类型：店长(1)/业务员(3)/管理员(4)
+// （配送员工(2)工资按订单配送费结算，无固定月薪）
+const MONTHLY_SALARY_TYPES = [1, 3, 4]
+const hasMonthlySalary = (type) => MONTHLY_SALARY_TYPES.includes(Number(type))
+
 const employeeTypeLabel = (type) => {
-  const map = { 1: '店长', 2: '配送员工', 3: '业务员' }
+  const map = { 1: '店长', 2: '配送员工', 3: '业务员', 4: '管理员' }
   return map[type] || '未知'
 }
 const employeeTypeTagType = (type) => {
-  const map = { 1: 'danger', 2: 'primary', 3: 'success' }
+  const map = { 1: 'danger', 2: 'primary', 3: 'success', 4: 'warning' }
   return map[type] || 'info'
 }
 
@@ -348,7 +355,7 @@ const handleEdit = (row) => {
     phone: row.phone,
     employeeType: row.employeeType,
     commissionRate: row.employeeType === 3 && row.commissionRate != null ? Number(row.commissionRate) : 0,
-    monthlySalary: (row.employeeType === 1 || row.employeeType === 3) && row.monthlySalary != null ? Number(row.monthlySalary) : null,
+    monthlySalary: hasMonthlySalary(row.employeeType) && row.monthlySalary != null ? Number(row.monthlySalary) : null,
     bankName: row.bankName,
     bankAccount: row.bankAccount,
     status: row.status

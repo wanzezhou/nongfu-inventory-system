@@ -507,7 +507,7 @@ async function deleteAdvance(req, res) {
 }
 
 // 员工类型展示名（与前端 SalaryStatistics.vue 的 employeeTypeLabel 一致）
-const EMPLOYEE_TYPE_TEXT = { 1: '店长', 2: '配送员工', 3: '业务员' };
+const EMPLOYEE_TYPE_TEXT = { 1: '店长', 2: '配送员工', 3: '业务员', 4: '管理员' };
 
 /**
  * 工资统计一键导出

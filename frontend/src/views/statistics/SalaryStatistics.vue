@@ -303,8 +303,8 @@ const summary = reactive({ totalDeliveryFee: 0, workerCount: 0, orderCount: 0, t
 
 const rangeLabel = computed(() => rangeText(rangeState.value))
 
-const employeeTypeLabel = (t) => ({ 1: '店长', 2: '配送员工', 3: '业务员' }[t] || '未知')
-const employeeTypeTagType = (t) => ({ 1: 'danger', 2: 'primary', 3: 'success' }[t] || 'info')
+const employeeTypeLabel = (t) => ({ 1: '店长', 2: '配送员工', 3: '业务员', 4: '管理员' }[t] || '未知')
+const employeeTypeTagType = (t) => ({ 1: 'danger', 2: 'primary', 3: 'success', 4: 'warning' }[t] || 'info')
 
 // 工资预支弹窗
 const advanceVisible = ref(false)

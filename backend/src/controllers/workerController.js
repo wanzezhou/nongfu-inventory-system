@@ -5,6 +5,11 @@ const { generateId } = require('../utils/idGen');
 
 const generateWorkerId = () => generateId('W');
 
+// 员工类型：1=店长 2=配送员工 3=业务员 4=管理员（2026-09-16 新增管理员）
+// 固定月薪适用类型：店长(1)/业务员(3)/管理员(4)；配送员工(2)工资按订单配送费结算
+const MONTHLY_SALARY_TYPES = [1, 3, 4];
+const hasMonthlySalary = (t) => MONTHLY_SALARY_TYPES.includes(Number(t));
+
 function formatWorker(worker) {
   if (!worker) return null;
   return {
@@ -137,8 +142,8 @@ async function createWorker(req, res) {
       Number(eType) || 2,
       // 提成比例仅业务员（类型3）使用，其他类型存 NULL
       Number(eType) === 3 ? (commissionRate !== undefined && commissionRate !== null ? Number(commissionRate) : 0) : null,
-      // 固定月薪仅店长（类型1）/业务员（类型3）使用，其他类型存 NULL
-      Number(eType) === 1 || Number(eType) === 3
+      // 固定月薪仅店长(1)/业务员(3)/管理员(4)使用，配送员工(2)存 NULL
+      hasMonthlySalary(eType)
         ? (monthlySalary !== undefined && monthlySalary !== null && monthlySalary !== '' ? Number(monthlySalary) : null)
         : null,
       bName || null,
@@ -204,11 +209,11 @@ async function updateWorker(req, res) {
       updateFields.push('commission_rate = ?');
       values.push(commissionRate !== null && commissionRate !== '' ? Number(commissionRate) : null);
     }
-    // 固定月薪仅店长（类型1）/业务员（类型3）使用；显式传值才更新
+    // 固定月薪仅店长(1)/业务员(3)/管理员(4)使用；显式传值才更新
     if (monthlySalary !== undefined) {
       const t = Number(eType !== undefined ? eType : existing[0].employee_type);
       updateFields.push('monthly_salary = ?');
-      values.push(t === 1 || t === 3
+      values.push(hasMonthlySalary(t)
         ? (monthlySalary !== null && monthlySalary !== '' ? Number(monthlySalary) : null)
         : null);
     }

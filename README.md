@@ -151,8 +151,9 @@ npm run dev
 ### 仪表盘 `/api/dashboard`
 | 方法 | 路径 | 说明 |
 | :--- | :--- | :--- |
-| GET | `/api/dashboard/summary` | 获取统计汇总数据 |
-| GET | `/api/dashboard/trend` | 获取近7天销售趋势 |
+| GET | `/api/dashboard/summary` | 与时间无关的卡片：库存总金额、待配送订单 |
+| GET | `/api/dashboard/metrics?range=month\|quarter\|year` | 周期指标：总销量 / 总订单数 / 总营收 / 总成本 / 工资统计 / 总利润 |
+| GET | `/api/dashboard/trend` | 月销售趋势（本年度 1~12 月，按商品件数） |
 
 ## 订单类型说明
 

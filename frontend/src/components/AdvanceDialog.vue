@@ -101,7 +101,7 @@ const form = reactive({
   remark: ''
 })
 
-const employeeTypeLabel = (t) => ({ 1: '店长', 2: '配送员工', 3: '业务员' }[t] || '未知')
+const employeeTypeLabel = (t) => ({ 1: '店长', 2: '配送员工', 3: '业务员', 4: '管理员' }[t] || '未知')
 
 const rules = {
   workerId: [{ required: true, message: '请选择员工', trigger: 'change' }],

@@ -87,8 +87,8 @@
               <span class="value">{{ order.deliveryStaff || '-' }}</span>
             </div>
             <div class="footer-row">
-              <span class="label">销售电话:</span>
-              <span class="value">{{ order.customerPhone || '-' }}</span>
+              <span class="label">店长联系电话:</span>
+              <span class="value">{{ order.managerPhone || '-' }}</span>
             </div>
           </div>
           <div class="footer-right">

@@ -136,11 +136,16 @@ async function getOrderById(req, res) {
   try {
     const { id } = req.params;
 
-    // 查询订单基本信息（LEFT JOIN workers 获取创建人姓名和配送员工姓名）
-    const orderSql = `SELECT o.*, w.worker_name AS creator_name, dw.worker_name AS delivery_staff_name
+    // 查询订单基本信息（LEFT JOIN workers 获取创建人姓名和配送员工姓名；
+    // LEFT JOIN 水站/机台取「店长」信息，供打印预览「店长联系电话」使用，2026-09-16）
+    const orderSql = `SELECT o.*, w.worker_name AS creator_name, dw.worker_name AS delivery_staff_name,
+        s.contact_name AS station_manager, s.phone AS station_manager_phone,
+        m.manager AS machine_manager, m.manager_phone AS machine_manager_phone
       FROM orders o
       LEFT JOIN workers w ON o.created_by = w.worker_id
       LEFT JOIN workers dw ON o.worker_id = dw.worker_id
+      LEFT JOIN sub_stations s ON o.station_id = s.station_id
+      LEFT JOIN machine_stations m ON o.machine_station_id = m.machine_id
       WHERE o.order_id = ?`;
     const [orderRows] = await pool.execute(orderSql, [id]);
 
@@ -201,6 +206,10 @@ async function getOrderById(req, res) {
     const order = {
       ...formatOrder(orderRows[0]),
       items: formattedItems,
+      // 店长（联系人）信息：直营水站销售取水站联系人，机台供货(4/6)取机台店长；其他类型无店长，均为空。
+      // 打印预览「店长联系电话」直接用 managerPhone，前端不做任何兜底拼接（口径唯一在后端）。
+      managerName: orderRows[0].station_manager || orderRows[0].machine_manager || '',
+      managerPhone: orderRows[0].station_manager_phone || orderRows[0].machine_manager_phone || '',
       // 营收与配送费拆分由后端计算，前端不再有 calcOrderRevenue 实现
       revenue,
       deliveryFeePart
