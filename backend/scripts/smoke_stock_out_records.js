@@ -1,8 +1,14 @@
 /**
  * 冒烟测试：P1-F4 出库台账
- * 链路：出库 1 件 → 断言台账新增记录且字段完整（快照/类型/出库后库存/经手人）
- *      → 断言列表接口筛选可用 → 恢复库存并清理台账记录
+ * 链路：出库 2 件 → 断言台账新增记录且字段完整（快照/类型/出库后库存/经手人）
+ *      → 断言列表接口筛选可用 → 删除自建商品（库存/台账级联清理）
  * 运行：node scripts/smoke_stock_out_records.js（需后端已启动）
+ *
+ * 2026-09-16 改造：不再取真实商品。
+ *   旧版 `SELECT product_id, quantity FROM inventory WHERE quantity >= 5 ORDER BY quantity DESC LIMIT 1`
+ *   会优先选中真实商品（本次即选中 19L桶装水），虽成对出库/恢复，但脚本异常退出
+ *   （进程被 kill、断言抛错、后端未起）就会把真实库存留在被扣减的状态。
+ *   现改为一律自建 `SMK` 标记商品，finally 整体删除。
  */
 const BASE = 'http://localhost:3000/api';
 
@@ -31,37 +37,29 @@ const assert = (cond, name) => {
 
   const { pool } = require('../src/config/db');
 
-  // 找一个库存充足的商品做测试对象。若真实数据里没有（库存被清空 / 全新部署），
-  // 就自建一个带「SMK / 冒烟」标记的临时商品+库存，避免脚本依赖真实数据而假失败
-  // （项目约定：禁止把真实数据当测试对象，且测试数据必须带标记便于清理）。
-  let [[inv]] = await pool.query("SELECT product_id, quantity FROM inventory WHERE quantity >= 5 ORDER BY quantity DESC LIMIT 1");
-  let tempProduct = null;
-  if (!inv) {
-    const pid = 'SMK' + Date.now();
-    await pool.query(
-      "INSERT INTO products (product_id, product_code, product_name, specification, unit, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, category, status, created_at, updated_at) " +
-      "VALUES (?, ?, ?, '', '箱', 1, 1, 1, 1, 0, 0, 0, 0, 0, '冒烟测试', 1, NOW(), NOW())",
-      [pid, pid, '冒烟-出库台账测试商品']
-    );
-    await pool.query('INSERT INTO inventory (product_id, quantity) VALUES (?, 20)', [pid]);
-    inv = { product_id: pid, quantity: 20 };
-    tempProduct = pid;
-    console.log('  [准备] 无充足库存商品，已自建临时冒烟商品 ' + pid);
-  }
-  assert(!!inv, '找到测试商品库存');
+  // 一律自建带「SMK / 冒烟」标记的临时商品 + 库存，不依赖真实数据
+  // （项目约定：禁止把真实数据当测试对象，测试数据必须带标记便于清理）
+  const pid = 'SMK' + Date.now();
+  await pool.query(
+    "INSERT INTO products (product_id, product_code, product_name, specification, unit, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, category, status, created_at, updated_at) " +
+    "VALUES (?, ?, '冒烟-出库台账测试商品', '', '箱', 1, 1, 1, 1, 0, 0, 0, 0, 0, '冒烟测试', 1, NOW(), NOW())",
+    [pid, pid]
+  );
+  await pool.query('INSERT INTO inventory (product_id, quantity, last_in_time) VALUES (?, 20, NOW())', [pid]);
+  const before = 20;
+  console.log('  [准备] 已自建临时冒烟商品 ' + pid + '（库存 ' + before + '）');
 
-  const pid = inv.product_id;
-  const before = inv.quantity;
+  const [[inv]] = await pool.query('SELECT product_id, quantity FROM inventory WHERE product_id = ?', [pid]);
+  assert(!!inv && Number(inv.quantity) === before, '自建冒烟商品库存就绪');
 
   const cleanup = async () => {
-    // 恢复库存 + 删除台账记录；临时商品则连同库存一并物理清除
+    // 自建对象：库存/台账/商品一并物理清除，无需「回写跑前快照」
     try {
-      await pool.query('UPDATE inventory SET quantity = ? WHERE product_id = ?', [before, pid]);
-      await pool.query("DELETE FROM stock_out_records WHERE remark = '冒烟-台账测试'");
-      if (tempProduct) {
-        await pool.query('DELETE FROM inventory WHERE product_id = ?', [tempProduct]);
-        await pool.query('DELETE FROM products WHERE product_id = ?', [tempProduct]);
-      }
+      await pool.query('DELETE FROM stock_out_records WHERE product_id = ?', [pid]);
+      await pool.query('DELETE FROM inventory WHERE product_id = ?', [pid]);
+      await pool.query('DELETE FROM products WHERE product_id = ?', [pid]);
+      const [[left]] = await pool.query('SELECT COUNT(*) c FROM products WHERE product_id = ?', [pid]);
+      if (Number(left.c) !== 0) throw new Error('临时商品未删除干净');
     } catch (e) {
       console.error('清理失败:', e.message);
     }
@@ -98,13 +96,11 @@ const assert = (cond, name) => {
     const kw = await call('GET', `/inventory/stock-out-records?keyword=${encodeURIComponent('冒烟-台账测试')}&page=1&pageSize=10`, null, token);
     assert((kw.data?.list || []).length >= 1, '关键词筛选命中');
 
-    // 恢复并校验（临时商品此时尚未删除，可核对数量）
-    await pool.query('UPDATE inventory SET quantity = ? WHERE product_id = ?', [before, pid]);
-    await pool.query("DELETE FROM stock_out_records WHERE remark = '冒烟-台账测试'");
+    // 库存确实被扣减（自建商品，finally 整体删除，无需回写快照）
     const [[after]] = await pool.query('SELECT quantity FROM inventory WHERE product_id = ?', [pid]);
-    assert(after.quantity === before, `库存已恢复（${after.quantity} === ${before}）`);
+    assert(Number(after.quantity) === before - 2, `库存已扣减（${after.quantity} === ${before - 2}）`);
   } finally {
-    // 无论断言是否失败/提前抛错，都必须清干净临时商品与台账记录
+    // 无论断言是否失败/提前抛错，都必须清干净临时商品、库存与台账记录
     await cleanup();
   }
   console.log('清理完成');

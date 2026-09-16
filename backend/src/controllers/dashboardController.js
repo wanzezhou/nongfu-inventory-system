@@ -4,11 +4,13 @@ const { success, error } = require('../utils/response');
 // 获取统计数据
 async function getSummary(req, res) {
   try {
-    // totalInventoryValue：所有商品库存*进货价的总和
+    // totalInventoryValue：库存金额 = Σ max(库存,0) × 进货价，仅统计启用商品
+    //   ① GREATEST(quantity,0)：负库存不计负值，避免单条脏数据把总额拉成负数
+    //   ② INNER JOIN + status=1：软删商品不计入
     const [inventoryRows] = await pool.execute(`
-      SELECT COALESCE(SUM(i.quantity * p.purchase_price), 0) as totalInventoryValue
+      SELECT COALESCE(SUM(GREATEST(i.quantity, 0) * p.purchase_price), 0) as totalInventoryValue
       FROM inventory i
-      LEFT JOIN products p ON i.product_id = p.product_id
+      INNER JOIN products p ON i.product_id = p.product_id AND p.status = 1
     `);
     const totalInventoryValue = inventoryRows[0].totalInventoryValue;
 
@@ -22,14 +24,8 @@ async function getSummary(req, res) {
     `);
     const monthSales = salesRows[0].monthSales;
 
-    // stationDebt：所有水站current_debt总和 + 水站数量
-    const [debtRows] = await pool.execute(`
-      SELECT COALESCE(SUM(current_debt), 0) as stationDebt, COUNT(*) as stationCount
-      FROM sub_stations
-      WHERE status = 1
-    `);
-    const stationDebt = debtRows[0].stationDebt;
-    const stationCount = debtRows[0].stationCount;
+    // 注：原「水站欠款总额 / 在职水站数」聚合已于 2026-09-16 随仪表盘卡片一并下线
+    //     （业务方确认不使用该指标；建单挂账逻辑仍在，仅不再对外展示）
 
     // pendingOrders（待配送数）：自有员工配送(delivery_type=1)且未分配配送员(worker_id IS NULL)且未取消
     const [pendingRows] = await pool.execute(`
@@ -44,8 +40,6 @@ async function getSummary(req, res) {
     const result = {
       totalInventoryValue,
       monthSales,
-      stationDebt,
-      stationCount,
       pendingOrders
     };
 

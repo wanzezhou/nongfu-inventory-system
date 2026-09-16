@@ -60,6 +60,12 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const machineIds = smokeMachines.map(r => r.machine_id);
     const userIds = smokeUsers.map(r => r.id);
 
+    // 冒烟订单曾引用的水站（删除订单前先记下，删完再按凭证重算欠款；见下方「水站欠款回补」）
+    const touchedStationRows = orderIds.length
+      ? await pick('SELECT DISTINCT station_id FROM orders WHERE order_id IN (?) AND station_id IS NOT NULL', [orderIds])
+      : [];
+    const touchedStationIds = touchedStationRows.map(r => r.station_id);
+
     const txConds = [MARKERS.txByRemark];
     const txArgs = [];
     if (purchaseIds.length) { txConds.push('related_id IN (?)'); txArgs.push(purchaseIds); }
@@ -132,6 +138,28 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     }
     if (orderIds.length) {
       await del('orders', 'DELETE FROM orders WHERE order_id IN (?)', [orderIds]);
+    }
+    // ---- 水站欠款回补（2026-09-16 新增）----
+    // 为什么需要：旧版冒烟脚本取「真实水站」建单（sub_stations ORDER BY station_id LIMIT 1），
+    // 清理靠「跑前快照回写 current_debt」——脚本异常退出、或两个脚本交叉执行时，
+    // 后跑的会把自己基线定成前者尚未回滚的虚高值并固化下来（实测 ST001 由 154 涨到 550，
+    // 而真实 type2 订单只有 154）。此前的 MARKERS 完全不含 current_debt，兜底清理修不了。
+    // 口径与 addStationDebt / restoreSalesEffects 一致：current_debt = 该站**有效** type2 订单金额合计。
+    // 只在「本次冒烟订单确实引用过该站」时才重算，避免误改业务方手工调整过的欠款。
+    for (const sid of touchedStationIds) {
+      if (stationIds.includes(sid)) continue; // 冒烟自建水站即将整体删除，无需重算
+      const [[voucher]] = await conn.query(
+        `SELECT COALESCE(SUM(order_amount), 0) AS v FROM orders
+         WHERE order_type = 2 AND station_id = ? AND canceled_at IS NULL`,
+        [sid]
+      );
+      const [r] = await conn.query(
+        'UPDATE sub_stations SET current_debt = ? WHERE station_id = ? AND current_debt <> ?',
+        [voucher.v, sid, voucher.v]
+      );
+      if (r.affectedRows) {
+        summary.stationDebtReconciled = (summary.stationDebtReconciled || 0) + r.affectedRows;
+      }
     }
     if (productIds.length) {
       await del('products', 'DELETE FROM products WHERE product_id IN (?)', [productIds]);
@@ -232,4 +260,62 @@ async function sweepOrphanOrderRevenue(pool) {
   return res.affectedRows || 0;
 }
 
-module.exports = { cleanupSmokeResidue, MARKERS, revertOrderRevenueBySql, sweepOrphanOrderRevenue };
+/**
+ * 水站欠款对账（2026-09-16 新增）。
+ *
+ * 口径：`sub_stations.current_debt` 应等于该站**有效** type2 订单金额合计
+ *      （与 orderPricingService 的 addStationDebt / restoreSalesEffects 一致）。
+ *
+ * 用途：诊断并可选修复「快照回写」模式留下的欠款虚高。
+ *      ⚠️ 若业务方会手工调整欠款或线下登记还款，重算会覆盖这些调整，
+ *         因此默认只**报告**（apply=false），确认后再显式修复。
+ *
+ * @param {import('mysql2/promise').Pool} pool
+ * @param {Array<string>|null} stationIds 目标水站（null = 全量）
+ * @param {boolean} apply 是否写库修复
+ * @returns {Promise<{total:number, applied:number, drift:Array}>}
+ */
+async function reconcileStationDebt(pool, stationIds = null, apply = false) {
+  const args = [];
+  let where = '';
+  if (stationIds && stationIds.length) {
+    where = 'WHERE s.station_id IN (?)';
+    args.push(stationIds);
+  }
+  const [rows] = await pool.query(
+    `SELECT s.station_id, s.station_name, s.current_debt,
+            COALESCE(v.total, 0) AS voucherDebt
+       FROM sub_stations s
+       LEFT JOIN (
+         SELECT station_id, SUM(order_amount) AS total
+           FROM orders
+          WHERE order_type = 2 AND canceled_at IS NULL
+          GROUP BY station_id
+       ) v ON v.station_id = s.station_id
+       ${where}
+       ORDER BY s.station_id`,
+    args
+  );
+
+  const drift = rows
+    .filter(r => Math.abs(Number(r.current_debt) - Number(r.voucherDebt)) > 0.001)
+    .map(r => ({
+      stationId: r.station_id,
+      stationName: r.station_name,
+      book: Math.round(Number(r.current_debt) * 100) / 100,
+      voucher: Math.round(Number(r.voucherDebt) * 100) / 100
+    }));
+
+  if (apply) {
+    for (const d of drift) {
+      await pool.query('UPDATE sub_stations SET current_debt = ? WHERE station_id = ?', [d.voucher, d.stationId]);
+    }
+  }
+  return { total: rows.length, applied: apply ? drift.length : 0, drift };
+}
+
+module.exports = {
+  cleanupSmokeResidue, MARKERS,
+  revertOrderRevenueBySql, sweepOrphanOrderRevenue,
+  reconcileStationDebt
+};

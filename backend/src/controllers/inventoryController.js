@@ -117,9 +117,10 @@ async function getInventoryList(req, res) {
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     const formattedList = list.map(item => formatInventory(item, baseUrl));
 
-    // 库存价值合计（进货价×库存数量，全量统计，受搜索/分类过滤联动）
+    // 库存价值合计（Σ max(库存,0) × 进货价，全量统计，受搜索/分类过滤联动）
+    //   GREATEST(quantity,0)：负库存不计负值，与仪表盘「库存总金额」口径保持一致
     const sumSql = `
-      SELECT COALESCE(SUM(p.purchase_price * i.quantity), 0) AS total_value
+      SELECT COALESCE(SUM(p.purchase_price * GREATEST(i.quantity, 0)), 0) AS total_value
       FROM products p
       LEFT JOIN inventory i ON p.product_id = i.product_id
       ${whereClause}

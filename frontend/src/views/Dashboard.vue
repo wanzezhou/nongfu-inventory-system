@@ -1,7 +1,7 @@
 <template>
   <div class="dashboard">
     <el-row :gutter="16" class="stat-cards">
-      <el-col v-for="(card, idx) in statCards" :key="idx" :xs="24" :sm="12" :md="6" :style="{ animationDelay: idx * 0.05 + 's' }">
+      <el-col v-for="(card, idx) in statCards" :key="idx" :xs="24" :sm="12" :md="cardSpan" :style="{ animationDelay: idx * 0.05 + 's' }">
         <div class="stat-card">
           <div class="stat-label"><span class="dot" :style="{ background: card.dotColor }"></span>{{ card.label }}</div>
           <div class="stat-value font-serif">{{ card.valuePrefix }}{{ card.value }}<span v-if="card.unit" class="unit">{{ card.unit }}</span></div>
@@ -38,8 +38,6 @@ let trendChart = null
 const summaryData = ref({
   totalInventoryValue: 0,
   monthlySales: 0,
-  stationDebt: 0,
-  stationCount: 0,
   pendingOrders: 0
 })
 
@@ -50,7 +48,7 @@ const statCards = computed(() => [
     value: formatMoney(summaryData.value.totalInventoryValue),
     valuePrefix: '¥ ',
     dotColor: 'var(--primary)',
-    desc: '全部商品 库存 × 进货价'
+    desc: '启用商品 库存 × 进货价（负库存按 0 计）'
   },
   {
     label: '本月销售额',
@@ -58,13 +56,6 @@ const statCards = computed(() => [
     valuePrefix: '¥ ',
     dotColor: 'var(--green)',
     desc: '本月订单金额合计（不含已取消）'
-  },
-  {
-    label: '水站欠款总额',
-    value: formatMoney(summaryData.value.stationDebt),
-    valuePrefix: '¥ ',
-    dotColor: 'var(--gold)',
-    desc: `共 ${summaryData.value.stationCount ?? 0} 个在职水站`
   },
   {
     label: '待配送订单',
@@ -75,6 +66,9 @@ const statCards = computed(() => [
     desc: '自有配送且未分配配送员'
   }
 ])
+
+// 卡片栅格等分：3 张 → 8，4 张 → 6，保证末行不留空
+const cardSpan = computed(() => Math.max(3, Math.floor(24 / (statCards.value.length || 1))))
 
 const trendData = ref({ dates: [], sales: [] })
 const trendEmpty = computed(() => !(trendData.value.sales || []).some((v) => Number(v) > 0))

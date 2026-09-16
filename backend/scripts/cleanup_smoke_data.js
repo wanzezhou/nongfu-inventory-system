@@ -15,9 +15,12 @@
  *      + **订单营收入账孤儿流水**（需求 5 上线后，老脚本用原生 SQL 直删订单绕过回冲所致）
  *   7. salary_payments    用户确认删除的测试工资发放单
  *   8. inventory          冒烟商品库存行
+ *   9. sub_stations       冒烟自建水站（SMKST 前缀），连同其水票/发行批次/结算/订单引用
  *
  * 收尾：按「余额 = 初始余额 + 剩余流水净额」重算所有账户 current_balance，
  *      保证资金记账恒等式成立后再提交。整个过程单事务，任一步失败整体回滚。
+ *      另附「水站欠款对账」只读报告（口径：该站有效 type2 订单金额合计），
+ *      历史漂移只提示、不自动改，避免覆盖业务方手工调整或线下还款登记。
  *
  * 用法：
  *   node scripts/cleanup_smoke_data.js          # 预演（只读，不修改任何数据）
@@ -132,6 +135,14 @@ async function main() {
       "SELECT machine_id, station_name FROM machine_stations WHERE machine_id LIKE 'SMKM%' OR station_name LIKE '冒烟%'"
     );
     const machineIds = smokeMachines.map(r => r.machine_id);
+    // 冒烟自建水站（SMKST* 前缀 / 名称含冒烟）—— 2026-09-16 起纳入口径
+    // 背景：旧版冒烟脚本取「真实水站」建单（sub_stations ORDER BY station_id LIMIT 1），
+    //      建单经 addStationDebt 直接累加真实 current_debt；清理靠「跑前快照回写」，
+    //      脚本异常退出或两脚本交叉执行时虚高会被固化（实测 ST001 由 154 涨到 550）。
+    const smokeStations = await pick(
+      "SELECT station_id, station_name, current_debt FROM sub_stations WHERE station_id LIKE 'SMKST%' OR station_name LIKE '冒烟%'"
+    );
+    const stationIds = smokeStations.map(r => r.station_id);
     const stockOuts = productIds.length
       ? await pick('SELECT record_id FROM stock_out_records WHERE product_id IN (?)', [productIds])
       : [];
@@ -177,6 +188,7 @@ async function main() {
       ['inventory（冒烟商品库存行）', invRows.map(r => `#${r.inventory_id}`)],
       ['water_tickets（2099/脚本标记水票）', ticketMarkers.map(r => `${r.ticket_id}(${r.month}/${r.issued_by})`)],
       ['machine_stations（冒烟机台）', smokeMachines.map(r => `${r.machine_id}/${r.station_name}`)],
+      ['sub_stations（冒烟水站）', smokeStations.map(r => `${r.station_id}/${r.station_name}(欠款${r.current_debt})`)],
       ['其他零散关联', [].concat(machineSales.map(r => `machine_sales/${r.sale_id}`), stockOuts.map(r => `stock_out_records/${r.record_id}`), tickets.map(r => `water_tickets/${r.ticket_id}`), ticketIssues.map(r => `water_ticket_issuance/${r.issuance_id}`), ticketsByOrder.map(r => `water_tickets/${r.ticket_id}`), dfSettleByOrder.map(r => `dfs/${r.settlement_id}`), dfSettleByProduct.map(r => `dfs/${r.settlement_id}`), finSettle.map(r => `fin#${r.settlement_id}`), salaryLinks.map(r => `spa/${r.payment_id}`), ordersByWorker.map(r => `orders/${r.order_id}`))],
     ];
     for (const [label, items] of plan) {
@@ -207,6 +219,20 @@ async function main() {
       const after = Math.round((before - Number(r[0].n)) * 100) / 100;
       const flag = after !== before ? '  ← 变化' : '';
       line(`  ${a.account_name.padEnd(12, ' ')} ${before.toFixed(2).padStart(10)} → ${after.toFixed(2).padStart(10)}${flag}`);
+    }
+
+    // 水站欠款对账（只读报告）：口径 = 该站**有效** type2 订单金额合计
+    // 自动「回补」只发生在 cleanupSmokeResidue 内「本次冒烟订单确实引用过的水站」这一窄范围；
+    // 这里对**历史遗留**漂移只做提示、不动数据——重算可能覆盖业务方手工调整或线下还款登记。
+    const { reconcileStationDebt } = require('./lib/smokeCleanup');
+    const debtRecon = await reconcileStationDebt(pool, null, false);
+    line();
+    line(`水站欠款对账（口径：该站有效 type2 订单金额合计）　共 ${debtRecon.total} 个水站，存在偏差 ${debtRecon.drift.length} 个`);
+    for (const d of debtRecon.drift) {
+      line(`  ${d.stationId} ${String(d.stationName || '').padEnd(10, ' ')} 账面 ${d.book.toFixed(2).padStart(10)} ≠ 凭证 ${d.voucher.toFixed(2).padStart(10)}　差额 ${(d.book - d.voucher).toFixed(2)}`);
+    }
+    if (debtRecon.drift.length) {
+      line('  说明：本脚本不自动修正历史漂移；如需按凭证归位，请先确认后单独处理。');
     }
 
     const total = productIds.length + orderIds.length + purchaseIds.length + txIds.length +
@@ -287,6 +313,14 @@ async function main() {
     }
     if (productIds.length) {
       await del('products', 'DELETE FROM products WHERE product_id IN (?)', [productIds]);
+    }
+    // 3.5b 冒烟自建水站：先清引用（水票/发行批次/结算/订单），再删水站本身
+    if (stationIds.length) {
+      await del('water_tickets(by station)', 'DELETE FROM water_tickets WHERE station_id IN (?)', [stationIds]);
+      await del('water_ticket_issuance(station)', 'DELETE FROM water_ticket_issuance WHERE station_id IN (?)', [stationIds]);
+      await del('financial_settlement(station)', 'DELETE FROM financial_settlement WHERE station_id IN (?)', [stationIds]);
+      await del('orders(by station)', 'DELETE FROM orders WHERE station_id IN (?)', [stationIds]);
+      await del('sub_stations', 'DELETE FROM sub_stations WHERE station_id IN (?)', [stationIds]);
     }
     // 3.6 员工（先摘除引用）
     if (workerIds.length) {

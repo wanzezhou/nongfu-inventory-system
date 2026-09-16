@@ -54,10 +54,16 @@ const approx = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
       return r.quantity;
     };
 
-    // 水站 + 初始欠款
-    const [[st]] = await pool.query("SELECT station_id, current_debt FROM sub_stations ORDER BY station_id LIMIT 1");
-    stationId = st.station_id;
-    stationDebt0 = Number(st.current_debt);
+    // 自建冒烟水站（⚠️ 禁止取真实水站）
+    // 旧版 `SELECT station_id, current_debt FROM sub_stations ORDER BY station_id LIMIT 1`
+    // 取到的是真实 ST001：建单经 addStationDebt 直接累加真实 current_debt，
+    // 而清理靠「跑前快照回写」，脚本异常退出或两脚本交叉执行时虚高会被固化下来。
+    stationId = `SMKST${Date.now()}`;
+    await pool.query(
+      'INSERT INTO sub_stations (station_id, station_name, current_debt, status) VALUES (?, ?, 0, 1)',
+      [stationId, '冒烟水站(定价测试)']
+    );
+    stationDebt0 = 0;
 
     // 临时水票 2 张（类型2 抵扣用）
     for (let i = 0; i < 2; i++) {
@@ -253,8 +259,12 @@ const approx = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
         await pool.query(`DELETE FROM delivery_fee_settlement WHERE order_id IN (${ph})`, cleanupIds.orders);
         await pool.query(`DELETE FROM orders WHERE order_id IN (${ph})`, cleanupIds.orders);
       }
-      if (stationId !== null && stationDebt0 !== null) {
-        await pool.query('UPDATE sub_stations SET current_debt = ? WHERE station_id = ?', [stationDebt0, stationId]);
+      // 自建冒烟水站整体删除（不再用「快照回写」：该模式在多脚本交叉执行/异常退出时会固化虚高值）
+      if (stationId) {
+        await pool.query('DELETE FROM water_tickets WHERE station_id = ?', [stationId]);
+        await pool.query('DELETE FROM water_ticket_issuance WHERE station_id = ?', [stationId]);
+        await pool.query('DELETE FROM financial_settlement WHERE station_id = ?', [stationId]);
+        await pool.query('DELETE FROM sub_stations WHERE station_id = ?', [stationId]);
       }
       if (cleanupIds.ticketIds.length) {
         await pool.query('DELETE FROM water_tickets WHERE ticket_id IN (?)', [cleanupIds.ticketIds]);
@@ -277,7 +287,7 @@ const approx = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
       console.log('  ⚠️ 清理异常（测试数据可能残留）: ' + e.message);
     }
     console.log(cleanupOk
-      ? '清理完成（测试商品/订单/水票已删除，水站欠款已还原）'
+      ? '清理完成（测试商品/订单/水票/水站已删除）'
       : '⚠️ 清理未完成，请检查上方异常');
     await pool.end();
   }
