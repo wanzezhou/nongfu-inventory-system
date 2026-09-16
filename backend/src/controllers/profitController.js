@@ -20,7 +20,7 @@
 // ---------------------------------------------------------------------------
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
-const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
+const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/dateRange');
 const { ORDER_TYPES, VALID_ORDER_TYPES } = require('../constants/order');
 const { itemRevenueExpr } = require('../utils/revenueExpr');
 const {
@@ -53,7 +53,7 @@ async function getProfitByType(req, res) {
     const wantType = Number(req.query.orderType);
     if (!VALID_ORDER_TYPES.includes(wantType)) return error(res, '订单类型无效', 400);
     const r = resolveRange(req.query);
-    if (!r) return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+    if (!r) return error(res, RANGE_INVALID_MSG, 400);
     const rw = buildRangeWhere('o.created_at', r);
 
     // 机台类型（4/6）：营收来自 machine_sales，成本来自机台供货订单
@@ -235,7 +235,7 @@ async function getMachineProfit(req, res, orderType, r) {
 async function getProfitOverview(req, res) {
   try {
     const r = resolveRange(req.query);
-    if (!r) return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+    if (!r) return error(res, RANGE_INVALID_MSG, 400);
     const rw = buildRangeWhere('o.created_at', r);
 
     // 订单类 1/2/3/5：按订单聚合再按类型汇总

@@ -11,7 +11,7 @@
 //   worker_wholesale_delivery_fee）且已被 getCostByType(2) 覆盖。成本汇总页改走 /overview 与 /by-type。
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
-const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
+const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/dateRange');
 const { ORDER_TYPES, VALID_ORDER_TYPES } = require('../constants/order');
 const costExprUtil = require('../utils/costExpr');
 const {
@@ -46,7 +46,7 @@ async function getCostByType(req, res) {
     }
     const r = resolveRange(req.query);
     if (!r) {
-      return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+      return error(res, RANGE_INVALID_MSG, 400);
     }
     const rw = buildRangeWhere('o.created_at', r);
     const where = `WHERE o.order_type = ? AND o.canceled_at IS NULL AND ${rw.clause}`;
@@ -146,7 +146,7 @@ async function getCostOverview(req, res) {
   try {
     const r = resolveRange(req.query);
     if (!r) {
-      return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+      return error(res, RANGE_INVALID_MSG, 400);
     }
     const rw = buildRangeWhere('o.created_at', r);
     const [rows] = await pool.execute(
@@ -201,7 +201,7 @@ async function getMachineCost(req, res) {
     if (![1, 2].includes(machineType)) return error(res, '机台类型无效（1=量贩机 / 2=零售机）', 400);
     const orderType = MACHINE_ORDER_TYPE[machineType];
     const r = resolveRange(req.query);
-    if (!r) return error(res, '时间范围不合法', 400);
+    if (!r) return error(res, RANGE_INVALID_MSG, 400);
     const rw = buildRangeWhere('o.created_at', r);
 
     const [rows] = await pool.execute(
@@ -310,7 +310,7 @@ async function getCostOrderLines(req, res) {
 
     if (!VALID_ORDER_TYPES.includes(wantType)) return error(res, '订单类型无效', 400);
     const r = resolveRange(req.query);
-    if (!r) return error(res, '时间范围不合法', 400);
+    if (!r) return error(res, RANGE_INVALID_MSG, 400);
     const rw = buildRangeWhere('o.created_at', r);
     const [rows] = await pool.execute(
       `SELECT o.order_id, o.order_type, o.delivery_type, p.product_name, p.specification, p.unit,

@@ -1,12 +1,18 @@
 // 统一时间范围解析（成本统计 / 工资统计 / 其他支出等模块共用）
 //
-// 预设：month(本月) / lastMonth(上月) / quarter(本季度) / year(今年) / custom(自定义)
+// 预设：day(今日) / week(本周) / month(本月) / lastMonth(上月) / quarter(本季度) / year(今年) / custom(自定义)
 // 兼容旧参数：month=YYYY-MM（等价于该整月，供历史调用与冒烟脚本使用）
 //
 // 约定：返回的 start 为闭区间起点、end 为开区间终点（均 YYYY-MM-DD，含端点为 end 前一天）
 //   例如 7 月整月 → { start: '2026-07-01', end: '2026-08-01' }
+//   day → { start: '今天', end: '明天' }；week → { start: '本周一', end: '明天' }
+//   （day/week 口径与 statisticsController 的历史实现一致，均到「今天」为止，不含未来）
 
-const RANGE_KEYS = ['month', 'lastMonth', 'quarter', 'year', 'custom'];
+const RANGE_KEYS = ['day', 'week', 'month', 'lastMonth', 'quarter', 'year', 'custom'];
+
+// 非法 range 的统一提示文案：由白名单派生，避免增删预设后文案漂移（各控制器统一引用）
+const RANGE_INVALID_MSG =
+  `时间范围不合法：range 支持 ${RANGE_KEYS.join('/')}，自定义需合法起止日期`;
 
 function isMonthStr(m) {
   return typeof m === 'string' && /^\d{4}-\d{2}$/.test(m);
@@ -65,6 +71,17 @@ function resolveRange(q = {}) {
       const [y, m] = month.split('-').map(Number);
       start = fmt(new Date(y, m - 1, 1));
       end = fmt(new Date(y, m, 1));
+      break;
+    }
+    case 'day': {
+      start = fmt(today);
+      end = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+      break;
+    }
+    case 'week': {
+      const dow = now.getDay() || 7; // 周日=7，周一=1
+      start = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow + 1));
+      end = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
       break;
     }
     case 'month': {
@@ -132,4 +149,4 @@ function buildRangeWhere(column, r) {
   return { clause: clauses.join(' AND '), params };
 }
 
-module.exports = { resolveRange, buildRangeWhere, isMonthStr, isDateStr, RANGE_KEYS };
+module.exports = { resolveRange, buildRangeWhere, isMonthStr, isDateStr, RANGE_KEYS, RANGE_INVALID_MSG };

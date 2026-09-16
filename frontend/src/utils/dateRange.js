@@ -39,6 +39,10 @@ export function rangeText(r) {
   const now = new Date()
   const y = now.getFullYear()
   switch (r.range) {
+    case 'day':
+      return '今日'
+    case 'week':
+      return '本周'
     case 'month':
       return `${y}年${now.getMonth() + 1}月`
     case 'lastMonth': {

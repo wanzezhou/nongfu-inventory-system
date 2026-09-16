@@ -51,6 +51,11 @@ request.interceptors.response.use(
           ElMessage.error('请求失败')
         }
       })
+    } else if (error.response && error.response.data && error.response.data.message) {
+      // 后端已返回结构化业务错误（HTTP 4xx/5xx + {code, message}）：
+      // 文案交由调用方 catch 展示（各页面统一读 e.response.data.message），
+      // 此处只打日志，避免与页面提示重复弹出、也不再暴露 axios 的英文原文。
+      console.error('业务错误:', error.response.data.message)
     } else {
       console.error('响应错误:', error)
       ElMessage.error(error.message || '网络错误')

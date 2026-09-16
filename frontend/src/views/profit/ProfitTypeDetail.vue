@@ -231,13 +231,13 @@ onMounted(() => fetchData())
 .card-value { font-size: 25px; font-weight: 700; margin: 6px 0 4px; line-height: 1.2; color: var(--text); font-variant-numeric: tabular-nums; }
 .card-value.total { font-size: 30px; }
 .card-value.positive { color: var(--gold); }
-.card-value.negative { color: #67c23a; }
+.card-value.negative { color: var(--green); }
 .card-desc { font-size: 12px; color: var(--text-3); line-height: 1.5; }
 .detail-card { border-radius: var(--radius-md); }
 .card-header { display: flex; align-items: center; justify-content: space-between; }
 .header-sub { font-size: 12px; color: var(--text-3); font-weight: 400; }
 .pos { color: var(--gold); }
-.neg { color: #67c23a; }
+.neg { color: var(--green); }
 .bold { font-weight: 600; }
 
 @media (max-width: 768px) {

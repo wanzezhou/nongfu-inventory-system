@@ -9,7 +9,7 @@ const { success, error } = require('../utils/response');
 const { ORDER_TYPES, VALID_ORDER_TYPES } = require('../constants/order');
 // 订单类型 SQL 片段（全部合法类型，含 5-水公社）
 const ORDER_TYPE_IN = `o.order_type IN (${VALID_ORDER_TYPES.join(',')})`;
-const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
+const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/dateRange');
 
 // 订单类型 -> 员工配送费费率（order_items 创建时快照的商品配送费）
 //   送水到府(1) / 线下零售(3) / 水公社(5)：工人零售配送费
@@ -103,7 +103,7 @@ async function getSalarySummary(req, res) {
   try {
     const r = resolveRange(req.query);
     if (!r) {
-      return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+      return error(res, RANGE_INVALID_MSG, 400);
     }
     const multiMonth = !r.isSingleMonth;
     const rw = buildRangeWhere('o.created_at', r);

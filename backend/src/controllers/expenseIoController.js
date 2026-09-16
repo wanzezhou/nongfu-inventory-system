@@ -3,7 +3,7 @@ const { writeWorkbook, readSheetJson, readCsvAoa } = require('../utils/excel');
 const multer = require('multer');
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
-const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
+const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/dateRange');
 const expenseCore = require('./expenseController');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -135,7 +135,7 @@ async function exportExpenses(req, res) {
     if (range || month) {
       const r = resolveRange({ range, month, startDate, endDate });
       if (!r) {
-        return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+        return error(res, RANGE_INVALID_MSG, 400);
       }
       const rw = buildRangeWhere('expense_date', r);
       if (rw.clause) {

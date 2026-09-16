@@ -2,7 +2,7 @@
 const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 const { parsePage } = require('../utils/pagination');
-const { resolveRange, buildRangeWhere } = require('../utils/dateRange');
+const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/dateRange');
 
 // 预置支出类别
 const PRESET_CATEGORIES = ['运输', '仓储', '房租水电', '办公', '维修', '招待', '营销', '其他'];
@@ -78,7 +78,7 @@ async function getExpenses(req, res) {
     if (range || month) {
       const r = resolveRange({ range, month, startDate, endDate });
       if (!r) {
-        return error(res, '时间范围不合法：range 支持 month/lastMonth/quarter/year/custom，自定义需合法起止日期', 400);
+        return error(res, RANGE_INVALID_MSG, 400);
       }
       const rw = buildRangeWhere('expense_date', r);
       if (rw.clause) {
