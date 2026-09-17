@@ -10,6 +10,11 @@
  *   - 侧边栏二级项的 index 为虚拟键（/fm/xxx），真实跳转目标在 to 字段：
  *     这样 MENU_TITLES 仍只映射「真实页面路径 → 页面标题」，不会被二级菜单标题污染
  *
+ * 2026-09-17 工资统计归入成本统计：
+ *   - 成本汇总页的「成本合计」本就是「直营水站成本 + 员工工资 + 其他支出」（口径见 CostSummary.vue），
+ *     工资是成本的构成项 → 「工资统计」由财务管理二级项下移为「成本统计」组的三级标签
+ *   - 财务管理二级项随之由 4 个减为 3 个（营收统计 / 成本统计 / 利润统计）
+ *
  * ⚠️ 改菜单只改本文件：router 的 meta.title 与面包屑都从这里派生。
  *    新增真实页面必须登记进 menuGroups（item / group.items）或 tabGroups[].tabs。
  */
@@ -51,7 +56,9 @@ export const tabGroups = [
       { index: '/cost/retail', title: '线下零售', icon: ShoppingCart },
       { index: '/cost/bulk-machine', title: '量贩机', icon: Wallet },
       { index: '/cost/retail-machine', title: '零售机', icon: Van },
-      { index: '/cost/expenses', title: '其他支出', icon: Wallet }
+      { index: '/cost/expenses', title: '其他支出', icon: Wallet },
+      // 工资是「成本合计」的构成项之一（成本汇总页：直营水站成本 + 员工工资 + 其他支出）
+      { index: '/salary', title: '工资统计', icon: Money }
     ]
   },
   {
@@ -81,7 +88,8 @@ export function tabGroupOf(path) {
 /** 侧边栏虚拟入口 index（/fm/<key>） */
 export const fmEntryIndex = (g) => `/fm/${g.key}`
 
-/** 一级分组「财务管理」——二级项：营收统计 / 成本统计 / 工资统计 / 利润统计 */
+/** 一级分组「财务管理」——二级项：营收统计 / 成本统计 / 利润统计
+ *  （工资统计已于 2026-09-17 下移为「成本统计」组的三级标签，见 tabGroups.cost.tabs） */
 const FINANCE_MENU_TITLE = '财务管理'
 const REVENUE_GROUP = tabGroups.find((g) => g.key === 'revenue')
 const COST_GROUP = tabGroups.find((g) => g.key === 'cost')
@@ -89,7 +97,6 @@ const PROFIT_GROUP = tabGroups.find((g) => g.key === 'profit')
 const FINANCE_ITEMS = [
   { index: fmEntryIndex(REVENUE_GROUP), title: REVENUE_GROUP.title, icon: REVENUE_GROUP.icon, to: REVENUE_GROUP.entry },
   { index: fmEntryIndex(COST_GROUP), title: COST_GROUP.title, icon: COST_GROUP.icon, to: COST_GROUP.entry },
-  { index: '/salary', title: '工资统计', icon: Money },
   { index: fmEntryIndex(PROFIT_GROUP), title: PROFIT_GROUP.title, icon: PROFIT_GROUP.icon, to: PROFIT_GROUP.entry }
 ]
 

@@ -1,7 +1,10 @@
 <template>
-  <!-- 三级菜单：财务管理下「营收统计 / 成本统计 / 利润统计」的页面级入口，置于内容区顶部 -->
-  <div v-if="group" class="nav-tabs-bar">
-    <el-tabs
+  <!--
+    三级菜单：财务管理下「营收统计 / 成本统计 / 利润统计」的页面级入口，置于内容区顶部。
+    标签项完全来自 menuConfig.tabGroups（成本组现含 9 项：成本汇总 + 6 类成本 + 其他支出 + 工资统计），
+    数量超出宽度时由 el-tabs 自带的横向滚动箭头承载，无需额外处理。
+  -->
+  <div v-if="group" class="nav-tabs-bar">    <el-tabs
       class="nav-tabs"
       :model-value="route.path"
       @tab-change="handleChange"
@@ -24,7 +27,7 @@ import { tabGroupOf } from './menuConfig'
 const route = useRoute()
 const router = useRouter()
 
-// 当前路径命中的三级标签组；命中不了（如工资统计、仪表盘）则整条标签栏不渲染
+// 当前路径命中的三级标签组；命中不了（如仪表盘、库存等非财务页面）则整条标签栏不渲染
 const group = computed(() => tabGroupOf(route.path))
 
 const handleChange = (index) => {
