@@ -2,6 +2,7 @@ const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
 const { parsePage } = require('../utils/pagination');
 const { generateId } = require('../utils/idGen');
+const { countRef, describeReferences } = require('../utils/deleteRefs');
 
 // machine_type: 1-量贩机, 2-零售机
 const generateMachineId = () => generateId('M');
@@ -67,12 +68,15 @@ async function getMachineStationById(req, res) {
 // 新增机台
 async function createMachineStation(req, res) {
   try {
+    // ⚠️ normalizeBody(D7) 已把请求体的 snake_case 键统一转成 camelCase 并**删除原键**
+    //    （app.use(normalizeBody) 全局生效）→ 此处只能读驼峰键。
+    //    用「解构重命名」把驼峰键映射回原变量名，下游代码无需改动。
     const {
-      machine_type = 1,
-      station_name,
+      machineType: machine_type = 1,
+      stationName: station_name,
       address,
       manager,
-      manager_phone,
+      managerPhone: manager_phone,
       status = 1
     } = req.body;
 
@@ -113,12 +117,13 @@ async function createMachineStation(req, res) {
 async function updateMachineStation(req, res) {
   try {
     const { id } = req.params;
+    // 同上：读驼峰键（normalizeBody 已删除蛇形键）
     const {
-      machine_type,
-      station_name,
+      machineType: machine_type,
+      stationName: station_name,
       address,
       manager,
-      manager_phone,
+      managerPhone: manager_phone,
       status
     } = req.body;
 
@@ -171,22 +176,67 @@ async function updateMachineStation(req, res) {
 }
 
 // 删除机台（软删除，status设为0）
+// 机台的引用检查：该机台是否已被业务数据引用
+//   ⚠️ machine_sales 的外键是 ON DELETE CASCADE —— 物理删机台会**连带删掉销量记录**，
+//      所以「有销量」必须算作引用（否则删一台机器就静默毁掉它的历史销量）
+async function findMachineReferences(conn, machineId) {
+  const [orders] = await conn.execute(
+    'SELECT COUNT(*) AS n FROM orders WHERE machine_station_id = ?', [machineId]
+  );
+  const [sales] = await conn.execute(
+    'SELECT COUNT(*) AS n FROM machine_sales WHERE machine_id = ?', [machineId]
+  );
+  return [
+    countRef('供货订单', orders[0].n),
+    countRef('销量记录', sales[0].n)
+  ].filter(Boolean);
+}
+
+/**
+ * 删除机台：**无引用 → 物理删除；有引用 → 转为「停用」保留**
+ * 响应：{ mode: 'hard'|'soft', machineId, machineName, references }
+ *   mode=hard 列表里该行消失；mode=soft 行保留但 status=0（列表按状态筛选可见）
+ */
 async function deleteMachineStation(req, res) {
+  const connection = await pool.getConnection();
   try {
     const { id } = req.params;
 
-    const [existing] = await pool.execute('SELECT machine_id, status FROM machine_stations WHERE machine_id = ?', [id]);
+    const [existing] = await connection.execute(
+      'SELECT machine_id, station_name, status FROM machine_stations WHERE machine_id = ?', [id]
+    );
     if (existing.length === 0) {
       return error(res, '机台不存在', 404);
     }
+    const { machine_id: machineId, station_name: machineName } = existing[0];
 
-    const sql = 'UPDATE machine_stations SET status = 0, updated_at = ? WHERE machine_id = ?';
-    await pool.execute(sql, [new Date(), id]);
+    const references = await findMachineReferences(connection, machineId);
 
-    return success(res, null, '机台删除成功');
+    if (references.length === 0) {
+      await connection.beginTransaction();
+      try {
+        await connection.execute('DELETE FROM machine_stations WHERE machine_id = ?', [machineId]);
+        await connection.commit();
+      } catch (e) {
+        await connection.rollback();
+        throw e;
+      }
+      return success(res, { mode: 'hard', machineId, machineName, references },
+        `机台「${machineName}」已删除`);
+    }
+
+    await connection.execute(
+      'UPDATE machine_stations SET status = 0, updated_at = ? WHERE machine_id = ?',
+      [new Date(), machineId]
+    );
+    const detail = describeReferences(references);
+    return success(res, { mode: 'soft', machineId, machineName, references },
+      `机台「${machineName}」存在关联数据（${detail}），已转为「停用」保留而非删除`);
   } catch (err) {
     console.error('删除机台失败:', err);
     return error(res, '删除机台失败: ' + err.message);
+  } finally {
+    connection.release();
   }
 }
 

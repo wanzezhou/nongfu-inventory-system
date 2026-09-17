@@ -129,7 +129,7 @@ npm run dev
 | GET | `/api/stations/:id` | 获取水站详情 |
 | POST | `/api/stations` | 新增水站 |
 | PUT | `/api/stations/:id` | 更新水站 |
-| DELETE | `/api/stations/:id` | 删除水站（软删除） |
+| DELETE | `/api/stations/:id` | 删除水站：**无引用 → 物理删除；有引用（订单/水票/对账/押金/欠款）→ 转停用**，响应 `mode: hard\|soft` + `references` |
 
 ### 库存管理 `/api/inventory`
 | 方法 | 路径 | 说明 |

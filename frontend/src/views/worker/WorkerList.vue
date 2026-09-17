@@ -257,6 +257,7 @@ import { getPrintManager, updatePrintManager } from '@/api/systemSettings'
 import { exportData, downloadBlob } from '@/api/excel'
 import ImportDialog from '@/components/ImportDialog.vue'
 import AdvanceDialog from '@/components/AdvanceDialog.vue'
+import { toastIfHttpError } from '@/utils/errorToast'
 
 const importDialogVisible = ref(false)
 const exporting = ref(false)
@@ -449,13 +450,7 @@ const handleEdit = (row) => {
   dialogVisible.value = true
 }
 
-// 后端业务文案统一取法：
-//   HTTP 4xx/5xx（error.response 存在）→ request.js 拦截器只打日志，需页面自己提示
-//   信封错误（HTTP 200 + code!==200）→ 拦截器已弹提示，页面不再重复弹
-const bizMessage = (error, fallback) => error?.response?.data?.message || error?.message || fallback
-const toastIfHttpError = (error, fallback) => {
-  if (error?.response) ElMessage.error(bizMessage(error, fallback))
-}
+// 错误提示统一走 @/utils/errorToast（语义见该文件注释：信封错误拦截器已弹，页面只提示 HTTP 4xx/5xx）
 
 // 删除员工：后端「能真删就真删，否则设为离职」
 //   mode='hard' → 该员工无任何历史单据，已物理删除
@@ -504,10 +499,10 @@ const handleSubmit = async () => {
     dialogVisible.value = false
     fetchData()
   } catch (error) {
+    // 失败绝不误报成功：原实现此处同样提示「新增/修改成功」并关闭弹窗，用户会以为已保存
+    // （保持弹窗打开，便于修正后重试；信封错误已由拦截器弹过，这里只处理 HTTP 4xx/5xx）
     console.error('提交失败:', error)
-    ElMessage.success(isEdit.value ? '修改成功' : '新增成功')
-    dialogVisible.value = false
-    fetchData()
+    toastIfHttpError(error, '保存失败，请稍后重试')
   } finally {
     submitLoading.value = false
   }

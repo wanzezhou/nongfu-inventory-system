@@ -470,6 +470,58 @@ try {
   console.log('    仪表盘截图已保存：', dashShot)
   // 还原记忆，避免影响后续手动浏览
   await cdp.eval(`localStorage.removeItem('dashboard_trend_granularities'); return true`)
+
+  console.log('\n=== 12) 主数据页删除交互（机台 / 零售机 / 供应商 / 水站）===')
+  const PAGES = [
+    { route: 'bulk-machine', name: '量贩机', must: /停用/ },
+    { route: 'retail-machine', name: '零售机', must: /停用/ },
+    { route: 'supplier', name: '供应商', must: /停用|采购入库/ },
+    { route: 'station', name: '水站', must: /停用|欠款/ }
+  ]
+  for (const p of PAGES) {
+    await cdp.send('Page.navigate', { url: APP + p.route })
+    const ready = await waitFor(
+      async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")),
+      { desc: p.name + '列表', timeout: 20000 }
+    )
+    ok(ready, `${p.name}页渲染出列表行`)
+    if (!ready) continue
+
+    const clicked = await cdp.eval(`
+      const rows = [...document.querySelectorAll('.el-table__row')]
+      if (!rows.length) return { ok: false }
+      const row = rows[rows.length - 1]
+      const del = [...row.querySelectorAll('button')].find(b => b.textContent.trim() === '删除')
+      if (!del) return { ok: false }
+      del.click()
+      return { ok: true }
+    `)
+    ok(clicked.ok, `${p.name}页找到并点击「删除」`)
+    if (!clicked.ok) continue
+
+    await sleep(400)
+    const box = await cdp.eval(`
+      const mb = document.querySelector('.el-message-box')
+      if (!mb) return null
+      return {
+        title: (mb.querySelector('.el-message-box__title') || {}).textContent || '',
+        msg: (mb.querySelector('.el-message-box__message') || {}).textContent || ''
+      }
+    `)
+    ok(!!box, `${p.name}页弹出删除确认框`, JSON.stringify(box))
+    if (box) {
+      ok(p.must.test(box.msg), `${p.name}确认框说明了「有引用则转停用」`, box.msg.slice(0, 70))
+      ok(!/不可恢复/.test(box.msg), `${p.name}确认框不再写「删除后不可恢复」`, box.msg.slice(0, 40))
+    }
+    // 取消，避免真的改动数据
+    await cdp.eval(`
+      const btns = [...document.querySelectorAll('.el-message-box__btns button')]
+      const cancel = btns.find(b => /取消/.test(b.textContent))
+      if (cancel) cancel.click()
+      return true
+    `)
+    await sleep(300)
+  }
 } catch (e) {
   fail++
   console.log('\n❌ 执行异常: ' + e.message)

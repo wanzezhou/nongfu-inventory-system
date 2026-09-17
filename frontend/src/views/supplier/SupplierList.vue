@@ -198,6 +198,7 @@
 import { usePagination } from '@/composables/usePagination'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { toastIfHttpError } from '@/utils/errorToast'
 import { Search, Refresh, Plus, Edit, Delete, Download, Upload } from '@element-plus/icons-vue'
 import {
   getSupplierList,
@@ -338,19 +339,27 @@ const handleEdit = (row) => {
   dialogVisible.value = true
 }
 
+// 删除：后端「无引用 → 物理删除；有引用 → 转停用」
+//   mode='hard' → 该行已从库中删除；mode='soft' → 有采购入库记录，转为「停用」保留
 const handleDelete = (row) => {
-  ElMessageBox.confirm('确定要删除该供应商吗？删除后不可恢复。', '删除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
+  ElMessageBox.confirm(
+    '确定要删除该供应商吗？无关联数据时将直接删除；存在采购入库记录时将转为「停用」保留。',
+    '删除确认',
+    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' }
+  ).then(async () => {
     try {
-      await deleteSupplier(row.supplierId || row.id)
-      ElMessage.success('删除成功')
+      const res = await deleteSupplier(row.supplierId || row.id)
+      if (res.data?.mode === 'hard') {
+        ElMessage.success(res.message || '已删除')
+      } else {
+        ElMessage.warning(res.message || '存在关联数据，已转为「停用」保留')
+      }
       fetchData()
     } catch (error) {
+      // 失败绝不误报成功（原实现此处也提示「删除成功」，是「提示成功但表格没变」的诱因之一）
+      // 信封错误已由拦截器弹过，这里只提示 HTTP 4xx/5xx
       console.error('删除失败:', error)
-      ElMessage.success('删除成功')
+      toastIfHttpError(error, '删除失败，请稍后重试')
       fetchData()
     }
   }).catch(() => {})

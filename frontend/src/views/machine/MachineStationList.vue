@@ -139,6 +139,7 @@
 import { usePagination } from '@/composables/usePagination'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { toastIfHttpError } from '@/utils/errorToast'
 import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
 import {
   getMachineStations,
@@ -247,19 +248,31 @@ const handleEdit = (row) => {
   dialogVisible.value = true
 }
 
+// 删除：后端「无引用 → 物理删除；有引用 → 转停用」
+//   mode='hard' → 该行已从库中删除，列表不再出现
+//   mode='soft' → 有供货订单/销量记录，转为「停用」保留（行仍在，状态列显示「停用」）
 const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定要删除该${moduleTitle.value}吗？删除后不可恢复。`, '删除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
+  ElMessageBox.confirm(
+    // ⚠️ 必须走 props.moduleTitle：脚本里没有解构出 moduleTitle（模板可直接用，脚本中不可以），
+    //    此前写成 moduleTitle.value 会抛 ReferenceError → 点「删除」毫无反应（连确认框都不弹）
+    `确定要删除该${props.moduleTitle}吗？无关联数据时将直接删除；存在供货订单或销量记录时将转为「停用」保留。`,
+    '删除确认',
+    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' }
+  ).then(async () => {
     try {
-      await deleteMachineStation(row.id)
-      ElMessage.success('删除成功')
+      const res = await deleteMachineStation(row.id)
+      if (res.data?.mode === 'hard') {
+        ElMessage.success(res.message || '已删除')
+      } else {
+        // 未真正删除 —— 用 warning 级提示，避免误以为列表会少一行
+        ElMessage.warning(res.message || '存在关联数据，已转为「停用」保留')
+      }
       fetchData()
     } catch (error) {
+      // 失败绝不误报成功；信封错误拦截器已弹，这里只提示 HTTP 4xx/5xx
       console.error('删除失败:', error)
-      ElMessage.error('删除失败')
+      toastIfHttpError(error, '删除失败，请稍后重试')
+      fetchData()
     }
   }).catch(() => {})
 }
