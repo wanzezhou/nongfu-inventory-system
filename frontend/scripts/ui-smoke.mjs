@@ -207,6 +207,15 @@ try {
   ok(opened, '单击后弹窗出现', JSON.stringify(dlg))
   if (opened) console.log('    弹窗标题：', dlg.titles.join(' / ') || '(无标题)')
 
+  // 弹窗是改动面积最大的组件（头部/底部/圆角/动画），截图留档便于目视复核
+  if (opened) {
+    await sleep(500) // 等淡入动画结束再拍，避免截到半透明的中间态
+    const dlgShot = path.join(os.tmpdir(), `ui-smoke-dialog-${Date.now()}.png`)
+    const s = await cdp.send('Page.captureScreenshot', { format: 'png' })
+    fs.writeFileSync(dlgShot, Buffer.from(s.data, 'base64'))
+    console.log('    弹窗截图：', dlgShot)
+  }
+
   const evtLog = await cdp.eval('return window.__evt')
   const clickEvt = evtLog.find((e) => e.t === 'click')
   const upEvt = evtLog.find((e) => e.t === 'pointerup')
@@ -280,7 +289,7 @@ try {
   ok(bg.mainBg === 'rgb(255, 255, 255)', '.main-content 底色为纯白', String(bg.mainBg))
   ok(bg.bodyImage === 'none', 'body 无装饰性渐变叠色（纯色）', String(bg.bodyImage))
   ok(bg.pageBgToken.toUpperCase() === '#FFFFFF', '--page-bg token = #FFFFFF', bg.pageBgToken)
-  ok(bg.subBgToken.toUpperCase() === '#F5F4F0', '--bg token 保持暖灰（次级浅底不变）', bg.subBgToken)
+  ok(bg.subBgToken.toUpperCase() === '#F7F7F7', '--bg token 为中性浅灰 #F7F7F7（次级浅底）', bg.subBgToken)
 
   // 截图留档，便于人工目视确认整体观感（默认写入系统临时目录，避免污染仓库）
   const shotPath = path.join(os.tmpdir(), `ui-smoke-${Date.now()}.png`)
@@ -301,13 +310,34 @@ try {
     }
   `)
   console.log('    计算样式：', JSON.stringify(listBg))
-  ok(listBg.thBg === 'rgb(245, 244, 240)', '表头仍是暖灰 #F5F4F0（次级浅底未变）', String(listBg.thBg))
+  ok(listBg.thBg === 'rgb(247, 247, 247)', '表头为中性浅灰 #F7F7F7（次级浅底）', String(listBg.thBg))
   ok(listBg.mainBg === 'rgb(255, 255, 255)', '列表页页面底色仍为纯白', String(listBg.mainBg))
 
   const shot2 = path.join(os.tmpdir(), `ui-smoke-list-${Date.now()}.png`)
   const shotList = await cdp.send('Page.captureScreenshot', { format: 'png' })
   fs.writeFileSync(shot2, Buffer.from(shotList.data, 'base64'))
   console.log('    列表页截图已保存：', shot2)
+
+  console.log('\n=== 9) 中性极简体系：装饰已移除 / 红色仍是唯一强调色 ===')
+  const deco = await cdp.eval(`
+    const root = getComputedStyle(document.documentElement)
+    const card = document.querySelector('.el-card')
+    const btn = [...document.querySelectorAll('.el-button')].find(b => b.classList.contains('el-button--primary'))
+    return {
+      primary: root.getPropertyValue('--primary').trim(),
+      radiusXl: root.getPropertyValue('--radius-xl').trim(),
+      cardTransform: card ? getComputedStyle(card).transform : null,
+      btnShine: btn ? getComputedStyle(btn, '::before').content : null,
+      btnTransform: btn ? getComputedStyle(btn).transform : null
+    }
+  `)
+  console.log('    计算样式：', JSON.stringify(deco))
+  ok(deco.primary.toUpperCase() === '#A8201A', '强调色仍为品牌红 #A8201A', deco.primary)
+  ok(deco.radiusXl === '12px', '圆角收紧为 12px（--radius-xl）', deco.radiusXl)
+  ok(deco.cardTransform === 'none', '卡片无 hover 位移基线（transform: none）', String(deco.cardTransform))
+  ok(deco.btnTransform === 'none', '按钮无缩放基线（transform: none）', String(deco.btnTransform))
+  ok(deco.btnShine === 'none' || deco.btnShine === null || deco.btnShine === 'normal',
+    '按钮扫光装饰已移除（::before 无内容）', String(deco.btnShine))
 } catch (e) {
   fail++
   console.log('\n❌ 执行异常: ' + e.message)

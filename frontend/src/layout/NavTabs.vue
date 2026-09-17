@@ -40,7 +40,7 @@ const handleChange = (index) => {
   background: var(--card);
   border-bottom: 1px solid var(--border);
   /* 左右内边距与 .main-content 对齐，标签起始位置与页面内容齐平 */
-  padding: 0 28px;
+  padding: 0 20px;
 }
 
 .nav-tabs :deep(.el-tabs__header) {
@@ -53,10 +53,10 @@ const handleChange = (index) => {
 }
 
 .nav-tabs :deep(.el-tabs__item) {
-  height: 46px;
-  line-height: 46px;
+  height: 40px;
+  line-height: 40px;
   font-size: 13px;
-  padding: 0 16px;
+  padding: 0 14px;
 }
 
 .nav-tabs :deep(.el-tabs__item.is-active) {
@@ -65,13 +65,13 @@ const handleChange = (index) => {
 
 @media (max-width: 768px) {
   .nav-tabs-bar {
-    padding: 0 14px;
+    padding: 0 10px;
   }
 
   .nav-tabs :deep(.el-tabs__item) {
-    height: 42px;
-    line-height: 42px;
-    padding: 0 11px;
+    height: 38px;
+    line-height: 38px;
+    padding: 0 10px;
     font-size: 12px;
   }
 }

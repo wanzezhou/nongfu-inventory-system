@@ -4,8 +4,8 @@
       <div class="logo">
         <div class="logo-icon" v-if="!isCollapse">
           <svg viewBox="0 0 32 32" class="logo-svg" fill="none">
-            <path d="M16 4C16 4 6 14 6 21C6 26.5 10.5 29 16 29C21.5 29 26 26.5 26 21C26 14 16 4 16 4Z" fill="#A8201A" opacity="0.9"/>
-            <path d="M16 10C16 10 10 16 10 21C10 23.8 12.5 25.5 16 25.5C19.5 25.5 22 23.8 22 21C22 16 16 10 16 10Z" fill="#ffffff" opacity="0.85"/>
+            <path class="logo-ink" d="M16 4C16 4 6 14 6 21C6 26.5 10.5 29 16 29C21.5 29 26 26.5 26 21C26 14 16 4 16 4Z" opacity="0.9"/>
+            <path class="logo-drop" d="M16 10C16 10 10 16 10 21C10 23.8 12.5 25.5 16 25.5C19.5 25.5 22 23.8 22 21C22 16 16 10 16 10Z" opacity="0.85"/>
           </svg>
         </div>
         <div class="logo-text-wrapper" v-if="!isCollapse">

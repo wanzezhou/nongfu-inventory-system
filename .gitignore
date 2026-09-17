@@ -54,3 +54,6 @@ database/backup_*.sql
 
 # 误提交的临时产物
 query
+
+# UI 截图产物（ui-shot.mjs 生成，可随时重跑）
+.ui-shots/
