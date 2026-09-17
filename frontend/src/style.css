@@ -3,6 +3,10 @@
    ============================================ */
 :root {
   /* 配色系统 */
+  /* 页面底色（2026-09-17 起为纯白）：仅用于「页面级」背景——body / .main-content / 登录页外壳。
+     与 --bg 的分工：--page-bg = 页面底；--bg = 卡片内部的次级浅底（表头、胶囊、弹窗头尾、表单分区）。 */
+  --page-bg: #FFFFFF;
+  /* 次级浅底（暖灰），非页面底部改动请用本 token */
   --bg: #F5F4F0;
   --card: #FFFFFF;
   --text: #1F1F1F;
@@ -82,15 +86,14 @@
 }
 
 body {
-  background-color: var(--bg);
+  /* 页面底色：纯白（2026-09-17，业务方要求「白色纯色」）。
+     原为 --bg 暖灰 + 两层极淡径向渐变；渐变属装饰性叠色，留着就不是「纯色」，故一并移除。 */
+  background-color: var(--page-bg);
   color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  background-image:
-    radial-gradient(circle at 20% 30%, rgba(168, 32, 26, 0.012) 0%, transparent 40%),
-    radial-gradient(circle at 80% 70%, rgba(45, 106, 79, 0.012) 0%, transparent 40%);
 }
 
 /* 衬线字体工具类 */

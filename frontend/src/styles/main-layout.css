@@ -1,5 +1,5 @@
 /* MainLayout 布局样式 — 红墨留白·沉稳版
- * 侧边栏白底 + 左侧红竖线激活态；顶栏半透明白 + 衬线标题；内容区暖灰背景 */
+ * 侧边栏白底 + 左侧红竖线激活态；顶栏半透明白 + 衬线标题；内容区底色纯白（--page-bg，2026-09-17 起） */
 
 .main-layout {
   height: 100vh;
@@ -261,7 +261,8 @@
 
 /* ===== 主内容区 ===== */
 .main-content {
-  background-color: var(--bg);
+  /* 页面底色（纯白）；卡片内部浅底仍用 --bg，见 style.css :root 注释 */
+  background-color: var(--page-bg);
   padding: 28px;
   overflow-y: auto;
   position: relative;

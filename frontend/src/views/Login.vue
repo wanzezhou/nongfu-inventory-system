@@ -119,7 +119,8 @@ async function handleLogin() {
   min-height: 100vh;
   padding: 40px 20px 68px;
   overflow: hidden;
-  background: var(--bg);
+  /* 页面底色（纯白）；水墨背景由 InkBackdrop 绘制 */
+  background: var(--page-bg);
 }
 
 .login-ink {

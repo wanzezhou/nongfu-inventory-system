@@ -260,6 +260,54 @@ try {
     '刷新后按钮回到拖动后的位置', JSON.stringify({ left: Math.round(box3.left), top: Math.round(box3.top) }))
 
   await cdp.eval(`localStorage.removeItem('floating_order_btn_pos'); return true`)
+
+  console.log('\n=== 7) 页面底色为纯白（--page-bg）===')
+  const bg = await cdp.eval(`
+    const g = (el) => el ? getComputedStyle(el) : null
+    const bodyS = g(document.body)
+    const mainS = g(document.querySelector('.main-content'))
+    return {
+      bodyBg: bodyS?.backgroundColor,
+      bodyImage: bodyS?.backgroundImage,
+      mainBg: mainS?.backgroundColor,
+      pageBgToken: getComputedStyle(document.documentElement).getPropertyValue('--page-bg').trim(),
+      subBgToken: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),
+      thBg: getComputedStyle(document.querySelector('.el-table th') || document.body).backgroundColor
+    }
+  `)
+  console.log('    计算样式：', JSON.stringify(bg))
+  ok(bg.bodyBg === 'rgb(255, 255, 255)', 'body 底色为纯白', String(bg.bodyBg))
+  ok(bg.mainBg === 'rgb(255, 255, 255)', '.main-content 底色为纯白', String(bg.mainBg))
+  ok(bg.bodyImage === 'none', 'body 无装饰性渐变叠色（纯色）', String(bg.bodyImage))
+  ok(bg.pageBgToken.toUpperCase() === '#FFFFFF', '--page-bg token = #FFFFFF', bg.pageBgToken)
+  ok(bg.subBgToken.toUpperCase() === '#F5F4F0', '--bg token 保持暖灰（次级浅底不变）', bg.subBgToken)
+
+  // 截图留档，便于人工目视确认整体观感（默认写入系统临时目录，避免污染仓库）
+  const shotPath = path.join(os.tmpdir(), `ui-smoke-${Date.now()}.png`)
+  const shot = await cdp.send('Page.captureScreenshot', { format: 'png' })
+  fs.writeFileSync(shotPath, Buffer.from(shot.data, 'base64'))
+  ok(fs.existsSync(shotPath) && fs.statSync(shotPath).size > 10000, '截图已生成', shotPath)
+
+  console.log('\n=== 8) 次级浅底不应被页面底色改动牵连（列表页表头）===')
+  await cdp.send('Page.navigate', { url: APP + 'worker' })
+  const tableReady = await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table th')")), { desc: '员工列表表头', timeout: 20000 })
+  ok(tableReady, '进入员工列表并渲染出表头')
+  const listBg = await cdp.eval(`
+    const th = document.querySelector('.el-table th')
+    const main = document.querySelector('.main-content')
+    return {
+      thBg: th ? getComputedStyle(th).backgroundColor : null,
+      mainBg: main ? getComputedStyle(main).backgroundColor : null
+    }
+  `)
+  console.log('    计算样式：', JSON.stringify(listBg))
+  ok(listBg.thBg === 'rgb(245, 244, 240)', '表头仍是暖灰 #F5F4F0（次级浅底未变）', String(listBg.thBg))
+  ok(listBg.mainBg === 'rgb(255, 255, 255)', '列表页页面底色仍为纯白', String(listBg.mainBg))
+
+  const shot2 = path.join(os.tmpdir(), `ui-smoke-list-${Date.now()}.png`)
+  const shotList = await cdp.send('Page.captureScreenshot', { format: 'png' })
+  fs.writeFileSync(shot2, Buffer.from(shotList.data, 'base64'))
+  console.log('    列表页截图已保存：', shot2)
 } catch (e) {
   fail++
   console.log('\n❌ 执行异常: ' + e.message)
