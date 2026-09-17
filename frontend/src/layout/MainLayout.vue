@@ -88,9 +88,16 @@
       <NavTabs />
 
       <el-main class="main-content">
-        <router-view v-slot="{ Component }">
+        <!-- ⚠️ 必须用 route.path 作 key（2026-09-17 晚 8 修）
+             多个路由共用同一个组件（机台：量贩机/零售机；成本/利润：6 个订单类型明细；
+             营收：6 个类型页）时，Vue 会**复用组件实例** —— props 变了但 `onMounted`
+             只跑一次 ⇒ 列表/汇总**不按新类型重新查询**，页面显示的仍是上一个类型的
+             数据（现象：在「零售机管理」看到并删掉的是量贩机，用户以为两个模块被关联了）。
+             用 route.path 作 key 强制不同路由重建实例；**不含 query**，故翻页/筛选
+             （同一 path 换 query）不会重建。 -->
+        <router-view v-slot="{ Component, route }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <component :is="Component" :key="route.path" />
           </transition>
         </router-view>
       </el-main>

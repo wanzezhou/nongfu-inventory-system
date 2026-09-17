@@ -522,6 +522,62 @@ try {
     `)
     await sleep(300)
   }
+
+  console.log('\n=== 13) 客户端路由切换：共用组件的页面必须按新参数重新加载 ===')
+  // 机台（量贩机/零售机）、成本/利润的类型明细页都由「同一组件 + 不同 props」承载：
+  // 若 router-view 复用实例且组件不 watch props，则切换后 props 变了但数据不重查 →
+  // 页面显示并操作的是上一个类型的数据（曾导致「在零售机页删掉了量贩机」）。
+  const READ_TABLE = `
+    const t = document.querySelector('.el-table')
+    if (!t) return null
+    const head = (t.querySelector('thead th') || {}).textContent || ''
+    const rows = [...t.querySelectorAll('tbody tr')].map(tr => {
+      const td = tr.querySelector('td')
+      return td ? td.textContent.trim() : ''
+    })
+    return { head: head.trim(), rows }
+  `
+  await cdp.send('Page.navigate', { url: APP + 'bulk-machine' })
+  await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")),
+    { desc: '量贩机列表', timeout: 20000 })
+  const bulkDirect = await cdp.eval(READ_TABLE)
+  console.log('    ① 整页进入 /bulk-machine：', JSON.stringify(bulkDirect))
+  ok(!!bulkDirect && /量贩机/.test(bulkDirect.head), '量贩机页表头为「量贩机名称」', bulkDirect?.head)
+
+  // 展开侧边栏「基础信息管理」，点击「零售机管理」（客户端路由，不刷新页面）
+  await cdp.eval(`
+    const titles = [...document.querySelectorAll('.sidebar-menu > .el-sub-menu > .el-sub-menu__title')]
+    const g = titles.find(t => /基础信息/.test(t.textContent))
+    if (g) g.click()
+    return true
+  `)
+  await sleep(600)
+  const navOk = await cdp.eval(`
+    const items = [...document.querySelectorAll('.sidebar-menu .el-menu-item')]
+    const target = items.find(i => /零售机管理/.test(i.textContent))
+    if (!target) return false
+    target.click()
+    return true
+  `)
+  ok(navOk, '点击侧边栏「零售机管理」（客户端路由切换）')
+  await waitFor(async () => (await cdp.eval('return location.pathname')) === '/retail-machine',
+    { desc: '路由切到 /retail-machine', timeout: 10000 })
+  await sleep(1500)
+  const clientSwitched = await cdp.eval(READ_TABLE)
+  console.log('    ② 客户端切到 /retail-machine：', JSON.stringify(clientSwitched))
+  ok(!!clientSwitched && /零售机/.test(clientSwitched.head), '切换后表头更新为「零售机名称」', clientSwitched?.head)
+  ok(!!clientSwitched && !clientSwitched.rows.some((r) => /量贩机/.test(r)),
+    '⚠️ 切换后列表已按零售机重新加载（不得残留量贩机数据）', JSON.stringify(clientSwitched?.rows))
+
+  // 与「整页刷新」的结果必须完全一致
+  await cdp.send('Page.navigate', { url: APP + 'retail-machine' })
+  await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")),
+    { desc: '零售机列表', timeout: 20000 })
+  const retailDirect = await cdp.eval(READ_TABLE)
+  console.log('    ③ 整页进入 /retail-machine：', JSON.stringify(retailDirect))
+  ok(JSON.stringify(clientSwitched?.rows) === JSON.stringify(retailDirect?.rows),
+    '客户端切换结果 == 整页刷新结果（数据完全一致）',
+    `${JSON.stringify(clientSwitched?.rows)} vs ${JSON.stringify(retailDirect?.rows)}`)
 } catch (e) {
   fail++
   console.log('\n❌ 执行异常: ' + e.message)
