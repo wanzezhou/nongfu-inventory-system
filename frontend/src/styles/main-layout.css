@@ -244,63 +244,87 @@
 .fade-enter-from { opacity: 0; transform: translateY(4px); }
 .fade-leave-to { opacity: 0; }
 
-/* ===== 菜单项：灰底 hover / 浅红底激活 ===== */
-:deep(.el-menu-item) {
-  margin: 2px 0;
-  border-radius: var(--radius-md);
-  height: 38px;
-  line-height: 38px;
-  transition: background-color 0.15s ease, color 0.15s ease;
-  color: var(--text-2) !important;
-  font-size: 13px;
+/* ===== 菜单层级区分（2026-09-17）=====
+ * 背景：展开一级分组后，分组标题与其下的二级项在高度/字号/颜色上过于接近，
+ *       容易分不清「哪个是分组、哪个是可跳转的页面」。
+ * 区分手段（四重叠加，全部走 token，不引入新色值）：
+ *   ① 字重字色   一级 500 + --text（深）／二级 400 + --text-2（浅）
+ *   ② 字号       一级 13px ／ 二级 12.5px
+ *   ③ 缩进引导线 二级整体右移 32px 且容器左侧带 1px 竖线 → 嵌套关系一眼可见
+ *   ④ 展开态     一级分组展开时保持浅灰底（--bg），与下方白色二级块形成区块对照
+ * 选中标记同样分两级：一级 = 左缘红色竖条（章节选中）／二级 = 浅红底 + 红字（页面选中）
+ */
+
+/* ---- 一级：顶层独立项 与 分组标题共用同一套「章节」观感 ---- */
+/* 一级块之间留 6px 下间距（组内二级项仅 2px），从间距上也能感知「章节」边界 */
+:deep(.sidebar-menu > .el-menu-item),
+:deep(.sidebar-menu > .el-sub-menu) {
+  margin: 2px 0 6px;
 }
 
-:deep(.el-menu-item:hover) {
+:deep(.sidebar-menu > .el-menu-item),
+:deep(.sidebar-menu > .el-sub-menu > .el-sub-menu__title) {
+  position: relative;
+  height: 38px;
+  line-height: 38px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text) !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+:deep(.sidebar-menu > .el-menu-item:hover),
+:deep(.sidebar-menu > .el-sub-menu > .el-sub-menu__title:hover),
+:deep(.sidebar-menu > .el-sub-menu.is-opened > .el-sub-menu__title) {
   background-color: var(--bg) !important;
   color: var(--text) !important;
 }
 
-:deep(.el-menu-item.is-active) {
-  background: var(--primary-light) !important;
-  color: var(--primary) !important;
-  font-weight: 500;
+/* 一级选中 → 左缘 3px 红色竖条
+ * 两种情形：独立项自身命中（仪表盘 / 水站账户管理）、分组下的二级命中 */
+:deep(.sidebar-menu > .el-menu-item.is-active)::before,
+:deep(.sidebar-menu > .el-sub-menu.is-active > .el-sub-menu__title)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--primary);
 }
 
-/* ===== 子菜单 ===== */
-:deep(.el-sub-menu__title) {
-  margin: 2px 0;
-  border-radius: var(--radius-md);
-  height: 38px;
-  line-height: 38px;
-  transition: background-color 0.15s ease, color 0.15s ease;
-  color: var(--text-2) !important;
-  font-size: 13px;
-  font-weight: 400;
+/* ---- 二级：右移缩进 + 容器左侧竖向引导线 ---- */
+:deep(.el-sub-menu .el-menu) {
+  background-color: transparent !important;
+  /* 32px = 一级图标左边缘(20) + 图标半宽(12)，竖线正好落在一级图标中心的垂直线上 */
+  margin-left: 32px;
+  border-left: 1px solid var(--border);
 }
-
-:deep(.el-sub-menu__title:hover) {
-  background-color: var(--bg) !important;
-  color: var(--text) !important;
-}
-
-:deep(.el-sub-menu.is-active > .el-sub-menu__title) {
-  color: var(--text) !important;
-  font-weight: 500;
-}
-
-:deep(.el-sub-menu .el-menu) { background-color: transparent !important; }
 
 :deep(.el-sub-menu .el-menu .el-menu-item) {
   margin: 2px 0;
-  padding-left: 34px !important;
-  height: 34px;
-  line-height: 34px;
-  font-size: 13px;
+  padding-left: 14px !important;
+  height: 32px;
+  line-height: 32px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-2) !important;
   background-color: transparent !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
+:deep(.el-sub-menu .el-menu .el-menu-item:hover) {
+  background-color: var(--bg) !important;
+  color: var(--text) !important;
+}
+
+/* 二级选中 → 浅红底 + 红字（与一级「红色竖条」形成层级差异，不重复用同一种标记） */
 :deep(.el-sub-menu .el-menu .el-menu-item.is-active) {
-  background: var(--primary-light) !important;
+  background-color: var(--primary-light) !important;
   color: var(--primary) !important;
   font-weight: 500;
 }

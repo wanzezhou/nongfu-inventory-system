@@ -26,6 +26,11 @@ const API = argOf('--api', 'http://localhost:3000/api')
 const WIDTH = Number(argOf('--width', '1440'))
 const HEIGHT = Number(argOf('--height', '900'))
 const CDP = `http://127.0.0.1:${PORT}`
+// 截图前展开全部一级分组（看侧边栏层级时用）；配合 --sidebar-only 只截侧边栏
+const EXPAND_MENUS = args.includes('--expand-menus')
+const SIDEBAR_ONLY = args.includes('--sidebar-only')
+// 收起侧边栏并 hover 第一个一级分组 → 截折叠态的浮层菜单
+const COLLAPSE_SIDEBAR = args.includes('--collapse-sidebar')
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -70,6 +75,12 @@ class Cdp {
     const r = await this.send('Runtime.evaluate', { expression: `(() => { ${expr} })()`, returnByValue: true, awaitPromise: true })
     if (r.exceptionDetails) throw new Error('求值异常: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text))
     return r.result.value
+  }
+  /** 派发真实鼠标事件（Chromium 据此合成 hover，折叠态浮层菜单靠 hover 触发） */
+  async moveTo(x, y) {
+    await this.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: Math.round(x), y: Math.round(y), button: 'left', buttons: 0
+    })
   }
 }
 
@@ -121,7 +132,48 @@ try {
     await cdp.send('Page.navigate', { url })
     await waitFor(() => cdp.eval("return !!document.querySelector('.main-content')"))
     await sleep(1200) // 等图表/异步数据落定
-    const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
+    if (EXPAND_MENUS) {
+      // 侧边栏一级分组默认收起，逐个点开（已展开的跳过）
+      await cdp.eval(`
+        const titles = [...document.querySelectorAll('.sidebar-menu > .el-sub-menu > .el-sub-menu__title')]
+        for (const t of titles) {
+          if (t.closest('.el-sub-menu')?.classList.contains('is-opened')) continue
+          t.click()
+        }
+        return titles.length
+      `)
+      await sleep(600) // 等展开动画结束
+    }
+    if (COLLAPSE_SIDEBAR) {
+      await cdp.eval(`
+        const menu = document.querySelector('.sidebar-menu')
+        if (menu && !menu.classList.contains('el-menu--collapse')) document.querySelector('.collapse-btn')?.click()
+        return true
+      `)
+      await sleep(600)
+      // 折叠态的分组浮层是 hover 触发的，需要派发真实鼠标移动
+      const hit = await cdp.eval(`
+        const t = document.querySelector('.sidebar-menu > .el-sub-menu > .el-sub-menu__title')
+        if (!t) return null
+        const r = t.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+      `)
+      if (hit) {
+        await cdp.moveTo(hit.x, hit.y)
+        await sleep(800) // 等浮层淡入
+      }
+    }
+    const shotParams = { format: 'png', captureBeyondViewport: false }
+    if (SIDEBAR_ONLY && !COLLAPSE_SIDEBAR) {
+      const box = await cdp.eval(`
+        const el = document.querySelector('.sidebar')
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) }
+      `)
+      if (box) shotParams.clip = { ...box, scale: 1 }
+    }
+    const shot = await cdp.send('Page.captureScreenshot', shotParams)
     const name = (route === '/' ? 'root' : route.replace(/\//g, '_').replace(/^_/, '')) + '.png'
     const file = path.join(OUT_DIR, name)
     fs.writeFileSync(file, Buffer.from(shot.data, 'base64'))

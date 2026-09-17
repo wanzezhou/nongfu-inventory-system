@@ -123,6 +123,36 @@ body {
    ============================================ */
 .el-menu { border-right: none !important; }
 
+/* ---- 侧边栏折叠态：一级分组改以浮层弹出（teleport 到 body，组件 scoped 样式够不着）
+ * 与展开态保持同一套观感：二级项 12.5px / --text-2 / 32px 高 / 小圆角，选中浅红底红字 ---- */
+.el-menu--popup {
+  min-width: 156px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+}
+
+.el-menu--popup .el-menu-item {
+  height: 32px;
+  line-height: 32px;
+  padding: 0 12px !important;
+  margin: 2px 0;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text-2);
+  background-color: transparent;
+}
+
+.el-menu--popup .el-menu-item:hover {
+  background-color: var(--bg) !important;
+  color: var(--text);
+}
+
+.el-menu--popup .el-menu-item.is-active {
+  background-color: var(--primary-light) !important;
+  color: var(--primary);
+  font-weight: 500;
+}
+
 /* ---- 按钮：实心主色 + 中性次按钮，无扫光、无位移、无彩色阴影 ---- */
 .el-button {
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;

@@ -338,6 +338,65 @@ try {
   ok(deco.btnTransform === 'none', '按钮无缩放基线（transform: none）', String(deco.btnTransform))
   ok(deco.btnShine === 'none' || deco.btnShine === null || deco.btnShine === 'normal',
     '按钮扫光装饰已移除（::before 无内容）', String(deco.btnShine))
+
+  console.log('\n=== 10) 侧边栏：一级（章节）与二级（页面）样式可区分 ===')
+  // 展开全部一级分组，才能同时取到一级标题与二级项
+  await cdp.eval(`
+    const titles = [...document.querySelectorAll('.sidebar-menu > .el-sub-menu > .el-sub-menu__title')]
+    for (const t of titles) {
+      if (t.closest('.el-sub-menu')?.classList.contains('is-opened')) continue
+      t.click()
+    }
+    return titles.length
+  `)
+  await sleep(700)
+  const menu = await cdp.eval(`
+    const lv1Title = document.querySelector('.sidebar-menu > .el-sub-menu > .el-sub-menu__title')
+    const lv1Item = document.querySelector('.sidebar-menu > .el-menu-item')
+    const subWrap = document.querySelector('.el-sub-menu .el-menu')
+    const lv2 = document.querySelector('.el-sub-menu .el-menu .el-menu-item')
+    const actTitle = document.querySelector('.sidebar-menu > .el-sub-menu.is-active > .el-sub-menu__title')
+    if (!lv1Title || !lv2) return null
+    const s1 = getComputedStyle(lv1Title), s1i = getComputedStyle(lv1Item), s2 = getComputedStyle(lv2)
+    const sw = subWrap ? getComputedStyle(subWrap) : null
+    const pick = (s, h, l) => ({ fontSize: s.fontSize, fontWeight: s.fontWeight, color: s.color, height: h, left: l })
+    return {
+      lv1: pick(s1, s1.height, Math.round(lv1Title.getBoundingClientRect().left)),
+      lv1Item: pick(s1i, s1i.height, Math.round(lv1Item.getBoundingClientRect().left)),
+      lv2: pick(s2, s2.height, Math.round(lv2.getBoundingClientRect().left)),
+      subBorderLeft: sw ? sw.borderLeftWidth : null,
+      actBarBg: actTitle ? getComputedStyle(actTitle, '::before').backgroundColor : null,
+      actBarW: actTitle ? getComputedStyle(actTitle, '::before').width : null
+    }
+  `)
+  ok(!!menu, '取到一级与二级菜单节点')
+  if (menu) {
+    console.log('    一级：', JSON.stringify(menu.lv1))
+    console.log('    一级独立项：', JSON.stringify(menu.lv1Item))
+    console.log('    二级：', JSON.stringify(menu.lv2))
+    ok(menu.lv1.fontWeight === '500' && menu.lv2.fontWeight === '400',
+      '字重区分：一级 500 / 二级 400', `${menu.lv1.fontWeight} / ${menu.lv2.fontWeight}`)
+    ok(menu.lv1.color !== menu.lv2.color && menu.lv1.color === 'rgb(23, 23, 23)',
+      '字色区分：一级深色（--text）/ 二级浅色（--text-2）', `${menu.lv1.color} vs ${menu.lv2.color}`)
+    ok(menu.lv1.height === '38px' && menu.lv2.height === '32px',
+      '高度区分：一级 38px / 二级 32px', `${menu.lv1.height} / ${menu.lv2.height}`)
+    ok(parseFloat(menu.lv1.fontSize) > parseFloat(menu.lv2.fontSize),
+      '字号区分：一级大于二级', `${menu.lv1.fontSize} vs ${menu.lv2.fontSize}`)
+    ok(menu.subBorderLeft === '1px', '二级容器带竖向引导线（border-left 1px）', String(menu.subBorderLeft))
+    ok(menu.lv2.left > menu.lv1.left + 20, '二级整体右移缩进（嵌套关系可见）', `${menu.lv1.left} → ${menu.lv2.left}`)
+    ok(menu.actBarW === '3px' && menu.actBarBg === 'rgb(168, 32, 26)',
+      '一级选中为左缘红色竖条', `${menu.actBarW} / ${menu.actBarBg}`)
+    ok(menu.lv1Item.fontWeight === '500' && menu.lv1Item.color === 'rgb(23, 23, 23)',
+      '一级独立项（仪表盘/水站账户）与分组标题观感一致', JSON.stringify(menu.lv1Item))
+  }
+  const menuShot = path.join(os.tmpdir(), `ui-smoke-menu-${Date.now()}.png`)
+  const sidebarBox = await cdp.eval(`
+    const r = document.querySelector('.sidebar').getBoundingClientRect()
+    return { x: 0, y: 0, width: Math.round(r.width), height: Math.round(r.height), scale: 1 }
+  `)
+  const mShot = await cdp.send('Page.captureScreenshot', { format: 'png', clip: sidebarBox })
+  fs.writeFileSync(menuShot, Buffer.from(mShot.data, 'base64'))
+  console.log('    侧边栏截图已保存：', menuShot)
 } catch (e) {
   fail++
   console.log('\n❌ 执行异常: ' + e.message)
