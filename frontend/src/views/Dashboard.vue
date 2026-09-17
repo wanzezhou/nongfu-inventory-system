@@ -34,16 +34,28 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="16" class="chart-row">
-      <el-col :span="24" :style="{ animationDelay: '0.2s' }">
-        <div class="chart-card">
-          <div class="chart-header">
-            <span class="chart-title font-serif">月销售趋势（按商品件数）</span>
-            <span class="chart-range">{{ trendYear }}年 · 单位：件</span>
-          </div>
-          <div v-if="trendEmpty" class="chart-empty">本年度暂无销量数据</div>
-          <div v-show="!trendEmpty" ref="trendChartRef" class="chart-container"></div>
-        </div>
+    <!-- 趋势图（4 张）：每张独立切换粒度（日/周/月/季/年）并记忆所选粒度 -->
+    <el-row :gutter="16" class="trend-row">
+      <el-col
+        v-for="(t, idx) in TREND_DEFS"
+        :key="t.key"
+        :xs="24"
+        :md="12"
+        :style="{ animationDelay: (0.16 + idx * 0.04) + 's' }"
+        class="trend-col"
+      >
+        <TrendChartCard
+          :title="t.title"
+          :subtitle="trendSubtitle(t)"
+          :value-type="t.valueType"
+          :unit="t.unit"
+          :color-var="t.colorVar"
+          :labels="trendSeries(t.key).labels"
+          :values="trendSeries(t.key).values"
+          :granularity="trendGranularities[t.key]"
+          :empty-text="t.emptyText"
+          @update:granularity="setGranularity(t.key, $event)"
+        />
       </el-col>
     </el-row>
   </div>
@@ -51,10 +63,10 @@
 
 <script setup>
 import { formatMoney } from '@/utils/format'
-import { ref, reactive, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import echarts from '@/utils/echarts'
-import { getDashboardSummary, getDashboardMetrics, getDashboardTrend } from '@/api/dashboard'
+import TrendChartCard from '@/components/TrendChartCard.vue'
+import { getDashboardSummary, getDashboardMetrics, getDashboardTrends } from '@/api/dashboard'
 
 // ---------------------------------------------------------------------------
 // 周期卡片（月/季/年）—— 每张卡片独立选择，选择结果按 key 记忆在 localStorage
@@ -90,11 +102,50 @@ const loadRanges = () => {
 const cardRanges = reactive(loadRanges())
 
 // ---------------------------------------------------------------------------
+// 趋势图配置（4 张：销售件数 / 营收 / 成本 / 利润）
+// 每张图独立切换粒度，故粒度记忆也按 key 分开存
+// ---------------------------------------------------------------------------
+const TREND_DEFS = [
+  { key: 'salesQty', title: '销售趋势', valueType: 'qty', unit: '件', colorVar: '--green', emptyText: '所选区间暂无销量数据' },
+  { key: 'revenue', title: '总营收趋势', valueType: 'money', unit: '', colorVar: '--green', emptyText: '所选区间暂无营收数据' },
+  { key: 'cost', title: '总成本趋势', valueType: 'money', unit: '', colorVar: '--gold', emptyText: '所选区间暂无成本数据' },
+  { key: 'profit', title: '总利润趋势', valueType: 'money', unit: '', colorVar: '--primary', emptyText: '所选区间暂无利润数据' }
+]
+
+const TREND_KEYS = TREND_DEFS.map((t) => t.key)
+const GRANULARITY_VALUES = ['day', 'week', 'month', 'quarter', 'year']
+const GRANULARITY_TEXT = {
+  day: '近 30 天',
+  week: '近 12 周',
+  month: '近 12 个月',
+  quarter: '近 8 个季度',
+  year: '近 5 年'
+}
+const TREND_STORE_KEY = 'dashboard_trend_granularities'
+
+const loadGranularities = () => {
+  const base = TREND_KEYS.reduce((acc, k) => ({ ...acc, [k]: 'month' }), {})
+  try {
+    const raw = JSON.parse(localStorage.getItem(TREND_STORE_KEY) || '{}')
+    TREND_KEYS.forEach((k) => {
+      if (GRANULARITY_VALUES.includes(raw?.[k])) base[k] = raw[k]
+    })
+  } catch (e) {
+    // 同上：解析失败用默认值
+  }
+  return base
+}
+
+const trendGranularities = reactive(loadGranularities())
+
+// ---------------------------------------------------------------------------
 // 数据
 // ---------------------------------------------------------------------------
 const summaryData = ref({ totalInventoryValue: 0 })
 // 周期指标按 range 缓存：多张卡片选同一周期时只发一次请求
 const metricsMap = reactive({})
+// 趋势按粒度缓存：4 张图共用一份结果（同一粒度只请求一次）
+const trendsMap = reactive({})
 
 const metricOf = (field) => metricsMap[cardRanges[field]] || {}
 const rangeTextOf = (field) => RANGE_TEXT[cardRanges[field]] || ''
@@ -108,6 +159,36 @@ const fetchMetrics = async (range) => {
     console.error('获取仪表盘周期指标失败:', error)
     ElMessage.error('仪表盘统计数据加载失败')
   }
+}
+
+// 趋势序列：从缓存的桶数组里取某一个指标
+const trendSeries = (key) => {
+  const buckets = trendsMap[trendGranularities[key]]?.buckets || []
+  return {
+    labels: buckets.map((b) => b.label),
+    values: buckets.map((b) => Number(b[key]) || 0)
+  }
+}
+
+const trendSubtitle = (t) => {
+  const span = GRANULARITY_TEXT[trendGranularities[t.key]] || ''
+  return t.valueType === 'qty' ? `${span} · 单位：件` : `${span} · 单位：元`
+}
+
+const fetchTrends = async (granularity) => {
+  if (trendsMap[granularity]) return
+  try {
+    const res = await getDashboardTrends(granularity)
+    if (res.data) trendsMap[granularity] = res.data
+  } catch (error) {
+    console.error('获取趋势数据失败:', error)
+    ElMessage.error('趋势数据加载失败')
+  }
+}
+
+const setGranularity = (key, value) => {
+  if (!GRANULARITY_VALUES.includes(value)) return
+  trendGranularities[key] = value
 }
 
 // 卡片：全部取后端真实字段，副文案标注口径来源（不展示编造的环比）
@@ -156,7 +237,7 @@ const cardList = computed(() => [
     prefix: '¥ ',
     value: formatMoney(metricOf('cost').cost),
     dotColor: 'var(--gold)',
-    desc: `${rangeTextOf('cost')} · 订单商品成本（不含工资与其他支出）`
+    desc: `${rangeTextOf('cost')} · 订单商品成本 + 工资 + 其他支出`
   },
   {
     key: 'salary',
@@ -165,7 +246,7 @@ const cardList = computed(() => [
     prefix: '¥ ',
     value: formatMoney(metricOf('salary').salary),
     dotColor: 'var(--gold)',
-    desc: `${rangeTextOf('salary')} · 应发工资合计（全员配送费口径）`
+    desc: `${rangeTextOf('salary')} · 应发工资（已计入总成本）`
   },
   {
     key: 'profit',
@@ -174,7 +255,7 @@ const cardList = computed(() => [
     prefix: '¥ ',
     value: formatMoney(metricOf('profit').profit),
     dotColor: 'var(--primary)',
-    desc: `${rangeTextOf('profit')} · 总营收 − 总成本（不重复扣工资）`
+    desc: `${rangeTextOf('profit')} · 总营收 − 总成本（成本含工资与其他支出）`
   }
 ])
 
@@ -187,73 +268,6 @@ const cardSpan = computed(() => {
   return 6
 })
 
-// ---------------------------------------------------------------------------
-// 月销售趋势（本年度 1~12 月，按商品件数）
-// ---------------------------------------------------------------------------
-const trendChartRef = ref(null)
-let trendChart = null
-const trendData = ref({ labels: [], values: [] })
-const trendYear = new Date().getFullYear()
-const trendEmpty = computed(() => !(trendData.value.values || []).some((v) => Number(v) > 0))
-
-// 图表颜色取自主题 token（避免在 JS 里硬编码色值，与 DESIGN.md 一致）
-const cssVar = (name, fallback) => {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name)
-  return (v || '').trim() || fallback
-}
-
-const initTrendChart = () => {
-  if (!trendChartRef.value) return
-  const cPrimary = cssVar('--primary', '#A8201A')
-  const cBorder = cssVar('--border', '#E8E6DF')
-  const cText2 = cssVar('--text-2', '#7A7A72')
-  const cCard = cssVar('--card', '#FFFFFF')
-  const rgba = (rgb, a) => `rgba(${rgb}, ${a})`
-  // #A8201A → '168, 32, 26'
-  const primaryRgb = cPrimary.replace('#', '').match(/.{2}/g)?.map((h) => parseInt(h, 16)).join(', ') || '168, 32, 26'
-
-  trendChart = echarts.init(trendChartRef.value)
-  trendChart.setOption({
-    tooltip: {
-      trigger: 'axis',
-      formatter: '{b}<br/>销量: {c} 件'
-    },
-    grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: trendData.value.labels,
-      axisLine: { lineStyle: { color: cBorder } },
-      axisLabel: { color: cText2 }
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: cText2 },
-      splitLine: { lineStyle: { color: cBorder } }
-    },
-    series: [
-      {
-        name: '商品件数',
-        type: 'line',
-        smooth: false,
-        symbol: 'circle',
-        symbolSize: 5,
-        data: trendData.value.values,
-        lineStyle: { color: cPrimary, width: 2 },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: rgba(primaryRgb, 0.1) },
-            { offset: 1, color: rgba(primaryRgb, 0) }
-          ])
-        },
-        itemStyle: { color: cPrimary, borderWidth: 2, borderColor: cCard }
-      }
-    ]
-  })
-}
-
 const fetchSummaryData = async () => {
   try {
     const res = await getDashboardSummary()
@@ -261,21 +275,6 @@ const fetchSummaryData = async () => {
   } catch (error) {
     console.error('获取仪表盘数据失败:', error)
     ElMessage.error('仪表盘统计数据加载失败')
-  }
-}
-
-const fetchTrendData = async () => {
-  try {
-    const res = await getDashboardTrend()
-    if (res.data) {
-      trendData.value = {
-        labels: res.data.map((x) => x.label),
-        values: res.data.map((x) => Number(x.qty) || 0)
-      }
-    }
-  } catch (error) {
-    console.error('获取趋势数据失败:', error)
-    ElMessage.error('销售趋势数据加载失败')
   }
 }
 
@@ -290,23 +289,23 @@ watch(
   { deep: true }
 )
 
-const handleResize = () => {
-  trendChart?.resize()
-}
+// 趋势粒度变化：先记忆，再按需拉取（同一粒度只请求一次，4 张图共用）
+watch(
+  () => ({ ...trendGranularities }),
+  (val) => {
+    localStorage.setItem(TREND_STORE_KEY, JSON.stringify(val))
+    const distinct = [...new Set(Object.values(val))]
+    Promise.all(distinct.map((g) => fetchTrends(g)))
+  },
+  { deep: true }
+)
 
 onMounted(async () => {
   await fetchSummaryData()
-  await Promise.all([...new Set(Object.values(cardRanges))].map((r) => fetchMetrics(r)))
-  await fetchTrendData()
-  await nextTick()
-  initTrendChart()
-  window.addEventListener('resize', handleResize)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize)
-  trendChart?.dispose()
-  trendChart = null
+  await Promise.all([
+    ...[...new Set(Object.values(cardRanges))].map((r) => fetchMetrics(r)),
+    ...[...new Set(Object.values(trendGranularities))].map((g) => fetchTrends(g))
+  ])
 })
 </script>
 
@@ -335,7 +334,7 @@ onBeforeUnmount(() => {
 }
 
 .stat-card:hover {
-  border-color: rgba(168, 32, 26, 0.25);
+  border-color: var(--border-strong);
 }
 
 .card-head {
@@ -394,49 +393,13 @@ onBeforeUnmount(() => {
   color: var(--text-3);
 }
 
-/* 图表卡片 */
-.chart-card {
-  background: var(--card);
-  border-radius: var(--radius-lg);
-  padding: 22px 24px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+/* 趋势图区：2×2 栅格，窄屏堆叠 */
+.trend-row {
+  row-gap: 16px;
+}
+
+.trend-col {
   animation: fadeUp 0.4s ease-out both;
-}
-
-.chart-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  gap: 8px;
-}
-
-.chart-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.chart-range {
-  font-size: 12px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.chart-empty {
-  height: 320px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-3);
-  font-size: 13px;
-}
-
-.chart-container {
-  width: 100%;
-  height: 320px;
 }
 
 @keyframes fadeUp {
@@ -444,7 +407,7 @@ onBeforeUnmount(() => {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 窄屏：卡片内标题与周期切换换行，图表高度收紧 */
+/* 窄屏：卡片内标题与周期切换换行 */
 @media (max-width: 768px) {
   .stat-card {
     padding: 16px 16px;
@@ -456,19 +419,6 @@ onBeforeUnmount(() => {
 
   .stat-value {
     font-size: 22px;
-  }
-
-  .chart-card {
-    padding: 16px 14px;
-  }
-
-  .chart-header {
-    flex-wrap: wrap;
-  }
-
-  .chart-container,
-  .chart-empty {
-    height: 240px;
   }
 }
 </style>

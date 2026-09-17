@@ -145,6 +145,11 @@ async function loadSalarySummary(r) {
   });
 
   const summary = {
+    // 应发合计（Σ due = 区间内订单配送费，不减预支、不取发放快照）——仪表盘成本口径用它：
+    // 成本是「应发的工资」，预支抵扣属于资金结算而非成本减少；且只有该口径能按任意时间粒度拆分
+    totalDue: round2(list.reduce((s, x) => s + x.due, 0)),
+    // 结算口径合计（Σ payAmount）：单月未发放时已扣减待抵扣预支、已发放时取发放快照
+    // ——工资统计页/成本汇总页沿用（页面语义是「本期实发/应结」，与成本口径不同属预期）
     totalDeliveryFee: round2(list.reduce((s, x) => s + x.payAmount, 0)),
     workerCount: list.length,
     orderCount: list.reduce((s, x) => s + x.orderCount, 0),

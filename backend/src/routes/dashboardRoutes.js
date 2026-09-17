@@ -9,7 +9,8 @@ router.get('/summary', dashboardController.getSummary);
 // 周期由 ?range=month|quarter|year 指定（仪表盘卡片各自选择，前端按 range 缓存复用）
 router.get('/metrics', dashboardController.getMetrics);
 
-// 月销售趋势（本年度 1~12 月，按商品件数）
-router.get('/trend', dashboardController.getTrend);
+// 趋势（销售件数 / 营收 / 成本 / 利润），按 ?granularity=day|week|month|quarter|year 分桶
+// 一次返回四张趋势图所需的全部序列，前端按粒度缓存复用
+router.get('/trends', dashboardController.getTrends);
 
 module.exports = router;

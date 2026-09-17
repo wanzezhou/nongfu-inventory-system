@@ -397,6 +397,79 @@ try {
   const mShot = await cdp.send('Page.captureScreenshot', { format: 'png', clip: sidebarBox })
   fs.writeFileSync(menuShot, Buffer.from(mShot.data, 'base64'))
   console.log('    侧边栏截图已保存：', menuShot)
+
+  console.log('\n=== 11) 仪表盘趋势图：4 张图各带粒度切换且互不影响 ===')
+  await cdp.send('Page.navigate', { url: APP + 'dashboard' })
+  const dashReady = await waitFor(
+    async () => !!(await cdp.eval("return !!document.querySelector('.trend-card')")),
+    { desc: '仪表盘趋势卡片', timeout: 20000 }
+  )
+  ok(dashReady, '进入仪表盘并渲染出趋势卡片')
+  // 等 4 张图的 canvas 都完成初始化（ECharts 懒初始化，可能有先后）
+  await waitFor(async () => (await cdp.eval(`
+    return document.querySelectorAll('.trend-card canvas').length
+  `)) === 4, { desc: '4 张趋势图完成初始化', timeout: 15000 })
+  const tr = await cdp.eval(`
+    const cards = [...document.querySelectorAll('.trend-card')]
+    return {
+      count: cards.length,
+      canvases: document.querySelectorAll('.trend-card canvas').length,
+      titles: cards.map(c => (c.querySelector('.trend-title') || {}).textContent || ''),
+      buckets: cards.map(c => Number(c.dataset.buckets)),
+      granularities: cards.map(c => c.dataset.granularity),
+      switchers: cards.map(c => c.querySelectorAll('.granularity-switch .el-radio-button').length)
+    }
+  `)
+  console.log('    趋势卡片：', JSON.stringify(tr))
+  ok(tr.count === 4, '趋势图共 4 张（销售 / 营收 / 成本 / 利润）', String(tr.count))
+  ok(tr.canvases === 4, '4 张图均完成 ECharts 初始化（存在 canvas）', String(tr.canvases))
+  ok(tr.titles.join(',').includes('销售趋势') && tr.titles.join(',').includes('总营收趋势')
+    && tr.titles.join(',').includes('总成本趋势') && tr.titles.join(',').includes('总利润趋势'),
+    '4 张图标题正确', tr.titles.join(' / '))
+  ok(tr.switchers.every((n) => n === 5), '每张图都有 5 个粒度按钮（日/周/月/季/年）', tr.switchers.join(','))
+  ok(tr.buckets.every((n) => n === 12) && tr.granularities.every((g) => g === 'month'),
+    '默认粒度为月（每图 12 个桶）', JSON.stringify({ buckets: tr.buckets, g: tr.granularities }))
+
+  // 只切第 1 张图 → 年（5 桶），其余 3 张必须保持月（12 桶）
+  const switched = await cdp.eval(`
+    const first = document.querySelectorAll('.trend-card')[0]
+    const btns = [...first.querySelectorAll('.granularity-switch .el-radio-button')]
+    const year = btns.find(b => b.textContent.trim() === '年')
+    if (!year) return { clicked: false }
+    ;(year.querySelector('input') || year).click()
+    return { clicked: true, labels: btns.map(b => b.textContent.trim()) }
+  `)
+  ok(switched.clicked, '找到并点击第 1 张图的「年」粒度', JSON.stringify(switched.labels))
+  await waitFor(async () => (await cdp.eval(`
+    return document.querySelectorAll('.trend-card')[0].dataset.buckets === '5'
+  `)), { desc: '第 1 张图切到年粒度（5 桶）', timeout: 10000 })
+  const trendAfter = await cdp.eval(`
+    const cards = [...document.querySelectorAll('.trend-card')]
+    return {
+      buckets: cards.map(c => Number(c.dataset.buckets)),
+      granularities: cards.map(c => c.dataset.granularity),
+      stored: localStorage.getItem('dashboard_trend_granularities')
+    }
+  `)
+  console.log('    切换后：', JSON.stringify(trendAfter))
+  ok(trendAfter.granularities[0] === 'year' && trendAfter.buckets[0] === 5,
+    '第 1 张图已切为年粒度（5 桶）', JSON.stringify({ g: trendAfter.granularities[0], b: trendAfter.buckets[0] }))
+  ok(trendAfter.granularities.slice(1).every((g) => g === 'month') && trendAfter.buckets.slice(1).every((b) => b === 12),
+    '其余 3 张图不受影响（仍为月 / 12 桶）', JSON.stringify(trendAfter.granularities.slice(1)))
+  let storedOk = false
+  try {
+    const parsed = JSON.parse(trendAfter.stored || '{}')
+    storedOk = parsed.salesQty === 'year' && parsed.revenue === 'month'
+      && parsed.cost === 'month' && parsed.profit === 'month'
+  } catch (e) { /* ignore */ }
+  ok(storedOk, '粒度按图独立记忆到 localStorage', String(trendAfter.stored))
+
+  const dashShot = path.join(os.tmpdir(), `ui-smoke-dashboard-${Date.now()}.png`)
+  const dShot = await cdp.send('Page.captureScreenshot', { format: 'png' })
+  fs.writeFileSync(dashShot, Buffer.from(dShot.data, 'base64'))
+  console.log('    仪表盘截图已保存：', dashShot)
+  // 还原记忆，避免影响后续手动浏览
+  await cdp.eval(`localStorage.removeItem('dashboard_trend_granularities'); return true`)
 } catch (e) {
   fail++
   console.log('\n❌ 执行异常: ' + e.message)

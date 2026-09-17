@@ -152,8 +152,8 @@ npm run dev
 | 方法 | 路径 | 说明 |
 | :--- | :--- | :--- |
 | GET | `/api/dashboard/summary` | 与时间无关的卡片：库存总金额 |
-| GET | `/api/dashboard/metrics?range=month\|quarter\|year` | 周期指标：总销量 / 总订单数 / 总营收 / 总成本 / 工资统计 / 总利润 |
-| GET | `/api/dashboard/trend` | 月销售趋势（本年度 1~12 月，按商品件数） |
+| GET | `/api/dashboard/metrics?range=month\|quarter\|year` | 周期指标：总销量 / 总订单数 / 总营收 / 总成本（**含工资与其他支出**）/ 工资统计 / 总利润 |
+| GET | `/api/dashboard/trends?granularity=day\|week\|month\|quarter\|year` | 趋势序列（销售件数 / 营收 / 成本 / 利润），一次返回四张图所需数据 |
 
 ### 系统配置 `/api/system-settings`
 | 方法 | 路径 | 说明 |

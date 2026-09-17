@@ -9,7 +9,7 @@ export function getDashboardSummary() {
 }
 
 // 周期指标：range = month | quarter | year（仪表盘卡片各自选择周期）
-// 返回总销量 / 总订单数 / 总营收 / 总成本 / 工资统计 / 总利润
+// 返回总销量 / 总订单数 / 总营收 / 总成本（含工资与其他支出）/ 工资统计 / 总利润
 export function getDashboardMetrics(range = 'month') {
   return request({
     url: '/dashboard/metrics',
@@ -18,10 +18,12 @@ export function getDashboardMetrics(range = 'month') {
   })
 }
 
-// 月销售趋势（本年度 1~12 月，按商品件数）
-export function getDashboardTrend() {
+// 趋势：granularity = day | week | month | quarter | year
+// 一次返回四张趋势图（销售件数 / 营收 / 成本 / 利润）所需的全部序列
+export function getDashboardTrends(granularity = 'month') {
   return request({
-    url: '/dashboard/trend',
-    method: 'get'
+    url: '/dashboard/trends',
+    method: 'get',
+    params: { granularity }
   })
 }
