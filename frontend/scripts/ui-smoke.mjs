@@ -1,0 +1,277 @@
+/**
+ * UI 冒烟：真实 Chrome + CDP（零依赖，仅用 Node 22 内置 WebSocket 与 fetch）
+ * ---------------------------------------------------------------------------
+ * 背景：组件编译通过 ≠ 交互可用。「悬浮新建订单按钮点击无效」这类 bug
+ *       （指针捕获导致 click 目标被重定向到容器）在编译/构建阶段完全看不出来。
+ *       本脚本拉起一个真实 Chromium，用 **真实输入事件**（Input.dispatchMouseEvent）
+ *       驱动页面，断言交互结果。
+ *
+ * 依赖：本机已安装 Chrome 或 Edge（自动探测）+ 后端(:3000) + 前端(:5173) 已启动。
+ * 用法：node frontend/scripts/ui-smoke.mjs [--headful]
+ * 退出码：0 = 全部通过；1 = 有断言失败
+ */
+import { spawn, execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+const HEADFUL = process.argv.includes('--headful')
+const PORT = 9223
+const APP = 'http://localhost:5173/'
+const API = 'http://localhost:3000/api'
+const CDP = `http://127.0.0.1:${PORT}`
+
+let pass = 0, fail = 0
+const ok = (c, n, extra = '') => {
+  if (c) { pass++; console.log('  ✅ ' + n) } else { fail++; console.log('  ❌ ' + n + ' ' + extra) }
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+function findBrowser() {
+  const cands = [
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    '/usr/bin/google-chrome', '/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  ]
+  return cands.find((p) => fs.existsSync(p)) || null
+}
+
+/** 极简 CDP 客户端 */
+class Cdp {
+  constructor(ws) { this.ws = ws; this.id = 0; this.waiting = new Map(); this.events = [] }
+  static async connect(wsUrl) {
+    const ws = new WebSocket(wsUrl)
+    await new Promise((res, rej) => {
+      ws.addEventListener('open', res, { once: true })
+      ws.addEventListener('error', () => rej(new Error('WebSocket 连接失败')), { once: true })
+    })
+    const c = new Cdp(ws)
+    ws.addEventListener('message', (ev) => {
+      const msg = JSON.parse(ev.data)
+      if (msg.id && c.waiting.has(msg.id)) {
+        const { resolve, reject } = c.waiting.get(msg.id)
+        c.waiting.delete(msg.id)
+        msg.error ? reject(new Error(JSON.stringify(msg.error))) : resolve(msg.result)
+      } else if (msg.method) {
+        c.events.push(msg)
+      }
+    })
+    return c
+  }
+  send(method, params = {}) {
+    const id = ++this.id
+    return new Promise((resolve, reject) => {
+      this.waiting.set(id, { resolve, reject })
+      this.ws.send(JSON.stringify({ id, method, params }))
+      setTimeout(() => {
+        if (this.waiting.has(id)) { this.waiting.delete(id); reject(new Error(method + ' 超时')) }
+      }, 30000)
+    })
+  }
+  /** 在页面里求值（返回结构化值） */
+  async eval(expr) {
+    const r = await this.send('Runtime.evaluate', {
+      expression: `(() => { ${expr} })()`,
+      returnByValue: true,
+      awaitPromise: true
+    })
+    if (r.exceptionDetails) throw new Error('页面求值异常: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text))
+    return r.result.value
+  }
+  /** 派发真实鼠标事件（Chromium 会据此合成 pointer 事件） */
+  async mouse(type, x, y, extra = {}) {
+    await this.send('Input.dispatchMouseEvent', {
+      type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1,
+      buttons: type === 'mouseMoved' ? 0 : 1, ...extra
+    })
+  }
+  /** 完整点击：按下 + 抬起（与真人一致的事件序列） */
+  async click(x, y) {
+    await this.mouse('mouseMoved', x, y, { buttons: 0 })
+    await this.mouse('mousePressed', x, y)
+    await this.mouse('mouseReleased', x, y)
+  }
+  /** 完整拖动：按下 → 分步移动 → 抬起 */
+  async drag(x, y, dx, dy, steps = 6) {
+    await this.mouse('mouseMoved', x, y, { buttons: 0 })
+    await this.mouse('mousePressed', x, y)
+    for (let i = 1; i <= steps; i++) {
+      await this.mouse('mouseMoved', x + (dx * i) / steps, y + (dy * i) / steps)
+      await sleep(16)
+    }
+    await this.mouse('mouseReleased', x + dx, y + dy)
+  }
+}
+
+async function waitFor(fn, { timeout = 15000, interval = 200, desc = '条件' } = {}) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeout) {
+    try { if (await fn()) return true } catch (e) { /* 继续等 */ }
+    await sleep(interval)
+  }
+  console.log(`  （等待「${desc}」超时 ${timeout}ms）`)
+  return false
+}
+
+const FAB_BOX = `
+  const el = document.querySelector('.float-entry')
+  if (!el) return null
+  const r = el.getBoundingClientRect()
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2, left: r.left, top: r.top, w: r.width, h: r.height }
+`
+const DIALOG_OPEN = `
+  const ds = [...document.querySelectorAll('.el-dialog')].filter(d => getComputedStyle(d).display !== 'none')
+  const titles = ds.map(d => (d.querySelector('.el-dialog__title')?.textContent || '').trim())
+  return { count: ds.length, titles }
+`
+
+let browser = null
+let cdp = null
+let profile = null
+
+try {
+  console.log('=== 0) 前置检查 ===')
+  const bin = findBrowser()
+  ok(!!bin, '找到本机浏览器', bin || '(未找到 Chrome/Edge)')
+  if (!bin) throw new Error('无浏览器可用')
+
+  const feOk = await fetch(APP).then((r) => r.ok).catch(() => false)
+  ok(feOk, '前端 :5173 可访问')
+  if (!feOk) throw new Error('前端未启动')
+
+  const login = await fetch(API + '/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin123' })
+  }).then((r) => r.json())
+  ok(!!login?.data?.token, '后端登录成功')
+  if (!login?.data?.token) throw new Error('登录失败')
+
+  console.log('\n=== 1) 启动真实 Chromium（CDP）===')
+  profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-prof-'))
+  const args = [
+    HEADFUL ? '--headless=false' : '--headless=new',
+    '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+    '--disable-extensions', '--disable-background-networking',
+    `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
+    '--window-size=1440,900', 'about:blank'
+  ].filter((a) => a !== '--headless=false')
+  browser = spawn(bin, args, { stdio: 'ignore', windowsHide: true })
+
+  const ready = await waitFor(async () => (await fetch(CDP + '/json/version')).ok, { desc: 'CDP 就绪' })
+  ok(ready, 'CDP 调试端口就绪')
+  if (!ready) throw new Error('CDP 未就绪')
+
+  const targets = await fetch(CDP + '/json/list').then((r) => r.json())
+  const page = targets.find((t) => t.type === 'page')
+  ok(!!page?.webSocketDebuggerUrl, '取得页面 target')
+  cdp = await Cdp.connect(page.webSocketDebuggerUrl)
+  await cdp.send('Runtime.enable')
+  await cdp.send('Page.enable')
+
+  console.log('\n=== 2) 登录态注入并加载应用 ===')
+  await cdp.send('Page.navigate', { url: APP })
+  await waitFor(() => cdp.eval("return !!document.querySelector('#app')"), { desc: '#app 挂载' })
+  await cdp.eval(`
+    localStorage.setItem('token', ${JSON.stringify(login.data.token)})
+    localStorage.setItem('userInfo', ${JSON.stringify(JSON.stringify(login.data.user || {}))})
+    return true
+  `)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  const fabReady = await waitFor(async () => !!(await cdp.eval(FAB_BOX)), { desc: '悬浮按钮出现', timeout: 25000 })
+  ok(fabReady, '登录后悬浮「新建订单」按钮已渲染')
+  if (!fabReady) throw new Error('悬浮按钮未渲染')
+
+  // 埋点：记录真实 click / pointerup 的落点，用于验证「click 被重定向到容器」这一根因
+  await cdp.eval(`
+    window.__evt = []
+    document.addEventListener('click', (e) => {
+      window.__evt.push({ t: 'click', target: e.target?.className || e.target?.tagName })
+    }, true)
+    document.addEventListener('pointerup', (e) => {
+      window.__evt.push({ t: 'pointerup', target: e.target?.className || e.target?.tagName })
+    }, true)
+    return true
+  `)
+
+  console.log('\n=== 3) 单击悬浮按钮 → 应打开新建订单表单 ===')
+  let box = await cdp.eval(FAB_BOX)
+  console.log(`    按钮中心 (${Math.round(box.x)}, ${Math.round(box.y)})，尺寸 ${Math.round(box.w)}×${Math.round(box.h)}`)
+  await cdp.click(box.x, box.y)
+  const opened = await waitFor(async () => {
+    const d = await cdp.eval(DIALOG_OPEN)
+    return d.count > 0
+  }, { desc: '订单表单弹窗出现', timeout: 10000 })
+  const dlg = await cdp.eval(DIALOG_OPEN)
+  ok(opened, '单击后弹窗出现', JSON.stringify(dlg))
+  if (opened) console.log('    弹窗标题：', dlg.titles.join(' / ') || '(无标题)')
+
+  const evtLog = await cdp.eval('return window.__evt')
+  const clickEvt = evtLog.find((e) => e.t === 'click')
+  const upEvt = evtLog.find((e) => e.t === 'pointerup')
+  console.log('    事件埋点：pointerup →', upEvt?.target, '｜ click →', clickEvt?.target)
+  ok(!!clickEvt, '确实收到了 click 事件（说明不是事件没派发）')
+
+  // 关掉弹窗，便于后续测试
+  await cdp.eval(`
+    const btns = [...document.querySelectorAll('.el-dialog__footer button, .el-dialog__headerbtn')]
+    const close = btns.find(b => /取消|关闭/.test(b.textContent)) || document.querySelector('.el-dialog__headerbtn')
+    if (close) close.click()
+    return true
+  `)
+  await waitFor(async () => (await cdp.eval(DIALOG_OPEN)).count === 0, { desc: '弹窗关闭' })
+
+  console.log('\n=== 4) 拖动 → 只移位、不应打开表单 ===')
+  box = await cdp.eval(FAB_BOX)
+  const before = { left: Math.round(box.left), top: Math.round(box.top) }
+  await cdp.drag(box.x, box.y, -260, -160)
+  await sleep(300)
+  const after = await cdp.eval(FAB_BOX)
+  const moved = { left: Math.round(after.left), top: Math.round(after.top) }
+  console.log(`    位置 ${JSON.stringify(before)} → ${JSON.stringify(moved)}`)
+  ok(Math.abs(moved.left - before.left) > 100 && Math.abs(moved.top - before.top) > 60, '拖动生效（位置发生明显位移）')
+  const dlgAfterDrag = await cdp.eval(DIALOG_OPEN)
+  ok(dlgAfterDrag.count === 0, '拖动后未误开表单', JSON.stringify(dlgAfterDrag))
+
+  const posSaved = await cdp.eval(`return localStorage.getItem('floating_order_btn_pos')`)
+  ok(!!posSaved, '位置已写入 localStorage', String(posSaved))
+  const posParsed = JSON.parse(posSaved || '{}')
+  ok(Math.abs(posParsed.x - moved.left) < 2 && Math.abs(posParsed.y - moved.top) < 2, 'localStorage 位置与实际位置一致')
+
+  console.log('\n=== 5) 拖动后再单击 → 仍应打开表单 ===')
+  const box2 = await cdp.eval(FAB_BOX)
+  await cdp.click(box2.x, box2.y)
+  const opened2 = await waitFor(async () => (await cdp.eval(DIALOG_OPEN)).count > 0, { desc: '再次打开表单', timeout: 8000 })
+  ok(opened2, '拖动后单击仍能打开表单')
+
+  console.log('\n=== 6) 刷新后位置保持 ===')
+  await cdp.eval(`
+    const btns = [...document.querySelectorAll('.el-dialog__footer button, .el-dialog__headerbtn')]
+    const close = btns.find(b => /取消|关闭/.test(b.textContent)) || document.querySelector('.el-dialog__headerbtn')
+    if (close) close.click()
+    return true
+  `)
+  await sleep(300)
+  await cdp.send('Page.reload', { ignoreCache: false })
+  await waitFor(async () => !!(await cdp.eval(FAB_BOX)), { desc: '刷新后按钮出现' })
+  const box3 = await cdp.eval(FAB_BOX)
+  ok(Math.abs(Math.round(box3.left) - moved.left) < 2 && Math.abs(Math.round(box3.top) - moved.top) < 2,
+    '刷新后按钮回到拖动后的位置', JSON.stringify({ left: Math.round(box3.left), top: Math.round(box3.top) }))
+
+  await cdp.eval(`localStorage.removeItem('floating_order_btn_pos'); return true`)
+} catch (e) {
+  fail++
+  console.log('\n❌ 执行异常: ' + e.message)
+} finally {
+  try { cdp?.ws.close() } catch (e) { /* ignore */ }
+  // ⚠️ 只结束「本脚本拉起的这棵进程树」，绝不按镜像名批量杀（否则会连带干掉用户自己的 Chrome）
+  try {
+    if (browser?.pid) execFileSync('taskkill', ['/PID', String(browser.pid), '/T', '/F'], { stdio: 'ignore' })
+  } catch (e) {
+    try { browser?.kill('SIGKILL') } catch (e2) { /* ignore */ }
+  }
+  try { if (profile) fs.rmSync(profile, { recursive: true, force: true }) } catch (e) { /* ignore */ }
+  console.log(`\n=== 结果：通过 ${pass} / 失败 ${fail} ===`)
+  process.exit(fail ? 1 : 0)
+}

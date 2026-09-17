@@ -130,7 +130,8 @@ const onPointerDown = (e) => {
   dragState = { startX: e.clientX, startY: e.clientY, originX: pos.value.x, originY: pos.value.y }
   moved = false
   dragging.value = true
-  try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch (err) { /* 忽略 */ }
+  // 捕获指针：拖到按钮外仍能继续跟随（不加 capture 时快速拖动会丢事件）
+  try { wrapRef.value?.setPointerCapture?.(e.pointerId) } catch (err) { /* 忽略 */ }
 }
 
 const onPointerMove = (e) => {
@@ -142,24 +143,51 @@ const onPointerMove = (e) => {
   pos.value = clamp(dragState.originX + dx, dragState.originY + dy)
 }
 
-const onPointerUp = (e) => {
-  if (!dragging.value) return
-  dragging.value = false
-  try { e.currentTarget.releasePointerCapture?.(e.pointerId) } catch (err) { /* 忽略 */ }
-  if (moved) {
-    savePos()
-    // 拖动结束后浏览器仍会派发 click，用一次性开关屏蔽掉，避免误开表单
-    suppressClick = true
-    setTimeout(() => { suppressClick = false }, 0)
-  }
-  dragState = null
-}
-
-const onClick = () => {
-  if (suppressClick || moved) return
+/**
+ * 激活入口（打开订单表单）
+ * ⚠️ 不能用 button 上的 click 事件做激活：pointerdown 时调了 setPointerCapture，
+ *    pointerup 会被重定向到捕获元素（外层容器），而 click 的目标取
+ *    「pointerdown 与 pointerup 目标的最近公共祖先」→ click 实际落在**容器**上，
+ *    挂在里面那个 button 上的 @click 永远不会触发（曾因此导致「点击无效」）。
+ *    故改为在 pointerup 里直接判定「未拖动 = 点击」并激活。
+ */
+const activate = () => {
   overlayReady.value = true
   if (formRef.value) formRef.value.openCreate()
   else pendingOpen.value = true // 异步组件尚在加载，加载完由 watch 补开
+}
+
+const onPointerUp = (e) => {
+  if (!dragging.value) return
+  dragging.value = false
+  try { wrapRef.value?.releasePointerCapture?.(e.pointerId) } catch (err) { /* 忽略 */ }
+  const wasMoved = moved
+  dragState = null
+  if (wasMoved) {
+    savePos()
+    // 拖动结束后浏览器仍会补发 click：用一次性开关吞掉，避免误开表单
+    suppressClick = true
+    setTimeout(() => { suppressClick = false }, 0)
+    return
+  }
+  // 未拖动 = 点击：此处激活，并吞掉随后补发的 click（避免键盘/鼠标两条路径重复触发）
+  suppressClick = true
+  setTimeout(() => { suppressClick = false }, 0)
+  activate()
+}
+
+/** 指针被系统取消（如触摸滚动中断）：只复位状态，不激活 */
+const onPointerCancel = () => {
+  if (!dragging.value) return
+  dragging.value = false
+  dragState = null
+  moved = false
+}
+
+/** 键盘可达性：button 获得焦点后按 Enter/Space 会派发 click，走这里 */
+const onClick = () => {
+  if (suppressClick || moved) return
+  activate()
 }
 
 // 保存成功后：通知订单列表刷新（若正在显示），并处理「提交并打印」
