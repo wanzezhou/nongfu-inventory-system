@@ -405,15 +405,25 @@ try {
     { desc: '仪表盘趋势卡片', timeout: 20000 }
   )
   ok(dashReady, '进入仪表盘并渲染出趋势卡片')
-  // 等 4 张图的 canvas 都完成初始化（ECharts 懒初始化，可能有先后）
-  await waitFor(async () => (await cdp.eval(`
-    return document.querySelectorAll('.trend-card canvas').length
-  `)) === 4, { desc: '4 张趋势图完成初始化', timeout: 15000 })
+  // 等 4 张图完成渲染。两种合法终态：
+  //   ① 有数据 → ECharts 初始化，出现 canvas
+  //   ② 数据全为 0（如系统初始化后）→ 按设计显示空态占位，**不**初始化 ECharts
+  // 断言必须对两种状态都成立，否则「全 0 数据」会变成假失败（2026-09-18 踩到）
+  await waitFor(async () => {
+    const r = await cdp.eval(`
+      return {
+        canvases: document.querySelectorAll('.trend-card canvas').length,
+        empties: document.querySelectorAll('.trend-card .trend-empty').length
+      }
+    `)
+    return r.canvases === 4 || r.empties === 4
+  }, { desc: '4 张趋势图完成渲染（canvas 或空态）', timeout: 15000 })
   const tr = await cdp.eval(`
     const cards = [...document.querySelectorAll('.trend-card')]
     return {
       count: cards.length,
       canvases: document.querySelectorAll('.trend-card canvas').length,
+      empties: document.querySelectorAll('.trend-card .trend-empty').length,
       titles: cards.map(c => (c.querySelector('.trend-title') || {}).textContent || ''),
       buckets: cards.map(c => Number(c.dataset.buckets)),
       granularities: cards.map(c => c.dataset.granularity),
@@ -422,7 +432,11 @@ try {
   `)
   console.log('    趋势卡片：', JSON.stringify(tr))
   ok(tr.count === 4, '趋势图共 4 张（销售 / 营收 / 成本 / 利润）', String(tr.count))
-  ok(tr.canvases === 4, '4 张图均完成 ECharts 初始化（存在 canvas）', String(tr.canvases))
+  ok(tr.canvases === 4 || tr.empties === 4,
+    tr.canvases === 4
+      ? '4 张图均完成 ECharts 初始化（存在 canvas）'
+      : '数据全为 0 → 4 张图均显示空态占位（按设计不初始化 ECharts）',
+    JSON.stringify({ canvases: tr.canvases, empties: tr.empties }))
   ok(tr.titles.join(',').includes('销售趋势') && tr.titles.join(',').includes('总营收趋势')
     && tr.titles.join(',').includes('总成本趋势') && tr.titles.join(',').includes('总利润趋势'),
     '4 张图标题正确', tr.titles.join(' / '))
