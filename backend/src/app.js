@@ -6,6 +6,7 @@ const path = require('path');
 require('dotenv').config();
 
 const { pool, testConnection, getPoolStats } = require('./config/db');
+const { success } = require('./utils/response');
 const auth = require('./middleware/auth');
 const productRoutes = require('./routes/productRoutes');
 const stationRoutes = require('./routes/stationRoutes');
@@ -42,13 +43,15 @@ const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
-app.use(cors({
-  origin(origin, callback) {
-    // 非浏览器请求（curl/服务间调用）无 Origin 头，放行
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(null, false); // 不在白名单：不报错，但不带 CORS 头，浏览器侧拦截
-  }
-}));
+app.use(
+  cors({
+    origin(origin, callback) {
+      // 非浏览器请求（curl/服务间调用）无 Origin 头，放行
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false); // 不在白名单：不报错，但不带 CORS 头，浏览器侧拦截
+    }
+  })
+);
 
 // 登录接口限流：15 分钟内最多 10 次，防暴力破解
 const loginLimiter = rateLimit({
@@ -153,14 +156,8 @@ app.use('/api/system-settings', systemSettingsRoutes);
 
 // 根路由
 app.get('/', (req, res) => {
-  res.json({
-    code: 200,
-    message: '农夫山泉进销存系统API服务运行中',
-    data: {
-      version: '1.0.0',
-      timestamp: new Date().toISOString()
-    }
-  });
+  // R7：走统一出口，避免出现第二套响应语义（2026-09-18 由 eslint 拦下）
+  success(res, { version: '1.0.0', timestamp: new Date().toISOString() }, '农夫山泉进销存系统API服务运行中');
 });
 
 // 健康检查（2026-09-18 代码审查 #5 新增）
@@ -218,11 +215,11 @@ app.use((err, req, res, next) => {
 // ⚠️ 只打印 err.message 会**丢失堆栈**，事后无法定位；而 uncaughtException 之后进程状态
 // 已不可信（可能存在「半个事务已提交、连接已泄漏」的进程继续对外服务）。
 // ⇒ 记录完整错误（含 stack）后**退出**，由 start.bat / 进程管理器重启。
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', reason => {
   console.error('未处理的 Promise rejection:', reason);
 });
 
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', err => {
   console.error('未捕获的异常，进程即将退出:', err);
   // 给日志一点落盘时间，然后交回进程管理器重启
   setTimeout(() => process.exit(1), 100).unref();
@@ -248,7 +245,7 @@ function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`收到 ${signal}，开始优雅关闭…`);
-  const finish = async (code) => {
+  const finish = async code => {
     try {
       await pool.end();
       console.log('数据库连接池已关闭');
@@ -258,7 +255,7 @@ function gracefulShutdown(signal) {
     process.exit(code);
   };
   if (!server) return finish(0);
-  server.close((err) => {
+  server.close(err => {
     if (err) console.error('关闭 HTTP 服务出错:', err);
     return finish(err ? 1 : 0);
   });
@@ -269,7 +266,7 @@ function gracefulShutdown(signal) {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-startServer().catch((err) => {
+startServer().catch(err => {
   console.error('数据库连接失败，拒绝启动:', err.message);
   console.error('请确认 MySQL 服务已启动，且数据库已创建、.env 配置正确');
   process.exit(1);

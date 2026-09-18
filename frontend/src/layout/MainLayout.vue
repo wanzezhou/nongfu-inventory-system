@@ -4,8 +4,16 @@
       <div class="logo">
         <div class="logo-icon" v-if="!isCollapse">
           <svg viewBox="0 0 32 32" class="logo-svg" fill="none">
-            <path class="logo-ink" d="M16 4C16 4 6 14 6 21C6 26.5 10.5 29 16 29C21.5 29 26 26.5 26 21C26 14 16 4 16 4Z" opacity="0.9"/>
-            <path class="logo-drop" d="M16 10C16 10 10 16 10 21C10 23.8 12.5 25.5 16 25.5C19.5 25.5 22 23.8 22 21C22 16 16 10 16 10Z" opacity="0.85"/>
+            <path
+              class="logo-ink"
+              d="M16 4C16 4 6 14 6 21C6 26.5 10.5 29 16 29C21.5 29 26 26.5 26 21C26 14 16 4 16 4Z"
+              opacity="0.9"
+            />
+            <path
+              class="logo-drop"
+              d="M16 10C16 10 10 16 10 21C10 23.8 12.5 25.5 16 25.5C19.5 25.5 22 23.8 22 21C22 16 16 10 16 10Z"
+              opacity="0.85"
+            />
           </svg>
         </div>
         <div class="logo-text-wrapper" v-if="!isCollapse">
@@ -14,12 +22,7 @@
         </div>
         <span v-else class="logo-text-collapsed">农</span>
       </div>
-      <el-menu
-        :default-active="activeMenu"
-        :collapse="isCollapse"
-        class="sidebar-menu"
-        @select="handleMenuSelect"
-      >
+      <el-menu :default-active="activeMenu" :collapse="isCollapse" class="sidebar-menu" @select="handleMenuSelect">
         <!-- 菜单树来自 menuConfig.js（单一数据源，A8）；router meta.title 同源 -->
         <template v-for="entry in menuGroups" :key="entry.index">
           <!-- 分组菜单 -->
@@ -95,9 +98,10 @@
              数据（现象：在「零售机管理」看到并删掉的是量贩机，用户以为两个模块被关联了）。
              用 route.path 作 key 强制不同路由重建实例；**不含 query**，故翻页/筛选
              （同一 path 换 query）不会重建。 -->
-        <router-view v-slot="{ Component, route }">
+        <!-- route 改名 currentRoute：插槽属性名 route 会遮蔽外层 useRoute 的 route（vue/no-template-shadow） -->
+        <router-view v-slot="{ Component, route: currentRoute }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" :key="route.path" />
+            <component :is="Component" :key="currentRoute.path" />
           </transition>
         </router-view>
       </el-main>
@@ -116,7 +120,12 @@
           <el-input v-model="passwordForm.newPassword" type="password" show-password placeholder="请输入新密码" />
         </el-form-item>
         <el-form-item label="确认密码">
-          <el-input v-model="passwordForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" />
+          <el-input
+            v-model="passwordForm.confirmPassword"
+            type="password"
+            show-password
+            placeholder="请再次输入新密码"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -171,11 +180,16 @@ const asideWidth = computed(() => (isCollapse.value ? '64px' : `${sidebarWidth.v
 
 function saveSidebarPref() {
   try {
-    localStorage.setItem(SIDEBAR_KEY, JSON.stringify({
-      collapsed: isCollapse.value,
-      width: sidebarWidth.value
-    }))
-  } catch (e) { /* 隐私模式等场景忽略 */ }
+    localStorage.setItem(
+      SIDEBAR_KEY,
+      JSON.stringify({
+        collapsed: isCollapse.value,
+        width: sidebarWidth.value
+      })
+    )
+  } catch (e) {
+    /* 隐私模式等场景忽略 */
+  }
 }
 
 watch([isCollapse, sidebarWidth], saveSidebarPref)
@@ -217,10 +231,10 @@ const activeMenu = computed(() => {
 })
 
 // 菜单跳转：财务管理二级项的 index 是虚拟键（/fm/xxx），真实目标在 to 字段
-const handleMenuSelect = (index) => {
+const handleMenuSelect = index => {
   for (const g of menuGroups) {
     if (g.type !== 'group') continue
-    const item = g.items.find((i) => i.index === index)
+    const item = g.items.find(i => i.index === index)
     if (item) {
       router.push(item.to || item.index)
       return
@@ -234,11 +248,11 @@ const breadcrumb = computed(() => {
   const path = route.path
   const g = tabGroupOf(path)
   if (g) {
-    const tab = g.tabs.find((t) => t.index === path)
+    const tab = g.tabs.find(t => t.index === path)
     return [FINANCE_GROUP_TITLE, g.title, tab ? tab.title : route.meta.title]
   }
   for (const mg of menuGroups) {
-    if (mg.type === 'group' && mg.items.some((i) => i.index === path)) {
+    if (mg.type === 'group' && mg.items.some(i => i.index === path)) {
       return [mg.title, route.meta.title]
     }
     if (mg.type === 'item' && mg.index === path) return [route.meta.title]
@@ -277,7 +291,7 @@ const passwordForm = reactive({
   confirmPassword: ''
 })
 
-const handleCommand = (command) => {
+const handleCommand = command => {
   if (command === 'logout') {
     handleLogout()
   } else if (command === 'changePassword') {
@@ -293,11 +307,13 @@ const handleLogout = () => {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    useAuthStore().clear()
-    ElMessage.success('已退出登录')
-    router.push('/login')
-  }).catch(() => {})
+  })
+    .then(() => {
+      useAuthStore().clear()
+      ElMessage.success('已退出登录')
+      router.push('/login')
+    })
+    .catch(() => {})
 }
 
 const handlePasswordSubmit = async () => {

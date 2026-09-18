@@ -2,4 +2,17 @@
 # 提交信息规范校验（G2 机器门禁）
 # 格式：type(scope): 中文描述      例：fix(order): 修水票未还原（F3）
 # 规范详见 docs/代码审查流程.md 第三章
-npx --no-install commitlint --edit "$1"
+#
+# ⚠️ 用 `node <入口 js>` 而不是 `npx --no-install`（2026-09-18 改）：
+#    npx 依赖 PATH 与 .bin 垫片（Windows 下 .cmd 与无扩展名脚本两套），
+#    在 Git for Windows 的 sh 里可能解析失败，表现为「钩子拦住了提交，
+#    但拦它的原因是环境而非规范」—— 这类失败最难排查。
+if [ -f node_modules/@commitlint/cli/cli.js ]; then
+  node node_modules/@commitlint/cli/cli.js --edit "$1"
+else
+  echo "⚠️  根目录工具链未安装（缺 commitlint），提交信息规范校验已跳过。"
+  echo "    启用方式：在仓库根目录执行 npm install"
+  # 工具链缺失时不阻断提交，但必须让人看见门禁没生效 ——
+  # 静默跳过等于让人以为规范在被强制（假绿灯）。
+  exit 0
+fi

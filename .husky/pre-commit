@@ -23,10 +23,19 @@ if echo "$STAGED" | grep -qE "^database/backup_.*\.sql$"; then
   exit 1
 fi
 
-# ── 2. 暂存文件格式与静态缺陷（仅改动文件）──────────────────────────
-if echo "$STAGED" | grep -qE '\.(js|mjs|cjs|vue|json|yml|yaml|css|scss|html|md)$'; then
-  npx --no-install lint-staged || {
-    echo "❌ lint-staged 未通过：请修正后重新提交。"
+# ── 2. 暂存文件的 lint 与格式（只跑改动文件）────────────────────────
+# ⚠️ 2026-09-18 重要：**不要用 lint-staged**。
+#    它在执行前的 "Backing up original state" 步骤会 stash / 改写 ref，
+#    在本机 Windows 环境下**必然挂死**；一旦外层进程被超时终止，git 就被杀在
+#    「已删旧状态、未写新状态」的中间态 —— 本项目已因此**两次**被破坏：
+#      第一次：refs 与 object pack 一起消失（提交"不见了"）；
+#      第二次：整个 .git/refs 被删，git 直接报 not a git repository。
+#    两次都靠动手前的 `git bundle create --all` 备份恢复。
+#    故 pre-commit 只允许做**纯增量**操作：读 git 输出、写文件、git add。
+#    执行器见 scripts/precommit-check.mjs（无 stash、无备份、无 ref 操作）。
+if [ -f scripts/precommit-check.mjs ]; then
+  node scripts/precommit-check.mjs || {
+    echo "❌ 暂存文件检查未通过：请修正后重新提交。"
     exit 1
   }
 fi

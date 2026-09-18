@@ -21,13 +21,13 @@
  *
  * 豁免：在同一行写 `hazard-allow: <原因>` 注释即可豁免（必须写原因，便于评审追溯）
  */
-import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 // ── 扫描范围：只扫业务源码，不扫配置/文档/脚本自身 ──────────────────
-const INCLUDE = [/^backend\/src\/.*\.js$/, /^frontend\/src\/.*\.(js|vue)$/]
-const SKIP = [/node_modules/, /\.min\.js$/, /^docs\//, /^\.github\//, /^scripts\//]
+const INCLUDE = [/^backend\/src\/.*\.js$/, /^frontend\/src\/.*\.(js|vue)$/];
+const SKIP = [/node_modules/, /\.min\.js$/, /^docs\//, /^\.github\//, /^scripts\//];
 
 /** 红线规则。level: 'error' 阻断；'warn' 仅记录 */
 const RULES = [
@@ -68,7 +68,14 @@ const RULES = [
     id: 'R4',
     level: 'error',
     name: '内部错误详情出参',
-    test: /(error|success|pagination)\(res\s*,[^)]*\.(message|stack)/,
+    // ⚠️ 2026-09-18 收窄（原文为 `(error|success|pagination)\(res\s*,[^)]*\.(message|stack)`）：
+    //    原文把 `success(res, data, result.message)` 也判成"泄露内部错误详情" ——
+    //    但 success 是 code:200 的成功出口，其 message 是服务层业务文案，
+    //    结构上不可能携带内部错误，属**构造性误报**。门禁里的构造性误报会训练人忽略告警，
+    //    最终让规则失效（本仓已有多次同类教训），故剔除 success / pagination。
+    //    仍保留 error：服务层 result.message 有可能就是包装过的 err.message，
+    //    这类必须在行内 `hazard-allow: <原因>` 显式豁免，评审可追溯。
+    test: /error\(res\s*,[^)]*\.(message|stack)/,
     why: '把 err.message / stack 返回给客户端，泄露表结构、文件路径、库名（历史缺陷 S7）',
     onlyIn: [/^backend\//]
   },
@@ -126,16 +133,16 @@ const RULES = [
     why: '动态列名需确认来自服务端白名单，且优先显式列出字段',
     onlyIn: [/^backend\//]
   }
-]
+];
 
 // ── 工具函数 ────────────────────────────────────────────────────────
 function git(args) {
-  return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 
 function isInScope(file) {
-  if (SKIP.some(r => r.test(file))) return false
-  return INCLUDE.some(r => r.test(file))
+  if (SKIP.some(r => r.test(file))) return false;
+  return INCLUDE.some(r => r.test(file));
 }
 
 /**
@@ -143,170 +150,198 @@ function isInScope(file) {
  * 返回 Map<file, Array<{ line: number, text: string }>>
  */
 function parseAddedLines(diffText) {
-  const result = new Map()
-  let currentFile = null
-  let newLineNo = 0
+  const result = new Map();
+  let currentFile = null;
+  let newLineNo = 0;
 
   for (const raw of diffText.split('\n')) {
     if (raw.startsWith('+++ ')) {
-      currentFile = raw.replace(/^\+\+\+ b\//, '').replace(/^\+\+\+ /, '').trim()
-      continue
+      currentFile = raw
+        .replace(/^\+\+\+ b\//, '')
+        .replace(/^\+\+\+ /, '')
+        .trim();
+      continue;
     }
     if (raw.startsWith('@@')) {
       // @@ -a,b +c,d @@  → 取 +c 作为新文件起始行号
-      const m = /\+(\d+)/.exec(raw)
-      newLineNo = m ? Number(m[1]) - 1 : 0
-      continue
+      const m = /\+(\d+)/.exec(raw);
+      newLineNo = m ? Number(m[1]) - 1 : 0;
+      continue;
     }
-    if (!currentFile || !isInScope(currentFile)) continue
+    if (!currentFile || !isInScope(currentFile)) continue;
 
     if (raw.startsWith('+') && !raw.startsWith('+++')) {
-      newLineNo += 1
-      const text = raw.slice(1)
-      if (!result.has(currentFile)) result.set(currentFile, [])
-      result.get(currentFile).push({ line: newLineNo, text })
+      newLineNo += 1;
+      const text = raw.slice(1);
+      if (!result.has(currentFile)) result.set(currentFile, []);
+      result.get(currentFile).push({ line: newLineNo, text });
     } else if (raw.startsWith('-') && !raw.startsWith('---')) {
       // 删除行不占新行号
     } else if (raw.trim() !== '') {
-      newLineNo += 1
+      newLineNo += 1;
     }
   }
-  return result
+  return result;
 }
 
 /** 全仓模式：逐文件逐行扫描 */
 function scanWorktree() {
-  const files = git(['ls-files']).split('\n').map(s => s.trim()).filter(Boolean).filter(isInScope)
-  const map = new Map()
+  const files = git(['ls-files'])
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .filter(isInScope);
+  const map = new Map();
   for (const f of files) {
-    let content
+    let content;
     try {
-      content = readFileSync(path.resolve(process.cwd(), f), 'utf8')
+      content = readFileSync(path.resolve(process.cwd(), f), 'utf8');
     } catch {
-      continue
+      continue;
     }
     map.set(
       f,
       content.split('\n').map((text, i) => ({ line: i + 1, text }))
-    )
+    );
   }
-  return map
+  return map;
 }
 
-function checkLine(rule, file, text) {
-  if (rule.onlyIn && !rule.onlyIn.some(r => r.test(file))) return false
-  if (rule.veto && rule.veto.test(text)) return false
-  if (/hazard-allow/.test(text)) return false
-  if (/eslint-disable/.test(text)) return false
+function checkLine(rule, file, text, prevText = '') {
+  if (rule.onlyIn && !rule.onlyIn.some(r => r.test(file))) return false;
+  if (rule.veto && rule.veto.test(text)) return false;
+  // 豁免注释可在**本行或紧邻的上一行**。
+  // ⚠️ 2026-09-18 补"上一行"：原实现只认同行，而 Prettier 会把过长的行尾注释
+  //    移到下一行（printWidth 120），于是"加了豁免却依然被判红"——豁免机制被
+  //    格式化器悄悄破坏，属最难排查的一类失效。允许写在独立上一行即可稳定生效。
+  if (/hazard-allow/.test(text) || /hazard-allow/.test(prevText)) return false;
+  if (/eslint-disable/.test(text)) return false;
   // 跳过纯注释行：注释里出现的示例/历史说明不构成违规
   // （例：ProductList.vue:396 用注释记录"http://localhost:3000..."这类历史脏数据）
-  if (/^\s*(\/\/|\/\*|\*|<!--)/.test(text)) return false
-  return rule.test.test(text)
+  if (/^\s*(\/\/|\/\*|\*|<!--)/.test(text)) return false;
+  return rule.test.test(text);
 }
 
 // ── 主流程 ──────────────────────────────────────────────────────────
 function main() {
-  const argv = process.argv.slice(2)
-  const allMode = argv.includes('--all')
-  const stagedMode = argv.includes('--staged')
-  const baseIdx = argv.indexOf('--base')
-  const base = baseIdx >= 0 ? argv[baseIdx + 1] : 'origin/master'
+  const argv = process.argv.slice(2);
+  const allMode = argv.includes('--all');
+  const stagedMode = argv.includes('--staged');
+  const baseIdx = argv.indexOf('--base');
+  const base = baseIdx >= 0 ? argv[baseIdx + 1] : 'origin/master';
 
-  let added
-  let modeLabel
+  let added;
+  let modeLabel;
 
   if (allMode) {
-    added = scanWorktree()
-    modeLabel = '全仓基线统计（不阻断）'
+    added = scanWorktree();
+    modeLabel = '全仓基线统计（不阻断）';
   } else if (stagedMode) {
-    const diff = git(['diff', '--cached', '--unified=0'])
-    added = parseAddedLines(diff)
-    modeLabel = '暂存区新增行（对比 HEAD）'
+    const diff = git(['diff', '--cached', '--unified=0']);
+    added = parseAddedLines(diff);
+    modeLabel = '暂存区新增行（对比 HEAD）';
   } else {
-    let diff
+    let diff;
     try {
-      diff = git(['diff', '--unified=0', `${base}...HEAD`])
+      diff = git(['diff', '--unified=0', `${base}...HEAD`]);
     } catch {
-      console.error(`⚠️  无法对比基线 ${base}，回退到暂存区模式。`)
-      diff = git(['diff', '--cached', '--unified=0'])
+      console.error(`⚠️  无法对比基线 ${base}，回退到暂存区模式。`);
+      diff = git(['diff', '--cached', '--unified=0']);
     }
-    added = parseAddedLines(diff)
-    modeLabel = `本次改动新增行（对比 ${base}）`
+    added = parseAddedLines(diff);
+    modeLabel = `本次改动新增行（对比 ${base}）`;
   }
 
   // 统计
-  const violations = []
-  const stats = new Map()
+  const violations = [];
+  const stats = new Map();
+
+  // 取某文件的上一行（用于豁免注释写在独立上一行的场景）。
+  // 说明：读的是**工作区**文件。pre-commit 中本脚本排在格式化步骤之后，
+  //       此时工作区与暂存区内容一致，行号因此可信。
+  const lineCache = new Map();
+  function prevLineOf(file, lineNo) {
+    if (lineNo <= 1) return '';
+    if (!lineCache.has(file)) {
+      try {
+        lineCache.set(file, readFileSync(path.join(process.cwd(), file), 'utf8').split(/\r?\n/));
+      } catch {
+        lineCache.set(file, []);
+      }
+    }
+    const arr = lineCache.get(file);
+    return arr[lineNo - 2] || '';
+  }
 
   for (const [file, lines] of added) {
     for (const { line, text } of lines) {
       for (const rule of RULES) {
-        if (checkLine(rule, file, text)) {
-          violations.push({ rule, file, line, text: text.trim() })
-          const key = `${rule.id} ${rule.level}`
-          stats.set(key, (stats.get(key) || 0) + 1)
+        if (checkLine(rule, file, text, prevLineOf(file, line))) {
+          violations.push({ rule, file, line, text: text.trim() });
+          const key = `${rule.id} ${rule.level}`;
+          stats.set(key, (stats.get(key) || 0) + 1);
         }
       }
     }
   }
 
-  const totalLines = [...added.values()].reduce((s, a) => s + a.length, 0)
+  const totalLines = [...added.values()].reduce((s, a) => s + a.length, 0);
 
-  console.log('─'.repeat(72))
-  console.log(`代码审查 · 增量红线扫描　模式：${modeLabel}`)
-  console.log(`扫描 ${added.size} 个文件 / ${totalLines} 行`)
-  console.log('─'.repeat(72))
+  console.log('─'.repeat(72));
+  console.log(`代码审查 · 增量红线扫描　模式：${modeLabel}`);
+  console.log(`扫描 ${added.size} 个文件 / ${totalLines} 行`);
+  console.log('─'.repeat(72));
 
   if (violations.length === 0) {
-    console.log('✅ 未发现红线违规。')
-    console.log('\n评分依据见 docs/代码审查标准.md 第三章；完整的静态检查请运行：')
-    console.log('  npx eslint . && npx prettier --check .')
-    return 0
+    console.log('✅ 未发现红线违规。');
+    console.log('\n评分依据见 docs/代码审查标准.md 第三章；完整的静态检查请运行：');
+    console.log('  npx eslint . && npx prettier --check .');
+    return 0;
   }
 
   // 分组输出
-  const byFile = new Map()
+  const byFile = new Map();
   for (const v of violations) {
-    if (!byFile.has(v.file)) byFile.set(v.file, [])
-    byFile.get(v.file).push(v)
+    if (!byFile.has(v.file)) byFile.set(v.file, []);
+    byFile.get(v.file).push(v);
   }
 
   for (const [file, list] of byFile) {
-    console.log(`\n📄 ${file}`)
+    console.log(`\n📄 ${file}`);
     for (const v of list) {
-      const icon = v.rule.level === 'error' ? '🔴' : '🟡'
-      console.log(`  ${icon} [${v.rule.id}] ${v.rule.name} · 第 ${v.line} 行`)
-      console.log(`       ${v.text.length > 110 ? v.text.slice(0, 110) + '…' : v.text}`)
-      console.log(`       ↳ ${v.rule.why}`)
+      const icon = v.rule.level === 'error' ? '🔴' : '🟡';
+      console.log(`  ${icon} [${v.rule.id}] ${v.rule.name} · 第 ${v.line} 行`);
+      console.log(`       ${v.text.length > 110 ? v.text.slice(0, 110) + '…' : v.text}`);
+      console.log(`       ↳ ${v.rule.why}`);
     }
   }
 
-  const errors = violations.filter(v => v.rule.level === 'error')
+  const errors = violations.filter(v => v.rule.level === 'error');
 
-  console.log('\n' + '─'.repeat(72))
-  console.log('汇总：')
+  console.log('\n' + '─'.repeat(72));
+  console.log('汇总：');
   for (const [key, n] of [...stats.entries()].sort()) {
-    console.log(`  ${key.padEnd(10)} ${n} 处`)
+    console.log(`  ${key.padEnd(10)} ${n} 处`);
   }
-  console.log('─'.repeat(72))
+  console.log('─'.repeat(72));
 
   if (allMode) {
-    console.log(`\nℹ️  全仓基线：${violations.length} 处（其中 error 级 ${errors.length} 处）`)
-    console.log('   此模式用于建立基线与逐周收紧，不阻断构建。')
-    console.log('   请把该数字记录到 docs/项目概览.md，并制定收敛计划。')
-    return 0
+    console.log(`\nℹ️  全仓基线：${violations.length} 处（其中 error 级 ${errors.length} 处）`);
+    console.log('   此模式用于建立基线与逐周收紧，不阻断构建。');
+    console.log('   请把该数字记录到 docs/项目概览.md，并制定收敛计划。');
+    return 0;
   }
 
   if (errors.length > 0) {
-    console.log(`\n❌ 本次改动引入 ${errors.length} 处 S1 红线违规，阻断合并。`)
-    console.log('   修复建议见 docs/代码审查标准.md 第三、四章。')
-    console.log('   确需豁免：在该行加注释 `hazard-allow: <原因>`（须写原因，评审可追溯）。')
-    return 1
+    console.log(`\n❌ 本次改动引入 ${errors.length} 处 S1 红线违规，阻断合并。`);
+    console.log('   修复建议见 docs/代码审查标准.md 第三、四章。');
+    console.log('   确需豁免：在该行加注释 `hazard-allow: <原因>`（须写原因，评审可追溯）。');
+    return 1;
   }
 
-  console.log(`\n⚠️  本次改动有 ${violations.length} 处 warn 级提示，不阻断合并。`)
-  console.log('   请确认这些告警是否属于本次改动应当处理的范围。')
-  return 0
+  console.log(`\n⚠️  本次改动有 ${violations.length} 处 warn 级提示，不阻断合并。`);
+  console.log('   请确认这些告警是否属于本次改动应当处理的范围。');
+  return 0;
 }
 
-process.exit(main())
+process.exit(main());

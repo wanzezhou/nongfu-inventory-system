@@ -14,7 +14,12 @@ const NPM_REGISTRY = process.env.NPM_REGISTRY || '';
 function log(msg) {
   const line = '[start] ' + msg;
   console.log(line);
-  try { fs.appendFileSync(path.join(ROOT, 'start.log'), line + '\n'); } catch (e) {}
+  // 日志文件写失败（磁盘满/权限）不应阻断启动，故显式忽略
+  try {
+    fs.appendFileSync(path.join(ROOT, 'start.log'), line + '\n');
+  } catch (e) {
+    /* 忽略：见上 */
+  }
 }
 
 async function main() {
@@ -25,7 +30,10 @@ async function main() {
   try {
     const mysql = require(path.join(BACKEND, 'node_modules', 'mysql2', 'promise'));
     const conn = await mysql.createConnection({
-      host: 'localhost', port: 3306, user: 'root', password: DB_PASSWORD,
+      host: 'localhost',
+      port: 3306,
+      user: 'root',
+      password: DB_PASSWORD,
       connectTimeout: 3000
     });
     await conn.end();
@@ -45,7 +53,10 @@ async function main() {
   }
 
   // 3. Dependencies
-  for (const [name, dir] of [['backend', BACKEND], ['frontend', FRONTEND]]) {
+  for (const [name, dir] of [
+    ['backend', BACKEND],
+    ['frontend', FRONTEND]
+  ]) {
     if (!fs.existsSync(path.join(dir, 'node_modules'))) {
       log(name + ' deps missing, installing (first run, a few minutes)...');
       try {
@@ -69,7 +80,9 @@ async function main() {
   log('Starting backend (port 3000, log: backend.log)...');
   const backendOut = fs.openSync(path.join(ROOT, 'backend.log'), 'a');
   const bp = spawn(process.execPath, ['src/app.js'], {
-    cwd: BACKEND, detached: true, stdio: ['ignore', backendOut, backendOut]
+    cwd: BACKEND,
+    detached: true,
+    stdio: ['ignore', backendOut, backendOut]
   });
   bp.unref();
   fs.writeFileSync(path.join(ROOT, 'backend.pid'), String(bp.pid));
@@ -77,19 +90,21 @@ async function main() {
   log('Starting frontend (port 5173, log: frontend.log)...');
   const frontendOut = fs.openSync(path.join(ROOT, 'frontend.log'), 'a');
   const fp = spawn(process.execPath, ['node_modules/vite/bin/vite.js'], {
-    cwd: FRONTEND, detached: true, stdio: ['ignore', frontendOut, frontendOut]
+    cwd: FRONTEND,
+    detached: true,
+    stdio: ['ignore', frontendOut, frontendOut]
   });
   fp.unref();
   fs.writeFileSync(path.join(ROOT, 'frontend.pid'), String(fp.pid));
 
   log('Waiting for services, opening browser...');
-  await new Promise((r) => setTimeout(r, 6000));
+  await new Promise(r => setTimeout(r, 6000));
   exec('start http://localhost:5173/');
   log('DONE. Frontend: http://localhost:5173  Backend: http://localhost:3000');
   log('To stop services: run stop.bat, or close them in Task Manager.');
 }
 
-main().catch((e) => {
+main().catch(e => {
   log('FATAL: ' + (e && e.stack ? e.stack : e));
   process.exit(1);
 });
