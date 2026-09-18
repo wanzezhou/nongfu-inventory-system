@@ -5,6 +5,8 @@ const { parsePage } = require('../utils/pagination');
 const { writeWorkbook } = require('../utils/excel');
 // 营收口径唯一来源（A6）：表达式抽到共享工具，订单详情接口（orderController）也使用同一口径
 const { itemRevenueExpr } = require('../utils/revenueExpr');
+// 其他收入合计（手工台账，计入总营收）—— 取数单源，与仪表盘/利润用同一处
+const { loadOtherIncomeTotal } = require('../services/otherLedgerSummary');
 
 // 机台类型映射（machine_stations.machine_type）
 const MACHINE_TYPES = { 1: '量贩机', 2: '零售机' };
@@ -34,7 +36,7 @@ const ORDER_TYPE_IN = `o.order_type IN (${VALID_ORDER_TYPES.join(',')})`;
 // 财务版时间范围（闭区间 [start, end]，end 含当天）
 function resolveDateRange(range, startDate, endDate) {
   const now = new Date();
-  const fmt = (d) => {
+  const fmt = d => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
@@ -107,7 +109,7 @@ async function getFinanceOrders(req, res) {
       params
     );
 
-    const list = rows.map((r) => ({
+    const list = rows.map(r => ({
       orderId: r.order_id,
       orderNo: r.order_id,
       orderType: r.order_type,
@@ -200,7 +202,7 @@ async function getFinanceSummary(req, res) {
     );
 
     // 机台类：按机台类型分组（1-量贩机 -> 订单类型4，2-零售机 -> 订单类型6；订单类型 1/2/3/5 时跳过）
-    const wantMachineType = wantType === 4 ? 1 : (wantType === 6 ? 2 : null);
+    const wantMachineType = wantType === 4 ? 1 : wantType === 6 ? 2 : null;
     const machineParts = [];
     const machineParams = [];
     if (wantMachineType) {
@@ -217,9 +219,8 @@ async function getFinanceSummary(req, res) {
     //   未指定类型       → 查全部机台。
     // 注：此前用 isOrderType 判定会误伤 4/6（4/6 也在 VALID_ORDER_TYPES 里），
     //     导致「传 orderType=4 时机台营收恒为 0」——2026-09-15 修正。
-    const machineWhere = (isOrderType && !isMachineType)
-      ? 'WHERE 1=0'
-      : (machineParts.length ? 'WHERE ' + machineParts.join(' AND ') : '');
+    const machineWhere =
+      isOrderType && !isMachineType ? 'WHERE 1=0' : machineParts.length ? 'WHERE ' + machineParts.join(' AND ') : '';
     const [machineRows] = await pool.execute(
       `SELECT machine_type, ROUND(SUM(sale_price * quantity), 2) AS revenue, SUM(quantity) AS total_qty
        FROM machine_sales
@@ -238,7 +239,7 @@ async function getFinanceSummary(req, res) {
     };
     const qtyMap = {};
 
-    orderRows.forEach((r) => {
+    orderRows.forEach(r => {
       revenueMap[r.order_type] = {
         revenue: Number(r.revenue) || 0,
         goodsAmount: Number(r.goods_amount) || 0,
@@ -247,13 +248,13 @@ async function getFinanceSummary(req, res) {
       };
     });
 
-    machineRows.forEach((r) => {
+    machineRows.forEach(r => {
       const key = r.machine_type === 2 ? 6 : 4; // 零售机 -> 6，量贩机 -> 4
       revenueMap[key].revenue = Number(r.revenue) || 0;
       qtyMap[key] = Number(r.total_qty) || 0;
     });
 
-    const list = VALID_ORDER_TYPES.map((t) => ({
+    const list = VALID_ORDER_TYPES.map(t => ({
       orderType: t,
       typeName: ORDER_TYPES[t],
       revenue: revenueMap[t].revenue,
@@ -264,8 +265,18 @@ async function getFinanceSummary(req, res) {
       qty: qtyMap[t] || 0
     }));
 
+    // 其他收入（手工录入台账）也计入总营收 —— 2026-09-18 业务方确认。
+    // ⚠️ 本函数用的是自带的 resolveDateRange（start 含、end **含**），与 dateRange.js 的
+    //    buildRangeWhere（end **不含**）不同 → 必须显式声明 endInclusive，
+    //    否则「今天录入的收入」会被 `< 今天` 排除，otherIncome 恒为 0（已踩过）。
+    // ⚠️ 刻意**不**往 list 里加第 7 行：list 是「按订单类型」的维度（1/2/3/4/5/6），
+    //    塞入非订单类型会破坏维度语义，也让「各类型之和 = 总额」的勾稽变得隐晦。
+    //    勾稽因此记为：sum(list.revenue) + overall.otherIncome === overall.totalRevenue
+    //    （有冒烟断言守住，见 scripts/smoke_other_income.js）
+    const otherIncome = await loadOtherIncomeTotal({ start, end, endInclusive: true });
     const overall = {
-      totalRevenue: Math.round(list.reduce((s, x) => s + x.revenue, 0) * 100) / 100
+      totalRevenue: Math.round((list.reduce((s, x) => s + x.revenue, 0) + otherIncome) * 100) / 100,
+      otherIncome
     };
 
     return success(res, { list, overall, start, end });
@@ -294,10 +305,7 @@ async function getMachineSales(req, res) {
     }
     const where = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
 
-    const [countRows] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM machine_sales s ${where}`,
-      params
-    );
+    const [countRows] = await pool.execute(`SELECT COUNT(*) AS total FROM machine_sales s ${where}`, params);
 
     const [rows] = await pool.execute(
       `SELECT s.sale_id, s.machine_id, s.machine_type, s.product_id, s.quantity,
@@ -313,7 +321,7 @@ async function getMachineSales(req, res) {
       params
     );
 
-    const list = rows.map((r) => ({
+    const list = rows.map(r => ({
       saleId: r.sale_id,
       machineId: r.machine_id,
       machineType: r.machine_type,
@@ -355,27 +363,33 @@ async function createMachineSale(req, res) {
     }
 
     // 兼容单条：{ productId, quantity, salePrice }
-    const list = items && items.length > 0
-      ? items
-      : [{ productId: req.body.productId, quantity: req.body.quantity, salePrice: req.body.salePrice }];
+    const list =
+      items && items.length > 0
+        ? items
+        : [{ productId: req.body.productId, quantity: req.body.quantity, salePrice: req.body.salePrice }];
 
     if (list.length === 0) {
       return error(res, '至少需要一条商品明细', 400);
     }
 
     // 字段名经 normalizeBody 中间件归一为驼峰
-    const cleanItems = list.map((it) => ({
+    const cleanItems = list.map(it => ({
       productId: it.productId,
       quantity: Number(it.quantity),
       salePrice: Number(it.salePrice !== undefined ? it.salePrice : 0)
     }));
-    const invalid = cleanItems.some((it) => !it.productId || isNaN(it.quantity) || it.quantity <= 0 || isNaN(it.salePrice) || it.salePrice < 0);
+    const invalid = cleanItems.some(
+      it => !it.productId || isNaN(it.quantity) || it.quantity <= 0 || isNaN(it.salePrice) || it.salePrice < 0
+    );
     if (invalid) {
       return error(res, '每条明细需填写商品、销量（>0）、售价（≥0）', 400);
     }
 
     // 校验机台存在并取机台类型
-    const [machines] = await pool.execute('SELECT machine_id, machine_type FROM machine_stations WHERE machine_id = ?', [machineId]);
+    const [machines] = await pool.execute(
+      'SELECT machine_id, machine_type FROM machine_stations WHERE machine_id = ?',
+      [machineId]
+    );
     if (machines.length === 0) {
       return error(res, '机台不存在', 404);
     }
@@ -480,7 +494,7 @@ async function exportFinance(req, res) {
       machineParams
     );
 
-    const orderSheet = orderRows.map((r) => ({
+    const orderSheet = orderRows.map(r => ({
       订单号: r.order_id,
       订单类型: ORDER_TYPES[r.order_type] || `类型${r.order_type}`,
       客户: r.customer_name || '',
@@ -490,7 +504,7 @@ async function exportFinance(req, res) {
       下单时间: r.created_at
     }));
 
-    const machineSheet = machineRows.map((r) => ({
+    const machineSheet = machineRows.map(r => ({
       销售日期: r.sale_date,
       机台类型: MACHINE_TYPES[r.machine_type] || `类型${r.machine_type}`,
       机台: r.station_name || '',
@@ -509,7 +523,10 @@ async function exportFinance(req, res) {
       sheets.push({ name: isOrderType ? `订单明细(${ORDER_TYPES[wantType]})` : '订单营收明细', data: orderSheet });
     }
     if (!isOrderType) {
-      sheets.push({ name: isMachineType ? `机台销量明细(${ORDER_TYPES[wantType]})` : '机台销量明细', data: machineSheet });
+      sheets.push({
+        name: isMachineType ? `机台销量明细(${ORDER_TYPES[wantType]})` : '机台销量明细',
+        data: machineSheet
+      });
     }
     const buffer = await writeWorkbook(sheets);
 

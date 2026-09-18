@@ -5,7 +5,7 @@ import { MENU_TITLES } from '@/layout/menuConfig'
 
 // 菜单标题单一数据源：meta.title 从 layout/menuConfig.js 导入（A8），
 // 新增页面只需在 menuConfig 里登记一处。meta.icon 已无消费方，随之移除。
-const t = (key) => MENU_TITLES[`/${key}`]
+const t = key => MENU_TITLES[`/${key}`]
 
 const routes = [
   {
@@ -153,6 +153,15 @@ const routes = [
         component: () => import('@/views/finance/Finance.vue'),
         props: { orderType: 6 },
         meta: { title: t('finance/retail-machine'), requiresAuth: true }
+      },
+      {
+        // 营收统计组的三级标签「其他收入」：手工台账（与其他支出对称）
+        // ⚠️ 与同组其它页不同，它不复用 Finance.vue —— 那些是「按订单类型」的汇总页，
+        //    本页是独立台账，字段与交互对齐「其他支出」。
+        path: 'finance/other-income',
+        name: 'FinanceOtherIncome',
+        component: () => import('@/views/finance/OtherIncomes.vue'),
+        meta: { title: t('finance/other-income'), requiresAuth: true }
       },
       {
         path: 'water-tickets',

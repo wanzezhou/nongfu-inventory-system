@@ -21,11 +21,18 @@ const APP = 'http://localhost:5173/'
 const API = 'http://localhost:3000/api'
 const CDP = `http://127.0.0.1:${PORT}`
 
-let pass = 0, fail = 0
+let pass = 0,
+  fail = 0
 const ok = (c, n, extra = '') => {
-  if (c) { pass++; console.log('  ✅ ' + n) } else { fail++; console.log('  ❌ ' + n + ' ' + extra) }
+  if (c) {
+    pass++
+    console.log('  ✅ ' + n)
+  } else {
+    fail++
+    console.log('  ❌ ' + n + ' ' + extra)
+  }
 }
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 function findBrowser() {
   const cands = [
@@ -33,14 +40,21 @@ function findBrowser() {
     'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
     'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
     'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-    '/usr/bin/google-chrome', '/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
   ]
-  return cands.find((p) => fs.existsSync(p)) || null
+  return cands.find(p => fs.existsSync(p)) || null
 }
 
 /** 极简 CDP 客户端 */
 class Cdp {
-  constructor(ws) { this.ws = ws; this.id = 0; this.waiting = new Map(); this.events = [] }
+  constructor(ws) {
+    this.ws = ws
+    this.id = 0
+    this.waiting = new Map()
+    this.events = []
+  }
   static async connect(wsUrl) {
     const ws = new WebSocket(wsUrl)
     await new Promise((res, rej) => {
@@ -48,7 +62,7 @@ class Cdp {
       ws.addEventListener('error', () => rej(new Error('WebSocket 连接失败')), { once: true })
     })
     const c = new Cdp(ws)
-    ws.addEventListener('message', (ev) => {
+    ws.addEventListener('message', ev => {
       const msg = JSON.parse(ev.data)
       if (msg.id && c.waiting.has(msg.id)) {
         const { resolve, reject } = c.waiting.get(msg.id)
@@ -66,7 +80,10 @@ class Cdp {
       this.waiting.set(id, { resolve, reject })
       this.ws.send(JSON.stringify({ id, method, params }))
       setTimeout(() => {
-        if (this.waiting.has(id)) { this.waiting.delete(id); reject(new Error(method + ' 超时')) }
+        if (this.waiting.has(id)) {
+          this.waiting.delete(id)
+          reject(new Error(method + ' 超时'))
+        }
       }, 30000)
     })
   }
@@ -77,14 +94,20 @@ class Cdp {
       returnByValue: true,
       awaitPromise: true
     })
-    if (r.exceptionDetails) throw new Error('页面求值异常: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text))
+    if (r.exceptionDetails)
+      throw new Error('页面求值异常: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text))
     return r.result.value
   }
   /** 派发真实鼠标事件（Chromium 会据此合成 pointer 事件） */
   async mouse(type, x, y, extra = {}) {
     await this.send('Input.dispatchMouseEvent', {
-      type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1,
-      buttons: type === 'mouseMoved' ? 0 : 1, ...extra
+      type,
+      x: Math.round(x),
+      y: Math.round(y),
+      button: 'left',
+      clickCount: 1,
+      buttons: type === 'mouseMoved' ? 0 : 1,
+      ...extra
     })
   }
   /** 完整点击：按下 + 抬起（与真人一致的事件序列） */
@@ -108,7 +131,11 @@ class Cdp {
 async function waitFor(fn, { timeout = 15000, interval = 200, desc = '条件' } = {}) {
   const t0 = Date.now()
   while (Date.now() - t0 < timeout) {
-    try { if (await fn()) return true } catch (e) { /* 继续等 */ }
+    try {
+      if (await fn()) return true
+    } catch (e) {
+      /* 继续等 */
+    }
     await sleep(interval)
   }
   console.log(`  （等待「${desc}」超时 ${timeout}ms）`)
@@ -137,14 +164,17 @@ try {
   ok(!!bin, '找到本机浏览器', bin || '(未找到 Chrome/Edge)')
   if (!bin) throw new Error('无浏览器可用')
 
-  const feOk = await fetch(APP).then((r) => r.ok).catch(() => false)
+  const feOk = await fetch(APP)
+    .then(r => r.ok)
+    .catch(() => false)
   ok(feOk, '前端 :5173 可访问')
   if (!feOk) throw new Error('前端未启动')
 
   const login = await fetch(API + '/auth/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: 'admin', password: 'admin123' })
-  }).then((r) => r.json())
+  }).then(r => r.json())
   ok(!!login?.data?.token, '后端登录成功')
   if (!login?.data?.token) throw new Error('登录失败')
 
@@ -152,19 +182,24 @@ try {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-prof-'))
   const args = [
     HEADFUL ? '--headless=false' : '--headless=new',
-    '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-    '--disable-extensions', '--disable-background-networking',
-    `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
-    '--window-size=1440,900', 'about:blank'
-  ].filter((a) => a !== '--headless=false')
+    '--disable-gpu',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-extensions',
+    '--disable-background-networking',
+    `--remote-debugging-port=${PORT}`,
+    `--user-data-dir=${profile}`,
+    '--window-size=1440,900',
+    'about:blank'
+  ].filter(a => a !== '--headless=false')
   browser = spawn(bin, args, { stdio: 'ignore', windowsHide: true })
 
   const ready = await waitFor(async () => (await fetch(CDP + '/json/version')).ok, { desc: 'CDP 就绪' })
   ok(ready, 'CDP 调试端口就绪')
   if (!ready) throw new Error('CDP 未就绪')
 
-  const targets = await fetch(CDP + '/json/list').then((r) => r.json())
-  const page = targets.find((t) => t.type === 'page')
+  const targets = await fetch(CDP + '/json/list').then(r => r.json())
+  const page = targets.find(t => t.type === 'page')
   ok(!!page?.webSocketDebuggerUrl, '取得页面 target')
   cdp = await Cdp.connect(page.webSocketDebuggerUrl)
   await cdp.send('Runtime.enable')
@@ -199,12 +234,17 @@ try {
 
   console.log('\n=== 3) 单击悬浮按钮 → 应打开新建订单表单 ===')
   let box = await cdp.eval(FAB_BOX)
-  console.log(`    按钮中心 (${Math.round(box.x)}, ${Math.round(box.y)})，尺寸 ${Math.round(box.w)}×${Math.round(box.h)}`)
+  console.log(
+    `    按钮中心 (${Math.round(box.x)}, ${Math.round(box.y)})，尺寸 ${Math.round(box.w)}×${Math.round(box.h)}`
+  )
   await cdp.click(box.x, box.y)
-  const opened = await waitFor(async () => {
-    const d = await cdp.eval(DIALOG_OPEN)
-    return d.count > 0
-  }, { desc: '订单表单弹窗出现', timeout: 10000 })
+  const opened = await waitFor(
+    async () => {
+      const d = await cdp.eval(DIALOG_OPEN)
+      return d.count > 0
+    },
+    { desc: '订单表单弹窗出现', timeout: 10000 }
+  )
   const dlg = await cdp.eval(DIALOG_OPEN)
   ok(opened, '单击后弹窗出现', JSON.stringify(dlg))
   if (opened) console.log('    弹窗标题：', dlg.titles.join(' / ') || '(无标题)')
@@ -219,8 +259,8 @@ try {
   }
 
   const evtLog = await cdp.eval('return window.__evt')
-  const clickEvt = evtLog.find((e) => e.t === 'click')
-  const upEvt = evtLog.find((e) => e.t === 'pointerup')
+  const clickEvt = evtLog.find(e => e.t === 'click')
+  const upEvt = evtLog.find(e => e.t === 'pointerup')
   console.log('    事件埋点：pointerup →', upEvt?.target, '｜ click →', clickEvt?.target)
   ok(!!clickEvt, '确实收到了 click 事件（说明不是事件没派发）')
 
@@ -229,12 +269,16 @@ try {
   //       → 下拉里静默缺 59 个（选不到，且不报错）。此处直接断言实际发出的请求：
   //       必须命中 /products/options，且不得再出现带 pageSize 上限的列表式取数。
   const openedReqs = cdp.events
-    .filter((e) => e.method === 'Network.requestWillBeSent')
-    .map((e) => e.params?.request?.url || '')
-  const optionReqs = openedReqs.filter((u) => /\/products\/options/.test(u))
-  const cappedListReqs = openedReqs.filter((u) => /\/products\?[^\s]*pageSize=/.test(u))
+    .filter(e => e.method === 'Network.requestWillBeSent')
+    .map(e => e.params?.request?.url || '')
+  const optionReqs = openedReqs.filter(u => /\/products\/options/.test(u))
+  const cappedListReqs = openedReqs.filter(u => /\/products\?[^\s]*pageSize=/.test(u))
   ok(optionReqs.length > 0, '开单表单的商品下拉走专用全量接口 /products/options', '命中 ' + optionReqs.length + ' 次')
-  ok(cappedListReqs.length === 0, '开单表单不再用「分页列表 + pageSize 上限」拉下拉', cappedListReqs.join(' | ') || '(无)')
+  ok(
+    cappedListReqs.length === 0,
+    '开单表单不再用「分页列表 + pageSize 上限」拉下拉',
+    cappedListReqs.join(' | ') || '(无)'
+  )
 
   // 关掉弹窗，便于后续测试
   await cdp.eval(`
@@ -265,7 +309,10 @@ try {
   console.log('\n=== 5) 拖动后再单击 → 仍应打开表单 ===')
   const box2 = await cdp.eval(FAB_BOX)
   await cdp.click(box2.x, box2.y)
-  const opened2 = await waitFor(async () => (await cdp.eval(DIALOG_OPEN)).count > 0, { desc: '再次打开表单', timeout: 8000 })
+  const opened2 = await waitFor(async () => (await cdp.eval(DIALOG_OPEN)).count > 0, {
+    desc: '再次打开表单',
+    timeout: 8000
+  })
   ok(opened2, '拖动后单击仍能打开表单')
 
   console.log('\n=== 6) 刷新后位置保持 ===')
@@ -279,8 +326,11 @@ try {
   await cdp.send('Page.reload', { ignoreCache: false })
   await waitFor(async () => !!(await cdp.eval(FAB_BOX)), { desc: '刷新后按钮出现' })
   const box3 = await cdp.eval(FAB_BOX)
-  ok(Math.abs(Math.round(box3.left) - moved.left) < 2 && Math.abs(Math.round(box3.top) - moved.top) < 2,
-    '刷新后按钮回到拖动后的位置', JSON.stringify({ left: Math.round(box3.left), top: Math.round(box3.top) }))
+  ok(
+    Math.abs(Math.round(box3.left) - moved.left) < 2 && Math.abs(Math.round(box3.top) - moved.top) < 2,
+    '刷新后按钮回到拖动后的位置',
+    JSON.stringify({ left: Math.round(box3.left), top: Math.round(box3.top) })
+  )
 
   await cdp.eval(`localStorage.removeItem('floating_order_btn_pos'); return true`)
 
@@ -313,7 +363,10 @@ try {
 
   console.log('\n=== 8) 次级浅底不应被页面底色改动牵连（列表页表头）===')
   await cdp.send('Page.navigate', { url: APP + 'worker' })
-  const tableReady = await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table th')")), { desc: '员工列表表头', timeout: 20000 })
+  const tableReady = await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table th')")), {
+    desc: '员工列表表头',
+    timeout: 20000
+  })
   ok(tableReady, '进入员工列表并渲染出表头')
   const listBg = await cdp.eval(`
     const th = document.querySelector('.el-table th')
@@ -350,8 +403,11 @@ try {
   ok(deco.radiusXl === '12px', '圆角收紧为 12px（--radius-xl）', deco.radiusXl)
   ok(deco.cardTransform === 'none', '卡片无 hover 位移基线（transform: none）', String(deco.cardTransform))
   ok(deco.btnTransform === 'none', '按钮无缩放基线（transform: none）', String(deco.btnTransform))
-  ok(deco.btnShine === 'none' || deco.btnShine === null || deco.btnShine === 'normal',
-    '按钮扫光装饰已移除（::before 无内容）', String(deco.btnShine))
+  ok(
+    deco.btnShine === 'none' || deco.btnShine === null || deco.btnShine === 'normal',
+    '按钮扫光装饰已移除（::before 无内容）',
+    String(deco.btnShine)
+  )
 
   console.log('\n=== 10) 侧边栏：一级（章节）与二级（页面）样式可区分 ===')
   // 展开全部一级分组，才能同时取到一级标题与二级项
@@ -388,20 +444,38 @@ try {
     console.log('    一级：', JSON.stringify(menu.lv1))
     console.log('    一级独立项：', JSON.stringify(menu.lv1Item))
     console.log('    二级：', JSON.stringify(menu.lv2))
-    ok(menu.lv1.fontWeight === '500' && menu.lv2.fontWeight === '400',
-      '字重区分：一级 500 / 二级 400', `${menu.lv1.fontWeight} / ${menu.lv2.fontWeight}`)
-    ok(menu.lv1.color !== menu.lv2.color && menu.lv1.color === 'rgb(23, 23, 23)',
-      '字色区分：一级深色（--text）/ 二级浅色（--text-2）', `${menu.lv1.color} vs ${menu.lv2.color}`)
-    ok(menu.lv1.height === '38px' && menu.lv2.height === '32px',
-      '高度区分：一级 38px / 二级 32px', `${menu.lv1.height} / ${menu.lv2.height}`)
-    ok(parseFloat(menu.lv1.fontSize) > parseFloat(menu.lv2.fontSize),
-      '字号区分：一级大于二级', `${menu.lv1.fontSize} vs ${menu.lv2.fontSize}`)
+    ok(
+      menu.lv1.fontWeight === '500' && menu.lv2.fontWeight === '400',
+      '字重区分：一级 500 / 二级 400',
+      `${menu.lv1.fontWeight} / ${menu.lv2.fontWeight}`
+    )
+    ok(
+      menu.lv1.color !== menu.lv2.color && menu.lv1.color === 'rgb(23, 23, 23)',
+      '字色区分：一级深色（--text）/ 二级浅色（--text-2）',
+      `${menu.lv1.color} vs ${menu.lv2.color}`
+    )
+    ok(
+      menu.lv1.height === '38px' && menu.lv2.height === '32px',
+      '高度区分：一级 38px / 二级 32px',
+      `${menu.lv1.height} / ${menu.lv2.height}`
+    )
+    ok(
+      parseFloat(menu.lv1.fontSize) > parseFloat(menu.lv2.fontSize),
+      '字号区分：一级大于二级',
+      `${menu.lv1.fontSize} vs ${menu.lv2.fontSize}`
+    )
     ok(menu.subBorderLeft === '1px', '二级容器带竖向引导线（border-left 1px）', String(menu.subBorderLeft))
     ok(menu.lv2.left > menu.lv1.left + 20, '二级整体右移缩进（嵌套关系可见）', `${menu.lv1.left} → ${menu.lv2.left}`)
-    ok(menu.actBarW === '3px' && menu.actBarBg === 'rgb(168, 32, 26)',
-      '一级选中为左缘红色竖条', `${menu.actBarW} / ${menu.actBarBg}`)
-    ok(menu.lv1Item.fontWeight === '500' && menu.lv1Item.color === 'rgb(23, 23, 23)',
-      '一级独立项（仪表盘/水站账户）与分组标题观感一致', JSON.stringify(menu.lv1Item))
+    ok(
+      menu.actBarW === '3px' && menu.actBarBg === 'rgb(168, 32, 26)',
+      '一级选中为左缘红色竖条',
+      `${menu.actBarW} / ${menu.actBarBg}`
+    )
+    ok(
+      menu.lv1Item.fontWeight === '500' && menu.lv1Item.color === 'rgb(23, 23, 23)',
+      '一级独立项（仪表盘/水站账户）与分组标题观感一致',
+      JSON.stringify(menu.lv1Item)
+    )
   }
   const menuShot = path.join(os.tmpdir(), `ui-smoke-menu-${Date.now()}.png`)
   const sidebarBox = await cdp.eval(`
@@ -414,24 +488,27 @@ try {
 
   console.log('\n=== 11) 仪表盘趋势图：4 张图各带粒度切换且互不影响 ===')
   await cdp.send('Page.navigate', { url: APP + 'dashboard' })
-  const dashReady = await waitFor(
-    async () => !!(await cdp.eval("return !!document.querySelector('.trend-card')")),
-    { desc: '仪表盘趋势卡片', timeout: 20000 }
-  )
+  const dashReady = await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.trend-card')")), {
+    desc: '仪表盘趋势卡片',
+    timeout: 20000
+  })
   ok(dashReady, '进入仪表盘并渲染出趋势卡片')
   // 等 4 张图完成渲染。两种合法终态：
   //   ① 有数据 → ECharts 初始化，出现 canvas
   //   ② 数据全为 0（如系统初始化后）→ 按设计显示空态占位，**不**初始化 ECharts
   // 断言必须对两种状态都成立，否则「全 0 数据」会变成假失败（2026-09-18 踩到）
-  await waitFor(async () => {
-    const r = await cdp.eval(`
+  await waitFor(
+    async () => {
+      const r = await cdp.eval(`
       return {
         canvases: document.querySelectorAll('.trend-card canvas').length,
         empties: document.querySelectorAll('.trend-card .trend-empty').length
       }
     `)
-    return r.canvases === 4 || r.empties === 4
-  }, { desc: '4 张趋势图完成渲染（canvas 或空态）', timeout: 15000 })
+      return r.canvases === 4 || r.empties === 4
+    },
+    { desc: '4 张趋势图完成渲染（canvas 或空态）', timeout: 15000 }
+  )
   const tr = await cdp.eval(`
     const cards = [...document.querySelectorAll('.trend-card')]
     return {
@@ -446,17 +523,31 @@ try {
   `)
   console.log('    趋势卡片：', JSON.stringify(tr))
   ok(tr.count === 4, '趋势图共 4 张（销售 / 营收 / 成本 / 利润）', String(tr.count))
-  ok(tr.canvases === 4 || tr.empties === 4,
+  ok(
+    tr.canvases === 4 || tr.empties === 4,
     tr.canvases === 4
       ? '4 张图均完成 ECharts 初始化（存在 canvas）'
       : '数据全为 0 → 4 张图均显示空态占位（按设计不初始化 ECharts）',
-    JSON.stringify({ canvases: tr.canvases, empties: tr.empties }))
-  ok(tr.titles.join(',').includes('销售趋势') && tr.titles.join(',').includes('总营收趋势')
-    && tr.titles.join(',').includes('总成本趋势') && tr.titles.join(',').includes('总利润趋势'),
-    '4 张图标题正确', tr.titles.join(' / '))
-  ok(tr.switchers.every((n) => n === 5), '每张图都有 5 个粒度按钮（日/周/月/季/年）', tr.switchers.join(','))
-  ok(tr.buckets.every((n) => n === 12) && tr.granularities.every((g) => g === 'month'),
-    '默认粒度为月（每图 12 个桶）', JSON.stringify({ buckets: tr.buckets, g: tr.granularities }))
+    JSON.stringify({ canvases: tr.canvases, empties: tr.empties })
+  )
+  ok(
+    tr.titles.join(',').includes('销售趋势') &&
+      tr.titles.join(',').includes('总营收趋势') &&
+      tr.titles.join(',').includes('总成本趋势') &&
+      tr.titles.join(',').includes('总利润趋势'),
+    '4 张图标题正确',
+    tr.titles.join(' / ')
+  )
+  ok(
+    tr.switchers.every(n => n === 5),
+    '每张图都有 5 个粒度按钮（日/周/月/季/年）',
+    tr.switchers.join(',')
+  )
+  ok(
+    tr.buckets.every(n => n === 12) && tr.granularities.every(g => g === 'month'),
+    '默认粒度为月（每图 12 个桶）',
+    JSON.stringify({ buckets: tr.buckets, g: tr.granularities })
+  )
 
   // 只切第 1 张图 → 年（5 桶），其余 3 张必须保持月（12 桶）
   const switched = await cdp.eval(`
@@ -468,9 +559,13 @@ try {
     return { clicked: true, labels: btns.map(b => b.textContent.trim()) }
   `)
   ok(switched.clicked, '找到并点击第 1 张图的「年」粒度', JSON.stringify(switched.labels))
-  await waitFor(async () => (await cdp.eval(`
+  await waitFor(
+    async () =>
+      await cdp.eval(`
     return document.querySelectorAll('.trend-card')[0].dataset.buckets === '5'
-  `)), { desc: '第 1 张图切到年粒度（5 桶）', timeout: 10000 })
+  `),
+    { desc: '第 1 张图切到年粒度（5 桶）', timeout: 10000 }
+  )
   const trendAfter = await cdp.eval(`
     const cards = [...document.querySelectorAll('.trend-card')]
     return {
@@ -480,16 +575,24 @@ try {
     }
   `)
   console.log('    切换后：', JSON.stringify(trendAfter))
-  ok(trendAfter.granularities[0] === 'year' && trendAfter.buckets[0] === 5,
-    '第 1 张图已切为年粒度（5 桶）', JSON.stringify({ g: trendAfter.granularities[0], b: trendAfter.buckets[0] }))
-  ok(trendAfter.granularities.slice(1).every((g) => g === 'month') && trendAfter.buckets.slice(1).every((b) => b === 12),
-    '其余 3 张图不受影响（仍为月 / 12 桶）', JSON.stringify(trendAfter.granularities.slice(1)))
+  ok(
+    trendAfter.granularities[0] === 'year' && trendAfter.buckets[0] === 5,
+    '第 1 张图已切为年粒度（5 桶）',
+    JSON.stringify({ g: trendAfter.granularities[0], b: trendAfter.buckets[0] })
+  )
+  ok(
+    trendAfter.granularities.slice(1).every(g => g === 'month') && trendAfter.buckets.slice(1).every(b => b === 12),
+    '其余 3 张图不受影响（仍为月 / 12 桶）',
+    JSON.stringify(trendAfter.granularities.slice(1))
+  )
   let storedOk = false
   try {
     const parsed = JSON.parse(trendAfter.stored || '{}')
-    storedOk = parsed.salesQty === 'year' && parsed.revenue === 'month'
-      && parsed.cost === 'month' && parsed.profit === 'month'
-  } catch (e) { /* ignore */ }
+    storedOk =
+      parsed.salesQty === 'year' && parsed.revenue === 'month' && parsed.cost === 'month' && parsed.profit === 'month'
+  } catch (e) {
+    /* ignore */
+  }
   ok(storedOk, '粒度按图独立记忆到 localStorage', String(trendAfter.stored))
 
   const dashShot = path.join(os.tmpdir(), `ui-smoke-dashboard-${Date.now()}.png`)
@@ -508,10 +611,10 @@ try {
   ]
   for (const p of PAGES) {
     await cdp.send('Page.navigate', { url: APP + p.route })
-    const ready = await waitFor(
-      async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")),
-      { desc: p.name + '列表', timeout: 20000 }
-    )
+    const ready = await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")), {
+      desc: p.name + '列表',
+      timeout: 20000
+    })
     ok(ready, `${p.name}页渲染出列表行`)
     if (!ready) continue
 
@@ -566,8 +669,10 @@ try {
     return { head: head.trim(), rows }
   `
   await cdp.send('Page.navigate', { url: APP + 'bulk-machine' })
-  await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")),
-    { desc: '量贩机列表', timeout: 20000 })
+  await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")), {
+    desc: '量贩机列表',
+    timeout: 20000
+  })
   const bulkDirect = await cdp.eval(READ_TABLE)
   console.log('    ① 整页进入 /bulk-machine：', JSON.stringify(bulkDirect))
   ok(!!bulkDirect && /量贩机/.test(bulkDirect.head), '量贩机页表头为「量贩机名称」', bulkDirect?.head)
@@ -588,36 +693,128 @@ try {
     return true
   `)
   ok(navOk, '点击侧边栏「零售机管理」（客户端路由切换）')
-  await waitFor(async () => (await cdp.eval('return location.pathname')) === '/retail-machine',
-    { desc: '路由切到 /retail-machine', timeout: 10000 })
+  await waitFor(async () => (await cdp.eval('return location.pathname')) === '/retail-machine', {
+    desc: '路由切到 /retail-machine',
+    timeout: 10000
+  })
   await sleep(1500)
   const clientSwitched = await cdp.eval(READ_TABLE)
   console.log('    ② 客户端切到 /retail-machine：', JSON.stringify(clientSwitched))
   ok(!!clientSwitched && /零售机/.test(clientSwitched.head), '切换后表头更新为「零售机名称」', clientSwitched?.head)
-  ok(!!clientSwitched && !clientSwitched.rows.some((r) => /量贩机/.test(r)),
-    '⚠️ 切换后列表已按零售机重新加载（不得残留量贩机数据）', JSON.stringify(clientSwitched?.rows))
+  ok(
+    !!clientSwitched && !clientSwitched.rows.some(r => /量贩机/.test(r)),
+    '⚠️ 切换后列表已按零售机重新加载（不得残留量贩机数据）',
+    JSON.stringify(clientSwitched?.rows)
+  )
 
   // 与「整页刷新」的结果必须完全一致
   await cdp.send('Page.navigate', { url: APP + 'retail-machine' })
-  await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")),
-    { desc: '零售机列表', timeout: 20000 })
+  await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-table__row')")), {
+    desc: '零售机列表',
+    timeout: 20000
+  })
   const retailDirect = await cdp.eval(READ_TABLE)
   console.log('    ③ 整页进入 /retail-machine：', JSON.stringify(retailDirect))
-  ok(JSON.stringify(clientSwitched?.rows) === JSON.stringify(retailDirect?.rows),
+  ok(
+    JSON.stringify(clientSwitched?.rows) === JSON.stringify(retailDirect?.rows),
     '客户端切换结果 == 整页刷新结果（数据完全一致）',
-    `${JSON.stringify(clientSwitched?.rows)} vs ${JSON.stringify(retailDirect?.rows)}`)
+    `${JSON.stringify(clientSwitched?.rows)} vs ${JSON.stringify(retailDirect?.rows)}`
+  )
+
+  console.log('\n=== 14) 营收统计 · 其他收入（三级标签 + 页面与其他支出同构）===')
+  // 2026-09-18 新增。断言的是「新增的页面真的能用」，而不只是「文件存在」：
+  //   · 三级标签栏里出现「其他收入」且能作为标签激活（菜单登记生效）
+  //   · 页面结构与「其他支出」同构（新增按钮 + 表格 + 分页）
+  //   · 表单字段为收入语义，账户提示语与支出相反（增加 vs 扣减余额）
+  await cdp.send('Page.navigate', { url: APP + 'finance/other-income' })
+  await waitFor(async () => (await cdp.eval('return location.pathname')) === '/finance/other-income', {
+    desc: '路由到 /finance/other-income',
+    timeout: 20000
+  })
+  await sleep(1200)
+
+  const tabs = await cdp.eval(`
+    const items = [...document.querySelectorAll('.el-tabs__item')].map(i => i.textContent.trim())
+    const active = (document.querySelector('.el-tabs__item.is-active') || {}).textContent || ''
+    return { items, active: active.trim() }
+  `)
+  console.log('    三级标签：', JSON.stringify(tabs?.items))
+  ok((tabs?.items || []).includes('其他收入'), '三级标签里有「其他收入」', JSON.stringify(tabs?.items))
+  ok(tabs?.active === '其他收入', '当前激活标签为「其他收入」', tabs?.active)
+  ok(
+    (tabs?.items || []).length === 7,
+    '营收统计组共 7 个三级标签（原 6 个 + 其他收入）',
+    String((tabs?.items || []).length)
+  )
+
+  const pageShape = await cdp.eval(`
+    const btnTexts = [...document.querySelectorAll('button')].map(b => b.textContent.trim())
+    return {
+      hasAddBtn: btnTexts.some(t => /新增收入/.test(t)),
+      hasTable: !!document.querySelector('.el-table'),
+      hasPager: !!document.querySelector('.el-pagination')
+    }
+  `)
+  console.log('    页面结构：', JSON.stringify(pageShape))
+  ok(!!pageShape?.hasAddBtn, '有「新增收入」按钮')
+  ok(!!pageShape?.hasTable, '有明细表格')
+  ok(!!pageShape?.hasPager, '有分页控件')
+
+  // 打开表单，检查字段与账户提示语（与「其他支出」的关键差异就在账户方向）
+  const incomeFormOpened = await cdp.eval(`
+    const btn = [...document.querySelectorAll('button')].find(b => /新增收入/.test(b.textContent))
+    if (!btn) return false
+    btn.click()
+    return true
+  `)
+  ok(incomeFormOpened, '点击「新增收入」')
+  await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-dialog .el-form')")), {
+    desc: '新增收入弹窗',
+    timeout: 10000
+  })
+  await sleep(500)
+  const formInfo = await cdp.eval(`
+    const labels = [...document.querySelectorAll('.el-dialog .el-form-item__label')].map(l => l.textContent.trim())
+    const t = document.querySelector('.el-dialog')?.textContent || ''
+    return { labels, mentionsIncrease: /增加账户余额/.test(t) }
+  `)
+  console.log('    表单字段：', JSON.stringify(formInfo?.labels))
+  for (const f of ['收入名称', '金额', '收入日期', '收入类别']) {
+    ok((formInfo?.labels || []).includes(f), `表单含「${f}」字段`)
+  }
+  ok(!!formInfo?.mentionsIncrease, '账户提示语为「增加账户余额并记流水」（收入方向，与支出相反）')
+
+  // 关闭弹窗，避免影响后续
+  await cdp.eval(`
+    const cancel = [...document.querySelectorAll('.el-dialog__footer button')].find(b => /取消/.test(b.textContent))
+    if (cancel) cancel.click()
+    return true
+  `)
+  await sleep(400)
 } catch (e) {
   fail++
   console.log('\n❌ 执行异常: ' + e.message)
 } finally {
-  try { cdp?.ws.close() } catch (e) { /* ignore */ }
+  try {
+    cdp?.ws.close()
+  } catch (e) {
+    /* ignore */
+  }
   // ⚠️ 只结束「本脚本拉起的这棵进程树」，绝不按镜像名批量杀（否则会连带干掉用户自己的 Chrome）
   try {
     if (browser?.pid) execFileSync('taskkill', ['/PID', String(browser.pid), '/T', '/F'], { stdio: 'ignore' })
   } catch (e) {
-    try { browser?.kill('SIGKILL') } catch (e2) { /* ignore */ }
+    try {
+      browser?.kill('SIGKILL')
+    } catch (e2) {
+      /* ignore */
+    }
   }
-  try { if (profile) fs.rmSync(profile, { recursive: true, force: true }) } catch (e) { /* ignore */ }
+  try {
+    if (profile) fs.rmSync(profile, { recursive: true, force: true })
+  } catch (e) {
+    /* ignore */
+  }
   console.log(`\n=== 结果：通过 ${pass} / 失败 ${fail} ===`)
   process.exit(fail ? 1 : 0)
 }

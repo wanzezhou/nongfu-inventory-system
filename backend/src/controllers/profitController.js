@@ -25,12 +25,18 @@ const { ORDER_TYPES, VALID_ORDER_TYPES } = require('../constants/order');
 const { writeWorkbook } = require('../utils/excel');
 const { loadProfitItemLines, loadCostItemLines } = require('../utils/itemLines');
 const { itemRevenueExpr, stationRevenue1Expr, stationRevenue2Expr } = require('../utils/revenueExpr');
+// 其他收入总额（手工台账，计入总营收）—— 取数单源，与仪表盘/营收汇总同一处
+const { loadOtherIncomeTotal } = require('../services/otherLedgerSummary');
 const {
-  costExpr, stationCost1Expr, stationCost2Expr, itemCostExpr,
-  retailCostAExpr, retailCostBExpr
+  costExpr,
+  stationCost1Expr,
+  stationCost2Expr,
+  itemCostExpr,
+  retailCostAExpr,
+  retailCostBExpr
 } = require('../utils/costExpr');
 
-const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 // 机台类型 → 订单类型
 const MACHINE_ORDER_TYPE = { 1: 4, 2: 6 };
@@ -39,7 +45,11 @@ const MACHINE_OF_ORDER_TYPE = { 4: 1, 6: 2 };
 // 各类型利润公式说明（前端展示 + 文档同步）
 const PROFIT_LABELS = {
   1: { main: '利润', formula: '营收 − 成本', desc: '成本 = 进货价 + 工人零售配送费' },
-  2: { main: '利润（利润1 + 利润2）', formula: '利润1 + 利润2', desc: '利润1=营收1−成本1（返货价值+总包配送费 − 抵扣商品成本）；利润2=营收2−成本2（分销价合计 − 未抵扣商品成本）' },
+  2: {
+    main: '利润（利润1 + 利润2）',
+    formula: '利润1 + 利润2',
+    desc: '利润1=营收1−成本1（返货价值+总包配送费 − 抵扣商品成本）；利润2=营收2−成本2（分销价合计 − 未抵扣商品成本）'
+  },
   3: { main: '利润', formula: '营收 − （成本A + 成本B）', desc: '成本A=自有员工配送商品；成本B=无需配送商品' },
   4: { main: '利润', formula: '机台营收 − 机台成本', desc: '营收按机台销量(machine_sales)；成本按机台供货订单商品' },
   5: { main: '利润', formula: '营收 − 成本', desc: '成本 = 进货价 + 工人零售配送费' },
@@ -55,9 +65,9 @@ async function loadProfitByType(r, wantType) {
   const rw = buildRangeWhere('o.created_at', r);
 
   if (wantType === 2) {
-      // 直营水站：营收1/营收2 + 成本1/成本2 分别聚合
-      const [rows] = await pool.execute(
-        `SELECT t.order_id, t.created_at, t.station_id, t.customer_name,
+    // 直营水站：营收1/营收2 + 成本1/成本2 分别聚合
+    const [rows] = await pool.execute(
+      `SELECT t.order_id, t.created_at, t.station_id, t.customer_name,
                 ROUND(t.revenue1, 2) AS revenue1, ROUND(t.revenue2, 2) AS revenue2,
                 ROUND(t.cost1, 2) AS cost1, ROUND(t.cost2, 2) AS cost2,
                 ROUND(t.revenue1 - t.cost1, 2) AS profit1,
@@ -78,42 +88,49 @@ async function loadProfitByType(r, wantType) {
            GROUP BY o.order_id, o.created_at, o.station_id, o.customer_name
          ) t
          ORDER BY t.created_at DESC`,
-        rw.params
-      );
+      rw.params
+    );
 
-      const nameMap = await loadStationNames(pool, rows.map(x => x.station_id));
-      const list = rows.map(x => ({
-        orderId: x.order_id, orderNo: x.order_id,
-        stationName: x.station_id ? (nameMap[x.station_id] || x.station_id) : '-',
-        customerName: x.customer_name || '-',
-        totalQty: Number(x.total_qty) || 0,
-        ticketQty: Number(x.ticket_qty) || 0,
-        revenue1: Number(x.revenue1) || 0, revenue2: Number(x.revenue2) || 0,
-        cost1: Number(x.cost1) || 0, cost2: Number(x.cost2) || 0,
-        profit1: Number(x.profit1) || 0, profit2: Number(x.profit2) || 0,
-        profitTotal: Number(x.profit_total) || 0,
-        createTime: x.created_at
-      }));
+    const nameMap = await loadStationNames(
+      pool,
+      rows.map(x => x.station_id)
+    );
+    const list = rows.map(x => ({
+      orderId: x.order_id,
+      orderNo: x.order_id,
+      stationName: x.station_id ? nameMap[x.station_id] || x.station_id : '-',
+      customerName: x.customer_name || '-',
+      totalQty: Number(x.total_qty) || 0,
+      ticketQty: Number(x.ticket_qty) || 0,
+      revenue1: Number(x.revenue1) || 0,
+      revenue2: Number(x.revenue2) || 0,
+      cost1: Number(x.cost1) || 0,
+      cost2: Number(x.cost2) || 0,
+      profit1: Number(x.profit1) || 0,
+      profit2: Number(x.profit2) || 0,
+      profitTotal: Number(x.profit_total) || 0,
+      createTime: x.created_at
+    }));
 
-      const summary = {
-        revenue: round2(list.reduce((s, x) => s + x.revenue1 + x.revenue2, 0)),
-        revenue1: round2(list.reduce((s, x) => s + x.revenue1, 0)),
-        revenue2: round2(list.reduce((s, x) => s + x.revenue2, 0)),
-        costTotal: round2(list.reduce((s, x) => s + x.cost1 + x.cost2, 0)),
-        cost1: round2(list.reduce((s, x) => s + x.cost1, 0)),
-        cost2: round2(list.reduce((s, x) => s + x.cost2, 0)),
-        profit: round2(list.reduce((s, x) => s + x.profitTotal, 0)),
-        profit1: round2(list.reduce((s, x) => s + x.profit1, 0)),
-        profit2: round2(list.reduce((s, x) => s + x.profit2, 0)),
-        orderCount: list.length,
-        totalQty: list.reduce((s, x) => s + x.totalQty, 0)
-      };
-      return { list, summary };
-    }
+    const summary = {
+      revenue: round2(list.reduce((s, x) => s + x.revenue1 + x.revenue2, 0)),
+      revenue1: round2(list.reduce((s, x) => s + x.revenue1, 0)),
+      revenue2: round2(list.reduce((s, x) => s + x.revenue2, 0)),
+      costTotal: round2(list.reduce((s, x) => s + x.cost1 + x.cost2, 0)),
+      cost1: round2(list.reduce((s, x) => s + x.cost1, 0)),
+      cost2: round2(list.reduce((s, x) => s + x.cost2, 0)),
+      profit: round2(list.reduce((s, x) => s + x.profitTotal, 0)),
+      profit1: round2(list.reduce((s, x) => s + x.profit1, 0)),
+      profit2: round2(list.reduce((s, x) => s + x.profit2, 0)),
+      orderCount: list.length,
+      totalQty: list.reduce((s, x) => s + x.totalQty, 0)
+    };
+    return { list, summary };
+  }
 
-    // 类型1/3/5：营收 − 成本
-    const [rows] = await pool.execute(
-      `SELECT t.order_id, t.created_at, t.station_id, t.machine_station_id, t.customer_name, t.delivery_type,
+  // 类型1/3/5：营收 − 成本
+  const [rows] = await pool.execute(
+    `SELECT t.order_id, t.created_at, t.station_id, t.machine_station_id, t.customer_name, t.delivery_type,
               ROUND(t.revenue, 2) AS revenue, ROUND(t.cost_total, 2) AS cost_total,
               ROUND(t.revenue - t.cost_total, 2) AS profit_total,
               ROUND(t.costA, 2) AS costA, ROUND(t.costB, 2) AS costB,
@@ -131,30 +148,31 @@ async function loadProfitByType(r, wantType) {
          GROUP BY o.order_id, o.created_at, o.station_id, o.machine_station_id, o.customer_name, o.delivery_type
        ) t
        ORDER BY t.created_at DESC`,
-      [wantType, ...rw.params]
-    );
+    [wantType, ...rw.params]
+  );
 
-    const list = rows.map(x => ({
-      orderId: x.order_id, orderNo: x.order_id,
-      customerName: x.customer_name || '-',
-      totalQty: Number(x.total_qty) || 0,
-      revenue: Number(x.revenue) || 0,
-      costTotal: Number(x.cost_total) || 0,
-      costA: Number(x.costA) || 0,
-      costB: Number(x.costB) || 0,
-      profitTotal: Number(x.profit_total) || 0,
-      createTime: x.created_at
-    }));
+  const list = rows.map(x => ({
+    orderId: x.order_id,
+    orderNo: x.order_id,
+    customerName: x.customer_name || '-',
+    totalQty: Number(x.total_qty) || 0,
+    revenue: Number(x.revenue) || 0,
+    costTotal: Number(x.cost_total) || 0,
+    costA: Number(x.costA) || 0,
+    costB: Number(x.costB) || 0,
+    profitTotal: Number(x.profit_total) || 0,
+    createTime: x.created_at
+  }));
 
-    const summary = {
-      revenue: round2(list.reduce((s, x) => s + x.revenue, 0)),
-      costTotal: round2(list.reduce((s, x) => s + x.costTotal, 0)),
-      profit: round2(list.reduce((s, x) => s + x.profitTotal, 0)),
-      costA: round2(list.reduce((s, x) => s + x.costA, 0)),
-      costB: round2(list.reduce((s, x) => s + x.costB, 0)),
-      orderCount: list.length,
-      totalQty: list.reduce((s, x) => s + x.totalQty, 0)
-    };
+  const summary = {
+    revenue: round2(list.reduce((s, x) => s + x.revenue, 0)),
+    costTotal: round2(list.reduce((s, x) => s + x.costTotal, 0)),
+    profit: round2(list.reduce((s, x) => s + x.profitTotal, 0)),
+    costA: round2(list.reduce((s, x) => s + x.costA, 0)),
+    costB: round2(list.reduce((s, x) => s + x.costB, 0)),
+    orderCount: list.length,
+    totalQty: list.reduce((s, x) => s + x.totalQty, 0)
+  };
   return { list, summary };
 }
 
@@ -170,15 +188,28 @@ async function getProfitByType(req, res) {
     if (wantType === 4 || wantType === 6) {
       const { list, summary, note } = await loadMachineProfit(r, wantType);
       return success(res, {
-        list, summary, note, orderType: wantType, typeName: ORDER_TYPES[wantType],
-        label: PROFIT_LABELS[wantType], range: r, start: r.start, end: r.end
+        list,
+        summary,
+        note,
+        orderType: wantType,
+        typeName: ORDER_TYPES[wantType],
+        label: PROFIT_LABELS[wantType],
+        range: r,
+        start: r.start,
+        end: r.end
       });
     }
 
     const { list, summary } = await loadProfitByType(r, wantType);
     return success(res, {
-      list, summary, orderType: wantType, typeName: ORDER_TYPES[wantType],
-      label: PROFIT_LABELS[wantType], range: r, start: r.start, end: r.end
+      list,
+      summary,
+      orderType: wantType,
+      typeName: ORDER_TYPES[wantType],
+      label: PROFIT_LABELS[wantType],
+      range: r,
+      start: r.start,
+      end: r.end
     });
   } catch (e) {
     console.error('getProfitByType error:', e);
@@ -197,7 +228,10 @@ async function loadMachineProfit(r, orderType) {
   // 机台营收（按销量日期）
   const machineParts = ['machine_type = ?'];
   const machineParams = [machineType];
-  if (r.start && r.end) { machineParts.push('sale_date >= ? AND sale_date < ?'); machineParams.push(r.start, r.end); }
+  if (r.start && r.end) {
+    machineParts.push('sale_date >= ? AND sale_date < ?');
+    machineParams.push(r.start, r.end);
+  }
   const [revRows] = await pool.execute(
     `SELECT ROUND(SUM(sale_price * quantity), 2) AS revenue, SUM(quantity) AS total_qty
      FROM machine_sales WHERE ${machineParts.join(' AND ')}`,
@@ -285,9 +319,16 @@ async function getProfitOverview(req, res) {
     const machineRows = [];
     for (const orderType of [4, 6]) {
       const machineType = MACHINE_OF_ORDER_TYPE[orderType];
-      const mp = ['machine_type = ?']; const mpar = [machineType];
-      if (r.start && r.end) { mp.push('sale_date >= ? AND sale_date < ?'); mpar.push(r.start, r.end); }
-      const [rev] = await pool.execute(`SELECT ROUND(SUM(sale_price*quantity),2) AS revenue FROM machine_sales WHERE ${mp.join(' AND ')}`, mpar);
+      const mp = ['machine_type = ?'];
+      const mpar = [machineType];
+      if (r.start && r.end) {
+        mp.push('sale_date >= ? AND sale_date < ?');
+        mpar.push(r.start, r.end);
+      }
+      const [rev] = await pool.execute(
+        `SELECT ROUND(SUM(sale_price*quantity),2) AS revenue FROM machine_sales WHERE ${mp.join(' AND ')}`,
+        mpar
+      );
       const [cst] = await pool.execute(
         `SELECT ROUND(SUM(${itemCostExpr(orderType)}),2) AS cost_total FROM orders o JOIN order_items oi ON o.order_id=oi.order_id
          WHERE o.order_type=? AND o.canceled_at IS NULL AND ${rw.clause}`,
@@ -298,13 +339,23 @@ async function getProfitOverview(req, res) {
         revenue: Number(rev[0]?.revenue) || 0,
         cost_total: Number(cst[0]?.cost_total) || 0,
         profit: round2((Number(rev[0]?.revenue) || 0) - (Number(cst[0]?.cost_total) || 0)),
-        order_count: 0, total_qty: 0
+        order_count: 0,
+        total_qty: 0
       });
     }
 
     const map = {};
     VALID_ORDER_TYPES.forEach(t => {
-      map[t] = { orderType: t, typeName: ORDER_TYPES[t], revenue: 0, costTotal: 0, profit: 0, orderCount: 0, totalQty: 0, label: PROFIT_LABELS[t] };
+      map[t] = {
+        orderType: t,
+        typeName: ORDER_TYPES[t],
+        revenue: 0,
+        costTotal: 0,
+        profit: 0,
+        orderCount: 0,
+        totalQty: 0,
+        label: PROFIT_LABELS[t]
+      };
     });
     orderRows.forEach(x => {
       if (!map[x.order_type]) return;
@@ -335,10 +386,19 @@ async function getProfitOverview(req, res) {
       return item;
     });
 
+    // 其他收入（手工台账）计入总营收 —— 2026-09-18 业务方确认。
+    // ⚠️ 刻意**不**往 list 里加第 7 行：list 是「按订单类型」的维度（1/2/3/4/5/6），
+    //    塞入非订单类型会破坏维度语义，也会撞上「恰好 6 个订单类型」的既有冒烟断言。
+    //    故 profit 必须由 revenue − costTotal 重算（而不是沿用 sum(list.profit)），
+    //    以保持 overall.profit === overall.revenue − overall.costTotal 这条既有断言成立。
+    const otherIncome = await loadOtherIncomeTotal({ start: r.start, end: r.end });
+    const revenue = round2(list.reduce((a, x) => a + x.revenue, 0) + otherIncome);
+    const costTotal = round2(list.reduce((a, x) => a + x.costTotal, 0));
     const overall = {
-      revenue: round2(list.reduce((a, x) => a + x.revenue, 0)),
-      costTotal: round2(list.reduce((a, x) => a + x.costTotal, 0)),
-      profit: round2(list.reduce((a, x) => a + x.profit, 0))
+      revenue,
+      costTotal,
+      profit: round2(revenue - costTotal),
+      otherIncome
     };
     overall.margin = overall.revenue > 0 ? Math.round((overall.profit / overall.revenue) * 10000) / 100 : 0;
 
@@ -358,7 +418,9 @@ async function loadStationNames(conn, ids) {
     `SELECT station_id, station_name FROM sub_stations WHERE station_id IN (${list.map(() => '?').join(',')})`,
     list
   );
-  rows.forEach(x => { map[x.station_id] = x.station_name; });
+  rows.forEach(x => {
+    map[x.station_id] = x.station_name;
+  });
   return map;
 }
 
@@ -381,9 +443,7 @@ async function exportProfit(req, res) {
     const label = PROFIT_LABELS[wantType];
     const isMachine = wantType === 4 || wantType === 6;
 
-    const { list, summary } = isMachine
-      ? await loadMachineProfit(r, wantType)
-      : await loadProfitByType(r, wantType);
+    const { list, summary } = isMachine ? await loadMachineProfit(r, wantType) : await loadProfitByType(r, wantType);
 
     // ---- sheet 1：汇总与口径 ----
     const overviewRows = [
@@ -413,10 +473,7 @@ async function exportProfit(req, res) {
         { 项目: '时间口径', 数值: '机台营收按销量日期，机台成本按供货订单日期（两者不同属预期）' }
       );
     } else {
-      overviewRows.push(
-        { 项目: '订单数', 数值: summary.orderCount },
-        { 项目: '商品件数', 数值: summary.totalQty }
-      );
+      overviewRows.push({ 项目: '订单数', 数值: summary.orderCount }, { 项目: '商品件数', 数值: summary.totalQty });
     }
     const sheets = [{ name: '汇总与口径', data: overviewRows, widths: [26, 62] }];
 
@@ -424,15 +481,17 @@ async function exportProfit(req, res) {
       // ---- 机台：利润汇总（单行） + 销量明细（营收侧） + 供货商品成本明细 ----
       sheets.push({
         name: '机台利润汇总',
-        data: [{
-          统计类型: typeName,
-          机台营收: summary.revenue,
-          机台成本: summary.costTotal,
-          利润: summary.profit,
-          机台销量件数: summary.saleQty,
-          供货订单数: summary.orderCount,
-          供货件数: summary.supplyQty
-        }]
+        data: [
+          {
+            统计类型: typeName,
+            机台营收: summary.revenue,
+            机台成本: summary.costTotal,
+            利润: summary.profit,
+            机台销量件数: summary.saleQty,
+            供货订单数: summary.orderCount,
+            供货件数: summary.supplyQty
+          }
+        ]
       });
 
       const machineType = MACHINE_OF_ORDER_TYPE[wantType];
@@ -450,7 +509,7 @@ async function exportProfit(req, res) {
       );
       sheets.push({
         name: '机台销量明细',
-        data: saleRows.map((x) => ({
+        data: saleRows.map(x => ({
           销售日期: x.sale_date,
           机台: x.station_name || '',
           商品: x.product_name || '',
@@ -467,7 +526,7 @@ async function exportProfit(req, res) {
       const costLines = await loadCostItemLines(pool, { orderType: wantType, rw: buildRangeWhere('o.created_at', r) });
       sheets.push({
         name: '供货商品成本明细',
-        data: costLines.map((x) => ({
+        data: costLines.map(x => ({
           机台: x.machineName || '',
           订单号: x.orderId,
           商品名称: x.productName,
@@ -482,7 +541,7 @@ async function exportProfit(req, res) {
       });
     } else {
       // ---- 订单类：订单级利润明细 + 商品行明细 ----
-      const orderSheet = list.map((x) => {
+      const orderSheet = list.map(x => {
         const row = {
           订单号: x.orderId,
           数量: x.totalQty
@@ -511,7 +570,7 @@ async function exportProfit(req, res) {
       sheets.push({ name: '利润明细', data: orderSheet });
 
       const lines = await loadProfitItemLines(pool, { orderType: wantType, rw: buildRangeWhere('o.created_at', r) });
-      const itemSheet = lines.map((x) => {
+      const itemSheet = lines.map(x => {
         const row = {
           订单号: x.orderId,
           客户或水站: (wantType === 2 ? x.stationName : x.customerName) || '-',

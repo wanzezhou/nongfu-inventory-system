@@ -30,25 +30,25 @@ const { costExpr } = require('../utils/costExpr');
 const { loadSalarySummary, deliveryFeeExpr } = require('../services/salarySummary');
 const { VALID_ORDER_TYPES } = require('../constants/order');
 const { GRANULARITIES, bucketExpr, buildBuckets } = require('../utils/trendBuckets');
+// 其他支出 / 其他收入 的取数单源（2026-09-18：新增其他收入时把两张台账的聚合收敛到一处，
+// 避免「同一口径写两份」——本项目的成本/利润/仪表盘营收口径就曾各写一份而漂移）
+const {
+  loadOtherExpenseTotal,
+  loadOtherIncomeTotal,
+  loadOtherExpenseBuckets,
+  loadOtherIncomeBuckets
+} = require('../services/otherLedgerSummary');
 
 // 卡片可选周期白名单（月/季/年）—— 非法值直接 400，不静默回退成本月
 const CARD_RANGES = ['month', 'quarter', 'year'];
 
-const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 // 全部合法订单类型的 SQL 片段（由常量派生，禁硬编码 IN 列表）
 const ORDER_TYPE_IN = `o.order_type IN (${VALID_ORDER_TYPES.join(',')})`;
 
-// 其他支出合计（口径同「其他支出」页与成本汇总页：全表求和，按 expense_date 过滤）
-async function loadOtherExpense(r) {
-  const ew = buildRangeWhere('expense_date', r);
-  const [rows] = await pool.execute(
-    `SELECT ROUND(COALESCE(SUM(amount), 0), 2) AS other_expense
-     FROM other_expenses WHERE ${ew.clause}`,
-    ew.params
-  );
-  return round2(rows[0].other_expense);
-}
+// 其他支出合计 —— 取数已下沉到 services/otherLedgerSummary.js（口径同「其他支出」页与成本汇总页：
+// 全表求和，按 expense_date 过滤）。原先内联在此处，新增「其他收入」时为避免复制第二份聚合而收敛。
 
 // 获取与时间无关的统计（当前仅「库存总金额」）
 // 注：原「待配送订单」查询已于 2026-09-16（晚 4）随卡片下线一并移除（业务方确认不使用）
@@ -81,7 +81,8 @@ async function getSummary(req, res) {
  *   - 总销量   = Σ order_items.quantity（全部合法订单类型，含机台供货件数）+ Σ machine_sales.quantity
  *   - 总订单数 = 区间内未取消订单数（含机台供货订单）
  *   - 总营收   = 订单类营收(类型1/2/3/5，itemRevenueExpr) + 机台销量营收(machine_sales)
- *   - 总成本   = 订单商品成本(costExpr，全部类型) + 工资(应发配送费，在职员工) + 其他支出
+ *                + 其他收入(other_incomes，2026-09-18 新增)
+ *   总成本   = 订单商品成本(costExpr，全部类型) + 工资(应发配送费，在职员工) + 其他支出
  *                （口径来源与差异说明见文件头注释）
  *   - 工资统计 = 区间内应发工资合计（loadSalarySummary，与工资统计页同口径）
  *   - 总利润   = 总营收 − 总成本（成本已含工资与其他支出）
@@ -115,8 +116,14 @@ async function getMetrics(req, res) {
     // ② 机台销量（类型4/6 的营收与销量来源）
     const mParts = [];
     const mParams = [];
-    if (r.start) { mParts.push('sale_date >= ?'); mParams.push(r.start); }
-    if (r.end) { mParts.push('sale_date < ?'); mParams.push(r.end); }
+    if (r.start) {
+      mParts.push('sale_date >= ?');
+      mParams.push(r.start);
+    }
+    if (r.end) {
+      mParts.push('sale_date < ?');
+      mParams.push(r.end);
+    }
     const [machineRows] = await pool.execute(
       `SELECT COALESCE(SUM(quantity), 0) AS machine_qty,
               ROUND(COALESCE(SUM(sale_price * quantity), 0), 2) AS machine_revenue
@@ -130,13 +137,17 @@ async function getMetrics(req, res) {
     const { summary: salarySummary } = await loadSalarySummary(r);
 
     // ④ 其他支出
-    const otherExpense = await loadOtherExpense(r);
+    const otherExpense = await loadOtherExpenseTotal(r);
+
+    // ⑤ 其他收入（手工录入的台账，纳入总营收；2026-09-18）
+    const otherIncome = await loadOtherIncomeTotal(r);
 
     const orderQty = Number(orderRows[0].order_qty) || 0;
     const machineQty = Number(machineRows[0].machine_qty) || 0;
     const orderRevenue = Number(orderRows[0].order_revenue) || 0;
     const machineRevenue = Number(machineRows[0].machine_revenue) || 0;
-    const revenue = round2(orderRevenue + machineRevenue);
+    // 总营收 = 订单类 + 机台 + 其他收入
+    const revenue = round2(orderRevenue + machineRevenue + otherIncome);
     const orderCost = round2(orderRows[0].order_cost);
     const salary = round2(salarySummary.totalDue);
     // 总成本 = 订单商品成本 + 工资 + 其他支出
@@ -153,9 +164,10 @@ async function getMetrics(req, res) {
       cost,
       salary,
       otherExpense,
+      otherIncome,
       profit,
       // 拆分明细：便于卡片副文案标注口径来源，也便于排障对账
-      detail: { orderQty, machineQty, orderRevenue, machineRevenue, orderCost, salary, otherExpense }
+      detail: { orderQty, machineQty, orderRevenue, machineRevenue, orderCost, salary, otherExpense, otherIncome }
     });
   } catch (err) {
     console.error('获取仪表盘周期指标失败:', err);
@@ -185,7 +197,6 @@ async function getTrends(req, res) {
 
     const exprOrder = bucketExpr('o.created_at', granularity);
     const exprSale = bucketExpr('sale_date', granularity);
-    const exprExpense = bucketExpr('expense_date', granularity);
 
     // ① 订单类：件数 / 营收 / 成本 / 工资
     //    工资口径必须与 services/salarySummary 完全一致，否则趋势与卡片对不上：
@@ -222,34 +233,33 @@ async function getTrends(req, res) {
       [start, end]
     );
 
-    // ③ 其他支出
-    const [expenseRows] = await pool.execute(
-      `SELECT ${exprExpense} AS bucket,
-              ROUND(COALESCE(SUM(amount), 0), 2) AS amount
-       FROM other_expenses
-       WHERE expense_date >= ? AND expense_date < ?
-       GROUP BY bucket`,
-      [start, end]
-    );
+    // ③ 其他支出 / 其他收入（两张台账的取数单源见 services/otherLedgerSummary.js）
+    const [expenseRows, incomeRows] = await Promise.all([
+      loadOtherExpenseBuckets(granularity, start, end),
+      loadOtherIncomeBuckets(granularity, start, end)
+    ]);
 
     // ④ 按桶合并：SQL 查不到的桶补 0（x 轴刻度必须连续，不能出现断点）
     const map = new Map();
-    list.forEach((b) => map.set(b.key, {
-      key: b.key,
-      label: b.label,
-      salesQty: 0,
-      machineQty: 0,
-      revenue: 0,
-      orderRevenue: 0,
-      machineRevenue: 0,
-      orderCost: 0,
-      salary: 0,
-      otherExpense: 0,
-      cost: 0,
-      profit: 0
-    }));
+    list.forEach(b =>
+      map.set(b.key, {
+        key: b.key,
+        label: b.label,
+        salesQty: 0,
+        machineQty: 0,
+        revenue: 0,
+        orderRevenue: 0,
+        machineRevenue: 0,
+        orderCost: 0,
+        salary: 0,
+        otherExpense: 0,
+        otherIncome: 0,
+        cost: 0,
+        profit: 0
+      })
+    );
 
-    orderRows.forEach((x) => {
+    orderRows.forEach(x => {
       const b = map.get(x.bucket);
       if (!b) return;
       b.salesQty += Number(x.qty) || 0;
@@ -257,21 +267,26 @@ async function getTrends(req, res) {
       b.orderCost = round2(b.orderCost + (Number(x.cost) || 0));
       b.salary = round2(b.salary + (Number(x.salary) || 0));
     });
-    machineRows.forEach((x) => {
+    machineRows.forEach(x => {
       const b = map.get(x.bucket);
       if (!b) return;
       b.salesQty += Number(x.qty) || 0;
       b.machineQty = Number(x.qty) || 0;
       b.machineRevenue = round2(Number(x.revenue) || 0);
     });
-    expenseRows.forEach((x) => {
+    expenseRows.forEach(x => {
       const b = map.get(x.bucket);
       if (b) b.otherExpense = round2(Number(x.amount) || 0);
     });
+    incomeRows.forEach(x => {
+      const b = map.get(x.bucket);
+      if (b) b.otherIncome = round2(Number(x.amount) || 0);
+    });
 
-    const buckets = list.map((b) => {
+    const buckets = list.map(b => {
       const x = map.get(b.key);
-      x.revenue = round2(x.orderRevenue + x.machineRevenue);
+      // 营收 = 订单类 + 机台 + 其他收入（与 /metrics 同口径）
+      x.revenue = round2(x.orderRevenue + x.machineRevenue + x.otherIncome);
       // 成本 = 订单商品成本 + 工资 + 其他支出（与 /metrics 同口径）
       x.cost = round2(x.orderCost + x.salary + x.otherExpense);
       x.profit = round2(x.revenue - x.cost);
