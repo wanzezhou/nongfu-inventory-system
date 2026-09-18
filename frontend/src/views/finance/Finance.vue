@@ -295,8 +295,8 @@ import {
   getFinanceSummary, getFinanceOrders, getMachineSales, createMachineSale, deleteMachineSale,
   exportFinance, importMachineSales, downloadMachineSaleTemplate
 } from '@/api/finance'
-import { getProductList } from '@/api/product'
-import { getMachineStations } from '@/api/machineStation'
+import { getProductOptions } from '@/api/product'
+import { getAllMachineStations } from '@/api/machineStation'
 import { getOrderDetail } from '@/api/order'
 import { downloadBlob } from '@/api/excel'
 
@@ -539,7 +539,7 @@ const handleImportFile = async (e) => {
 // ---- 机台销量录入 ----
 const loadMachines = async () => {
   try {
-    const res = await getMachineStations({ type: saleForm.machineType, status: 1, pageSize: 100 })
+        const res = await getAllMachineStations({ type: saleForm.machineType, status: 1 })
     machineOptions.value = res.data?.list || res.data || []
   } catch (error) {
     console.error('获取机台列表失败:', error)
@@ -549,7 +549,7 @@ const loadMachines = async () => {
 
 const loadProducts = async () => {
   try {
-    const res = await getProductList({ status: 1, pageSize: 200 })
+        const res = await getProductOptions({ status: 1 })
     productOptions.value = res.data?.list || res.data || []
   } catch (error) {
     console.error('获取商品列表失败:', error)

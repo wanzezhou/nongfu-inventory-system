@@ -35,7 +35,7 @@ async function getSupplierList(req, res) {
     return pagination(res, list, total, currentPage, size);
   } catch (err) {
     console.error('获取供应商列表失败:', err);
-    return error(res, '获取供应商列表失败: ' + err.message);
+    return error(res, '获取供应商列表失败');
   }
 }
 
@@ -47,7 +47,7 @@ async function getAllSuppliers(req, res) {
     return success(res, rows);
   } catch (err) {
     console.error('获取供应商列表失败:', err);
-    return error(res, '获取供应商列表失败: ' + err.message);
+    return error(res, '获取供应商列表失败');
   }
 }
 
@@ -65,7 +65,7 @@ async function getSupplierById(req, res) {
     return success(res, rows[0]);
   } catch (err) {
     console.error('获取供应商详情失败:', err);
-    return error(res, '获取供应商详情失败: ' + err.message);
+    return error(res, '获取供应商详情失败');
   }
 }
 
@@ -124,7 +124,7 @@ async function createSupplier(req, res) {
     return success(res, rows[0], '供应商创建成功');
   } catch (err) {
     console.error('创建供应商失败:', err);
-    return error(res, '创建供应商失败: ' + err.message);
+    return error(res, '创建供应商失败');
   }
 }
 
@@ -212,7 +212,7 @@ async function updateSupplier(req, res) {
     return success(res, rows[0], '供应商更新成功');
   } catch (err) {
     console.error('更新供应商失败:', err);
-    return error(res, '更新供应商失败: ' + err.message);
+    return error(res, '更新供应商失败');
   }
 }
 
@@ -267,7 +267,7 @@ async function deleteSupplier(req, res) {
       `供应商「${supplierName}」存在关联数据（${detail}），已转为「停用」保留而非删除`);
   } catch (err) {
     console.error('删除供应商失败:', err);
-    return error(res, '删除供应商失败: ' + err.message);
+    return error(res, '删除供应商失败');
   } finally {
     connection.release();
   }

@@ -158,7 +158,7 @@ async function createExpense(req, res) {
   } catch (e) {
     await conn.rollback();
     console.error('createExpense error:', e);
-    return error(res, e.message.includes('账户') ? e.message : '新增其他支出失败', 500);
+    return error(res, e.message.includes('账户') ? e.message : '新增其他支出失败', 500); // hazard-allow: bizFail 白名单文案（账户不足/停用）（设计输出，非内部细节）
   } finally {
     conn.release();
   }
@@ -193,7 +193,7 @@ async function updateExpense(req, res) {
   } catch (e) {
     await conn.rollback();
     console.error('updateExpense error:', e);
-    return error(res, e.message.includes('账户') ? e.message : '修改其他支出失败', 500);
+    return error(res, e.message.includes('账户') ? e.message : '修改其他支出失败', 500); // hazard-allow: bizFail 白名单文案（账户不足/停用）（设计输出，非内部细节）
   } finally {
     conn.release();
   }

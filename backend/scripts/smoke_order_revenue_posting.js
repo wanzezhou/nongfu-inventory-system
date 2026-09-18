@@ -40,13 +40,14 @@ function req(method, urlPath, { token, body } = {}) {
   });
 }
 
-// 无 /health 路由，用需鉴权接口探测：401 信封同样说明服务已就绪
 function waitHealth(retries = 60) {
   return new Promise((resolve, reject) => {
     let n = 0;
     const tick = () => {
-      req('GET', '/orders?page=1&pageSize=1')
-        .then((r) => { if (r.status === 200 || r.json?.code === 401) resolve(); else throw new Error('not ready'); })
+      // 探测 /health（免鉴权、200）—— 不要探测受保护接口：鉴权失败自 2026-09-18 起为 HTTP 401，
+      // 那种写法要靠 'code === 401' 兜底，语义绕且易随状态码口径变化而断
+      fetch('http://localhost:3000/health')
+        .then((r) => { if (r.status === 200) resolve(); else throw new Error('not ready'); })
         .catch(() => { if (++n >= retries) return reject(new Error('后端未就绪')); setTimeout(tick, 500); });
     };
     tick();

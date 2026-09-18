@@ -57,6 +57,12 @@
             </el-table-column>
           </el-table>
           <el-empty v-if="!expenseRows.length" description="当前区间无其他支出" :image-size="60" />
+          <!-- 显式告知截断：明细表只预览前 N 条，卡片金额与笔数取后端全量聚合（sumAmount / total）
+               —— 禁止静默截断（2026-09-18 代码审查 #1） -->
+          <div v-else-if="expenseTruncated" class="table-tip">
+            明细仅预览前 {{ EXPENSE_PREVIEW_SIZE }} 条（本区间共 {{ summary.expenseCount }} 笔）；
+            卡片金额与笔数为后端全量统计，不受此限制。完整明细请点「导出」。
+          </div>
         </el-tab-pane>
         <el-tab-pane label="直营水站成本明细" name="station">
           <el-table :data="stationRows" border stripe size="small">
@@ -115,6 +121,16 @@ const stationRows = ref([])
 const salaryRows = ref([])
 const expenseRows = ref([])
 
+// 其他支出明细的预览条数（不是取数上限，是「预览窗口」）：
+//   卡片金额与笔数由后端全量聚合（sumAmount / total）给出，与预览条数无关；
+//   本页的导出走服务端导出接口，也是全量。
+// 之所以给出常量名而不是内联字面量：让「这是一个刻意设定的预览窗口」在代码里自解释，
+// 且触发截断时页面必须显式提示（见 expenseTruncated）。
+const EXPENSE_PREVIEW_SIZE = 200
+const expenseTruncated = computed(
+  () => Number(summary.expenseCount) > expenseRows.value.length
+)
+
 const rangeLabel = computed(() => rangeText(rangeState.value))
 
 const totalCost = computed(() =>
@@ -165,8 +181,10 @@ const fetchData = async () => {
     const [ov, sa, ex] = await Promise.all([
       getCostOverview(q),
       getSalarySummary(q),
-      // 明细表仅预览前 500 条；卡片金额与笔数取后端全量聚合（sumAmount / total）
-      getExpenses({ ...q, page: 1, pageSize: 500 })
+      // 明细表仅预览前 EXPENSE_PREVIEW_SIZE 条；**卡片金额与笔数取后端全量聚合**
+      // （sumAmount / total，由后端独立 COUNT/SUM 得出），因此预览截断不会影响汇总数字。
+      // 截断时页面显式提示（见 expenseTruncated），不做静默截断（2026-09-18 代码审查 #1）。
+      getExpenses({ ...q, page: 1, pageSize: EXPENSE_PREVIEW_SIZE })
     ])
     // 直营水站成本：取 /cost/overview 中类型 2（直营水站销售）的成本合计，
     // 口径与「成本统计 → 直营水站销售」页完全一致（成本1 抵扣 + 成本2 未抵扣）。
@@ -214,6 +232,12 @@ const handleExport = async () => {
 <style scoped>
 .cost-summary {
   padding: 0;
+}
+/* 明细表截断提示：中性灰、不抢视线的说明文字（截断必须可见，不能静默） */
+.table-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
 }
 .filter-card {
   margin-bottom: 14px;

@@ -42,7 +42,52 @@ async function getMachineStationList(req, res) {
     return pagination(res, list, total, currentPage, size);
   } catch (err) {
     console.error('获取机台列表失败:', err);
-    return error(res, '获取机台列表失败: ' + err.message);
+    return error(res, '获取机台列表失败');
+  }
+}
+
+/**
+ * 机台下拉选项（2026-09-18 代码审查 #1 新增）
+ * 不分页全量返回，字段与列表接口一致（保持蛇形）。须注册在 /:id 之前。
+ */
+const MACHINE_OPTIONS_MAX = Number(process.env.OPTIONS_MAX_ROWS || 5000);
+
+async function getAllMachineStations(req, res) {
+  try {
+    const { type, status } = req.query;
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+    if (type !== undefined && type !== '') {
+      whereClause += ' AND machine_type = ?';
+      params.push(Number(type));
+    }
+    if (status !== undefined && status !== '') {
+      whereClause += ' AND status = ?';
+      params.push(Number(status));
+    }
+
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM machine_stations ${whereClause}`,
+      params
+    );
+    const total = Number(countResult[0].total) || 0;
+    if (total > MACHINE_OPTIONS_MAX) {
+      return error(res, `机台数量 ${total} 超过下拉上限 ${MACHINE_OPTIONS_MAX}`, 400);
+    }
+
+    // 显式列名（不使用 SELECT *）
+    const [list] = await pool.execute(
+      `SELECT machine_id, machine_type, station_name, address, manager, manager_phone,
+              status, created_at, updated_at
+       FROM machine_stations ${whereClause}
+       ORDER BY station_name ASC`,
+      params
+    );
+
+    return success(res, { list, total });
+  } catch (err) {
+    console.error('获取机台选项失败:', err);
+    return error(res, '获取机台选项失败');
   }
 }
 
@@ -61,7 +106,7 @@ async function getMachineStationById(req, res) {
     return success(res, rows[0]);
   } catch (err) {
     console.error('获取机台详情失败:', err);
-    return error(res, '获取机台详情失败: ' + err.message);
+    return error(res, '获取机台详情失败');
   }
 }
 
@@ -109,7 +154,7 @@ async function createMachineStation(req, res) {
     return success(res, rows[0], '机台创建成功');
   } catch (err) {
     console.error('创建机台失败:', err);
-    return error(res, '创建机台失败: ' + err.message);
+    return error(res, '创建机台失败');
   }
 }
 
@@ -171,7 +216,7 @@ async function updateMachineStation(req, res) {
     return success(res, rows[0], '机台更新成功');
   } catch (err) {
     console.error('更新机台失败:', err);
-    return error(res, '更新机台失败: ' + err.message);
+    return error(res, '更新机台失败');
   }
 }
 
@@ -234,7 +279,7 @@ async function deleteMachineStation(req, res) {
       `机台「${machineName}」存在关联数据（${detail}），已转为「停用」保留而非删除`);
   } catch (err) {
     console.error('删除机台失败:', err);
-    return error(res, '删除机台失败: ' + err.message);
+    return error(res, '删除机台失败');
   } finally {
     connection.release();
   }
@@ -242,6 +287,7 @@ async function deleteMachineStation(req, res) {
 
 module.exports = {
   getMachineStationList,
+  getAllMachineStations,
   getMachineStationById,
   createMachineStation,
   updateMachineStation,

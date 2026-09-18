@@ -99,8 +99,12 @@ async function handleLogin() {
     ElMessage.success('登录成功')
     router.push('/dashboard')
   } catch (error) {
-    if (error.message) {
-      ElMessage.error(error.message)
+    // 登录失败自 2026-09-18 起为 HTTP 401（此前是 HTTP 200 + code 401），
+    // 会走 axios 的 error 分支，故文案需从 response.data.message 取；
+    // 取不到再退回 Error.message（如网络中断）。
+    const msg = error?.response?.data?.message || error?.message
+    if (msg) {
+      ElMessage.error(msg)
     }
   } finally {
     loading.value = false

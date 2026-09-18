@@ -54,12 +54,21 @@ async function kill3000() {
   } catch (e) { /* netstat 不可用时忽略 */ }
 }
 
+/**
+ * 等后端就绪。
+ * ⚠️ 必须探测 /health（免鉴权、固定 200）—— 不要再用「请求受保护接口并期待 200」的写法：
+ *    自 2026-09-18 起鉴权失败统一返回 HTTP 401（此前是 HTTP 200 + 信封 code 401），
+ *    那种探测会永远等不到 200，把「后端其实已就绪」误判为「启动失败」。
+ */
 async function waitReady(maxMs = 60000) {
   const t0 = Date.now();
   while (Date.now() - t0 < maxMs) {
     try {
-      const r = await fetch('http://localhost:3000/api/orders');
-      if (r.status === 200) return true;
+      const r = await fetch('http://localhost:3000/health');
+      if (r.status === 200) {
+        const j = await r.json().catch(() => null);
+        if (j?.data?.db?.ok) return true;
+      }
     } catch (e) { /* 还没起来 */ }
     await sleep(400);
   }

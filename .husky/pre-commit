@@ -1,0 +1,65 @@
+#!/bin/sh
+# 本地提交门禁（G2 机器门禁 · 秒级）
+# =====================================================================
+# 设计原则：只查「改动文件」，全量检查放 CI。
+# 详见 docs/代码审查标准.md、docs/代码审查流程.md 第四章 G2
+set -e
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+
+# ── 1. 敏感文件阻断（防止运行期私密内容或密钥进仓库）────────────────
+for p in ".env" "backend/.env" "backend/uploads/" "商品档案/"; do
+  if echo "$STAGED" | grep -q "^${p}"; then
+    echo "❌ 禁止提交敏感路径：$p"
+    echo "   .env / uploads / 商品档案 属运行期私密内容，已在 .gitignore 中排除。"
+    echo "   如确需提交，请先确认无密钥与真实业务数据，并修改 .gitignore。"
+    exit 1
+  fi
+done
+
+if echo "$STAGED" | grep -qE "^database/backup_.*\.sql$"; then
+  echo "❌ 禁止提交数据库备份：含真实业务数据（含客户手机号/银行账号）。"
+  echo "   备份只留本地，已在 .gitignore 中排除。"
+  exit 1
+fi
+
+# ── 2. 暂存文件格式与静态缺陷（仅改动文件）──────────────────────────
+if echo "$STAGED" | grep -qE '\.(js|mjs|cjs|vue|json|yml|yaml|css|scss|html|md)$'; then
+  npx --no-install lint-staged || {
+    echo "❌ lint-staged 未通过：请修正后重新提交。"
+    exit 1
+  }
+fi
+
+# ── 3. 项目红线扫描（暂存新增行，纯 node、无需依赖）────────────────
+if [ -f scripts/check-diff-hazards.mjs ]; then
+  node scripts/check-diff-hazards.mjs --staged || {
+    echo "❌ 新增代码触发项目红线（详见上方说明）。"
+    echo "   判断依据：docs/代码审查标准.md 第三章；确需豁免请在该行加 \`hazard-allow: <原因>\`。"
+    exit 1
+  }
+fi
+
+# ── 4. 前端静态门禁（改动前端时触发；纯静态、无需数据库）──────────
+if echo "$STAGED" | grep -qE "^frontend/.*\.(vue|js|css|mjs)$"; then
+  if [ -f frontend/scripts/check-script-refs.mjs ]; then
+    node frontend/scripts/check-script-refs.mjs || {
+      echo "❌ 前端引用检查未通过（<script setup> 中引用了未声明标识符）。"
+      exit 1
+    }
+  fi
+fi
+
+if echo "$STAGED" | grep -qE "\.(vue|css)$"; then
+  if [ -f backend/scripts/check_frontend_tokens.js ]; then
+    node backend/scripts/check_frontend_tokens.js || {
+      echo "❌ 视觉 token 门禁未通过（存在硬编码色值）。见 DESIGN.md。"
+      exit 1
+    }
+  fi
+fi
+
+# ── 5. 后端冒烟提醒（不阻断，仅提示）────────────────────────────
+if echo "$STAGED" | grep -qE "^backend/src/controllers/"; then
+  echo "💡 提示：改动 controller 后请重启服务并跑相关冒烟（结果需粘贴到 PR 描述）。"
+fi

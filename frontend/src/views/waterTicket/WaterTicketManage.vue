@@ -199,9 +199,9 @@ import {
   issueTickets, getTicketInventory, getIssuanceList,
   updateIssuance, adjustBalance, adjustStationDeliveryFee, deleteIssuanceBatch
 } from '@/api/waterTicket'
-import { getStations } from '@/api/station'
-import { getProductList } from '@/api/product'
-import { getInventoryList } from '@/api/inventory'
+import { getAllStations } from '@/api/station'
+import { getProductOptions } from '@/api/product'
+import { getInventoryOptions } from '@/api/inventory'
 
 const activeTab = ref('issue')
 
@@ -496,13 +496,13 @@ const fmtDateTime = (v) => {
 
 const loadOptions = async () => {
   try {
-    const s = await getStations({ pageSize: 100 })
+        const s = await getAllStations()
     stationOptions.value = (s.data?.list || s.data || []).map((x) => ({ id: x.station_id || x.stationId, name: x.station_name || x.stationName }))
   } catch (e) { console.error('加载水站失败:', e) }
   try {
     const [pRes, invRes] = await Promise.all([
-      getProductList({ status: 1, pageSize: 200 }),
-      getInventoryList({ pageSize: 200 })
+            getProductOptions({ status: 1 }),
+            getInventoryOptions()
     ])
     const products = pRes.data?.list || pRes.data || []
     // 合并库存：无库存商品禁用选择（下拉置灰）

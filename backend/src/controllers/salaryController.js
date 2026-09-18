@@ -320,7 +320,7 @@ async function paySalary(req, res) {
     }
   } catch (e) {
     console.error('paySalary error:', e);
-    return error(res, e.message.includes('余额') || e.message.includes('已发放') || e.message.includes('应发') || e.message.includes('账户') ? e.message : '工资发放失败', 400);
+    return error(res, e.message.includes('余额') || e.message.includes('已发放') || e.message.includes('应发') || e.message.includes('账户') ? e.message : '工资发放失败', 400); // hazard-allow: bizFail 白名单文案（余额/已发放/应发）（设计输出，非内部细节）
   }
 }
 
@@ -464,7 +464,7 @@ async function createAdvance(req, res) {
     }
   } catch (e) {
     console.error('createAdvance error:', e);
-    return error(res, e.message.includes('余额') || e.message.includes('账户') ? e.message : '预支登记失败', 400);
+    return error(res, e.message.includes('余额') || e.message.includes('账户') ? e.message : '预支登记失败', 400); // hazard-allow: bizFail 白名单文案（余额/账户）（设计输出，非内部细节）
   }
 }
 

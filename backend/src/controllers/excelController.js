@@ -231,7 +231,16 @@ async function exportData(req, res) {
     }
 
     // 通用模块导出
-    const [rows] = await pool.execute(`SELECT * FROM ${config.table} ORDER BY created_at DESC`);
+    // 按 config.columns 已声明的 db 字段拼列名（列名来自服务端白名单 MODULE_CONFIG，
+    // 无注入风险），不再用 SELECT * —— 拖网络与内存，且列变更时产生隐式耦合
+    // （2026-09-18 代码审查 #10）。
+    const columnList = config.columns
+      .map(c => c.db)
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .map(name => `\`${name}\``)
+      .join(', ');
+    const selectSql = 'SELECT ' + columnList + ' FROM ' + config.table + ' ORDER BY created_at DESC';
+    const [rows] = await pool.execute(selectSql);
     const headers = config.columns.map(c => c.header);
     const data = rows.map(row => config.columns.map(c => {
       let val = row[c.db];
@@ -245,7 +254,7 @@ async function exportData(req, res) {
     return res.send(buffer);
   } catch (err) {
     console.error('导出失败:', err);
-    return error(res, '导出失败: ' + err.message);
+    return error(res, '导出失败');
   }
 }
 
@@ -512,7 +521,7 @@ async function importData(req, res) {
     // 事务化导入：任何未预期异常都回滚
     try { await connection.rollback(); } catch (_) { /* 忽略回滚异常 */ }
     console.error('导入失败:', err);
-    return error(res, '导入失败: ' + err.message);
+    return error(res, '导入失败');
   } finally {
     if (connection) connection.release();
   }

@@ -312,10 +312,10 @@ import { ElMessage } from 'element-plus'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import { createOrder, updateOrder } from '@/api/order'
 import { getTicketInventory } from '@/api/waterTicket'
-import { getProductList } from '@/api/product'
-import { getInventoryList } from '@/api/inventory'
-import { getMachineStations } from '@/api/machineStation'
-import { getStations } from '@/api/station'
+import { getProductOptions } from '@/api/product'
+import { getInventoryOptions } from '@/api/inventory'
+import { getAllMachineStations } from '@/api/machineStation'
+import { getAllStations } from '@/api/station'
 import { getAllWorkers } from '@/api/worker'
 import { formatMoney } from './orderText'
 
@@ -397,9 +397,12 @@ const deliveryRules = {
 
 const fetchProductOptions = async () => {
   try {
+    // 选项类数据走专用全量接口（2026-09-18 代码审查 #1）：
+    // 原先用 getProductList({ pageSize: 100 })，而本库已有 159 个商品 ——
+    // 会导致下拉里选不到第 101 个之后的商品，且不报错、不提示。
     const [productRes, inventoryRes] = await Promise.all([
-      getProductList({ pageSize: 100 }),
-      getInventoryList({ pageSize: 100 })
+      getProductOptions(),
+      getInventoryOptions()
     ])
     let products = []
     if (productRes.data) {
@@ -426,32 +429,19 @@ const fetchProductOptions = async () => {
       return (a.name || '').localeCompare(b.name || '', 'zh-CN')
     })
   } catch (error) {
-    console.error('获取商品列表失败:', error)
-    productOptions.value = generateProductMockData()
+    // ⚠️ 失败时**绝不**塞伪造数据（红线 R1）：曾经这里 fallback 到 generateProductMockData()，
+    // 结果接口一挂，用户会拿着「农夫山泉天然水 550ml」这类假商品把订单提交进台账。
+    // 正确做法：置空 + 明确告知失败，让用户知道此刻不能开单。
+    console.error('获取商品/库存选项失败:', error)
+    productOptions.value = []
+    ElMessage.error('商品列表加载失败，暂时无法开单，请刷新重试')
   }
-}
-
-const generateProductMockData = () => {
-  const products = []
-  const names = ['农夫山泉天然水', '农夫山泉矿泉水', '东方树叶', '茶π', '维他命水', '尖叫']
-  const specs = ['550ml', '1.5L', '4L', '19L', '380ml']
-  for (let i = 1; i <= 15; i++) {
-    products.push({
-      id: i,
-      code: `SP${String(i).padStart(6, '0')}`,
-      name: names[i % names.length] + ' ' + specs[i % specs.length],
-      spec: specs[i % specs.length],
-      unit: '瓶',
-      retailPrice: (Math.random() * 20 + 2).toFixed(2) * 1,
-      wholesalePrice: (Math.random() * 15 + 1).toFixed(2) * 1
-    })
-  }
-  return products
 }
 
 const fetchStationOptions = async () => {
   try {
-    const res = await getStations({ pageSize: 100 })
+    // 选项类数据走专用全量接口（2026-09-18 代码审查 #1）
+    const res = await getAllStations()
     if (res.data) {
       const rawList = res.data.list || res.data || []
       stationOptions.value = rawList.map(item => ({
@@ -573,8 +563,9 @@ const getQuantityMax = (row) => {
 const fetchMachineOptions = async () => {
   try {
     const [bulkRes, retailRes] = await Promise.all([
-      getMachineStations({ type: 1, pageSize: 100, status: 1 }),
-      getMachineStations({ type: 2, pageSize: 100, status: 1 })
+      // 选项类数据走专用全量接口（2026-09-18 代码审查 #1）
+      getAllMachineStations({ type: 1, status: 1 }),
+      getAllMachineStations({ type: 2, status: 1 })
     ])
     const map = (res) => {
       const list = res.data?.list || res.data || []

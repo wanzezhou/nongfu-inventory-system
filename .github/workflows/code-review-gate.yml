@@ -1,0 +1,164 @@
+# 代码审查门禁（G2 机器门禁 · 全量部分）
+# =====================================================================
+# 配套：docs/代码审查标准.md、docs/代码审查流程.md 第四章
+#
+# 设计原则：
+#   1. 红线扫描只判「本次改动新增的行」——存量为基线、新增违规即阻断，
+#      这样闸门从第一天就可执行，且存量不会因新代码加入而变差（棘轮效应）
+#   2. 冒烟脚本依赖 MySQL，不进 CI（由作者在 PR 中提供输出证据）
+#   3. 各 job 在依赖未安装时优雅跳过并给出提示，避免门禁一上线即全红被关闭
+name: Code Review Gate
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ── 红线扫描：项目史踩过的坑，只判新增代码 ──────────────────────
+  hazard-scan:
+    name: 红线扫描（新增代码）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 增量红线扫描
+        run: |
+          set -e
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="HEAD~1"
+          fi
+          echo "对比基线：$BASE"
+          node scripts/check-diff-hazards.mjs --base "$BASE"
+
+      - name: 全仓基线统计（仅记录，不阻断）
+        if: always()
+        run: node scripts/check-diff-hazards.mjs --all >> "$GITHUB_STEP_SUMMARY" || true
+
+  # ── 改动规模与范围守卫 ──────────────────────────────────────────
+  diff-guard:
+    name: 改动规模与范围守卫
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检查改动规模
+        run: |
+          set -e
+          BASE="${{ github.event.pull_request.base.sha }}"
+          STATS=$(git diff --shortstat "$BASE"...HEAD)
+          echo "改动统计：$STATS"
+          CHANGED=$(git diff --numstat "$BASE"...HEAD | awk '{a+=$1; d+=$2} END {print a+d}')
+          echo "总变动行数：${CHANGED:-0}"
+          {
+            echo "### 改动规模"
+            echo ""
+            echo "$STATS"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${CHANGED:-0}" -gt 800 ]; then
+            echo "::warning::本次改动 ${CHANGED} 行，超过 800 行。AI 生成的改动应小步提交，建议拆分（见 docs/代码审查流程.md 3.1）。"
+          fi
+
+      - name: 检查是否改动了禁止提交项
+        run: |
+          set -e
+          BASE="${{ github.event.pull_request.base.sha }}"
+          CHANGED_FILES=$(git diff --name-only "$BASE"...HEAD)
+          FAIL=0
+          for p in ".env" "backend/.env" "backend/uploads/" "商品档案/"; do
+            if echo "$CHANGED_FILES" | grep -q "^${p}"; then
+              echo "::error::禁止提交敏感路径：$p"
+              FAIL=1
+            fi
+          done
+          if echo "$CHANGED_FILES" | grep -qE "^database/backup_.*\.sql$"; then
+            echo "::error::禁止提交数据库备份（含真实业务数据）"
+            FAIL=1
+          fi
+          if echo "$CHANGED_FILES" | grep -qE "^backend/.*\.(log|pid)$" ; then
+            echo "::error::禁止提交日志/pid 文件"
+            FAIL=1
+          fi
+          exit $FAIL
+
+  # ── 仓库原有静态门禁（无需额外依赖，一直可用）────────────────────
+  static-gates:
+    name: 静态门禁（引用检查 / 视觉 token）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 前端未声明引用检查
+        run: node frontend/scripts/check-script-refs.mjs
+
+      - name: 视觉 token 门禁（禁止硬编码色值）
+        run: node backend/scripts/check_frontend_tokens.js
+
+  # ── ESLint + Prettier（需先按流程文档安装依赖）──────────────────
+  lint:
+    name: ESLint / Prettier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: 安装依赖
+        run: |
+          if [ -f package.json ]; then
+            npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+          else
+            echo "::notice::根目录尚无 package.json。请按 docs/代码审查流程.md 第八章安装工具链。"
+            echo "SKIP_LINT=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: ESLint
+        if: env.SKIP_LINT != '1'
+        run: npx eslint .
+
+      - name: Prettier 格式检查
+        if: env.SKIP_LINT != '1'
+        run: npx prettier --check .
+
+  # ── 前端构建（防止语法/导入错误进主干）──────────────────────────
+  build:
+    name: 前端构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: 构建
+        working-directory: frontend
+        run: node node_modules/vite/bin/vite.js build

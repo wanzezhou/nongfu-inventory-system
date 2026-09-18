@@ -1,0 +1,46 @@
+# CODEOWNERS —— 领域守门人
+# =====================================================================
+# 作用：指定路径的负责人。负责人对以下改动有最终否决权：
+#   1. 触及不可变式 I1–I5（资金 / 库存 / 水票 / 订单可逆 / 口径唯一）的改动
+#   2. 数据库结构变更
+#   3. 鉴权与安全中间件
+# 详见 docs/代码审查标准.md 第一章
+#
+# 单人项目说明：owner 填自己即可；待有协作者时按模块拆分。
+
+# ── 默认：全部改动 ──────────────────────────────────────────────────
+*                       @wanzezhou
+
+# ── 不可变式核心（最高风险，改动必须有守恒验证）────────────────────
+# I1 资金守恒
+/backend/src/services/orderRevenuePosting.js    @wanzezhou
+/backend/src/controllers/financeAccountController.js  @wanzezhou
+/backend/src/controllers/salaryController.js    @wanzezhou
+/backend/src/services/barrelService.js          @wanzezhou
+/backend/src/controllers/expenseController.js   @wanzezhou
+/backend/src/controllers/financialController.js @wanzezhou
+
+# I2 库存守恒
+/backend/src/controllers/inventoryController.js @wanzezhou
+
+# I3+I4 水票 / 订单可逆 / I5 口径唯一
+/backend/src/services/orderPricingService.js    @wanzezhou
+/backend/src/controllers/orderController.js     @wanzezhou
+/backend/src/controllers/waterTicketController.js  @wanzezhou
+/backend/src/utils/revenueExpr.js               @wanzezhou
+
+# ── 安全边界 ────────────────────────────────────────────────────────
+/backend/src/middleware/                   @wanzezhou
+/backend/src/app.js                        @wanzezhou
+/backend/src/routes/                       @wanzezhou
+
+# ── 数据库结构（变更需备份 + 幂等 + rollback）─────────────────────
+/database/                                 @wanzezhou
+
+# ── 评审机制自身（改标准需谨慎：门槛一动，全局受影响）───────────────
+/eslint.config.mjs                         @wanzezhou
+/.github/                                  @wanzezhou
+/.husky/                                   @wanzezhou
+/docs/代码审查标准.md                        @wanzezhou
+/docs/代码审查流程.md                        @wanzezhou
+/AGENTS.md                                 @wanzezhou

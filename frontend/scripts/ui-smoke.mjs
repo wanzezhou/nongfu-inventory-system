@@ -169,6 +169,8 @@ try {
   cdp = await Cdp.connect(page.webSocketDebuggerUrl)
   await cdp.send('Runtime.enable')
   await cdp.send('Page.enable')
+  // 网络域：用于断言「下拉必须走 /xxx/options 全量接口」这类取数行为
+  await cdp.send('Network.enable')
 
   console.log('\n=== 2) 登录态注入并加载应用 ===')
   await cdp.send('Page.navigate', { url: APP })
@@ -221,6 +223,18 @@ try {
   const upEvt = evtLog.find((e) => e.t === 'pointerup')
   console.log('    事件埋点：pointerup →', upEvt?.target, '｜ click →', clickEvt?.target)
   ok(!!clickEvt, '确实收到了 click 事件（说明不是事件没派发）')
+
+  // ---- 下拉取数必须走专用全量接口（2026-09-18 代码审查 #1 的回归防线）----
+  // 背景：开单表单曾用 getProductList({ pageSize: 100 }) 拉商品下拉，而本库有 159 个商品
+  //       → 下拉里静默缺 59 个（选不到，且不报错）。此处直接断言实际发出的请求：
+  //       必须命中 /products/options，且不得再出现带 pageSize 上限的列表式取数。
+  const openedReqs = cdp.events
+    .filter((e) => e.method === 'Network.requestWillBeSent')
+    .map((e) => e.params?.request?.url || '')
+  const optionReqs = openedReqs.filter((u) => /\/products\/options/.test(u))
+  const cappedListReqs = openedReqs.filter((u) => /\/products\?[^\s]*pageSize=/.test(u))
+  ok(optionReqs.length > 0, '开单表单的商品下拉走专用全量接口 /products/options', '命中 ' + optionReqs.length + ' 次')
+  ok(cappedListReqs.length === 0, '开单表单不再用「分页列表 + pageSize 上限」拉下拉', cappedListReqs.join(' | ') || '(无)')
 
   // 关掉弹窗，便于后续测试
   await cdp.eval(`

@@ -1,0 +1,20 @@
+{
+  "extends": ["@commitlint/config-conventional"],
+  "rules": {
+    "type-enum": [
+      2,
+      "always",
+      ["feat", "fix", "refactor", "perf", "style", "docs", "test", "chore", "data", "revert", "build", "ci"]
+    ],
+    "type-case": [2, "always", "lower-case"],
+    "type-empty": [2, "never"],
+    "scope-empty": [1, "never"],
+    "scope-case": [0],
+    "subject-empty": [2, "never"],
+    "subject-full-stop": [2, "never", "."],
+    "header-max-length": [1, "always", 100],
+    "body-leading-blank": [1, "always"],
+    "footer-leading-blank": [1, "always"]
+  },
+  "helpUrl": "docs/代码审查流程.md"
+}

@@ -129,7 +129,7 @@ async function getOrderList(req, res) {
     return pagination(res, formattedList, total, currentPage, size);
   } catch (err) {
     console.error('获取订单列表失败:', err);
-    return error(res, '获取订单列表失败: ' + err.message);
+    return error(res, '获取订单列表失败');
   }
 }
 
@@ -220,7 +220,7 @@ async function getOrderById(req, res) {
     return success(res, order);
   } catch (err) {
     console.error('获取订单详情失败:', err);
-    return error(res, '获取订单详情失败: ' + err.message);
+    return error(res, '获取订单详情失败');
   }
 }
 
@@ -384,8 +384,8 @@ async function createOrder(req, res) {
     // 回滚事务
     await connection.rollback();
     console.error('创建订单失败:', err);
-    if (err.business) return error(res, err.message, 400);
-    return error(res, '创建订单失败: ' + err.message);
+    if (err.business) return error(res, err.message, 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    return error(res, '创建订单失败');
   } finally {
     // 释放连接
     connection.release();
@@ -446,8 +446,8 @@ async function deleteOrder(req, res) {
     // 回滚事务
     await connection.rollback();
     console.error('取消订单失败:', err);
-    if (err.business) return error(res, err.message, 400);
-    return error(res, '取消订单失败: ' + err.message);
+    if (err.business) return error(res, err.message, 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    return error(res, '取消订单失败');
   } finally {
     // 释放连接
     connection.release();
@@ -505,8 +505,8 @@ async function hardDeleteOrder(req, res) {
     // 回滚事务
     await connection.rollback();
     console.error('删除订单失败:', err);
-    if (err.business) return error(res, err.message, 400);
-    return error(res, '删除订单失败: ' + err.message);
+    if (err.business) return error(res, err.message, 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    return error(res, '删除订单失败');
   } finally {
     // 释放连接
     connection.release();
@@ -599,8 +599,8 @@ async function updateOrder(req, res) {
   } catch (err) {
     await connection.rollback();
     console.error('修改订单失败:', err);
-    if (err.business) return error(res, err.message, 400);
-    return error(res, '修改订单失败: ' + err.message);
+    if (err.business) return error(res, err.message, 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    return error(res, '修改订单失败');
   } finally {
     connection.release();
   }

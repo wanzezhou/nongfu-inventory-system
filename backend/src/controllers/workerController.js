@@ -65,7 +65,7 @@ async function getWorkerList(req, res) {
     return pagination(res, formattedList, total, currentPage, size);
   } catch (err) {
     console.error('获取员工列表失败:', err);
-    return error(res, '获取员工列表失败: ' + err.message);
+    return error(res, '获取员工列表失败');
   }
 }
 
@@ -79,7 +79,7 @@ async function getAllWorkers(req, res) {
     return success(res, formattedList);
   } catch (err) {
     console.error('获取员工列表失败:', err);
-    return error(res, '获取员工列表失败: ' + err.message);
+    return error(res, '获取员工列表失败');
   }
 }
 
@@ -97,7 +97,7 @@ async function getWorkerById(req, res) {
     return success(res, formatWorker(rows[0]));
   } catch (err) {
     console.error('获取员工详情失败:', err);
-    return error(res, '获取员工详情失败: ' + err.message);
+    return error(res, '获取员工详情失败');
   }
 }
 
@@ -160,7 +160,7 @@ async function createWorker(req, res) {
     return success(res, formatWorker(rows[0]), '员工创建成功');
   } catch (err) {
     console.error('创建员工失败:', err);
-    return error(res, '创建员工失败: ' + err.message);
+    return error(res, '创建员工失败');
   }
 }
 
@@ -249,7 +249,7 @@ async function updateWorker(req, res) {
     return success(res, formatWorker(rows[0]), '员工更新成功');
   } catch (err) {
     console.error('更新员工失败:', err);
-    return error(res, '更新员工失败: ' + err.message);
+    return error(res, '更新员工失败');
   }
 }
 
@@ -337,7 +337,7 @@ async function deleteWorker(req, res) {
     );
   } catch (err) {
     console.error('删除员工失败:', err);
-    return error(res, '删除员工失败: ' + err.message);
+    return error(res, '删除员工失败');
   } finally {
     connection.release();
   }

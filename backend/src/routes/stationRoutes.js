@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const stationController = require('../controllers/stationController');
 
+// 水站下拉选项（不分页全量；须定义在通配 /:id 之前，否则被吞）
+router.get('/all', stationController.getAllStations);
+
 // 获取水站列表
 router.get('/', stationController.getStationList);
 

@@ -8,6 +8,9 @@ router.get('/categories', productController.getCategoryList);
 // 上传商品图片（具体路径必须注册在通配 /:id 之前，否则被吞）
 router.post('/upload-image', productController.uploadProductImage, productController.handleUploadImage);
 
+// 商品下拉选项（不分页全量；下拉/选项类数据专用，2026-09-18 代码审查 #1）
+router.get('/options', productController.getProductOptions);
+
 // 获取商品列表
 router.get('/', productController.getProductList);
 

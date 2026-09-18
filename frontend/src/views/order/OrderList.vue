@@ -189,7 +189,12 @@ const handleExport = async () => {
   try {
     const response = await exportData('orders')
     downloadBlob(response.data, `订单数据_${Date.now()}.xlsx`)
-  } catch { } finally {
+  } catch (e) {
+    // 失败提示由 request.js 响应拦截器统一弹出（blob 分支会解析后端返回的 message）。
+    // ⚠️ 这 6 个导出入口刻意不各自弹提示 —— 一旦拦截器的 blob 错误分支被改动，
+    //    它们会同时变成真正的静默失败。改动该分支时必须回归这 6 处（2026-09-18 代码审查 #9）。
+    console.error('导出失败（提示由响应拦截器给出）:', e)
+  } finally {
     exporting.value = false
   }
 }

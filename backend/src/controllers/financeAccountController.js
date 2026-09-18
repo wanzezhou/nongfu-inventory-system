@@ -159,7 +159,7 @@ async function adjustBalance(req, res) {
     }
   } catch (e) {
     console.error('adjustBalance error:', e);
-    return error(res, e.message.includes('不足') || e.message.includes('停用') ? e.message : '调账失败', 400);
+    return error(res, e.message.includes('不足') || e.message.includes('停用') ? e.message : '调账失败', 400); // hazard-allow: bizFail 白名单文案（余额不足/账户停用）（设计输出，非内部细节）
   }
 }
 
@@ -199,7 +199,7 @@ async function transferBetween(req, res) {
     }
   } catch (e) {
     console.error('transferBetween error:', e);
-    return error(res, e.message.includes('不足') || e.message.includes('停用') ? e.message : '转账失败', 400);
+    return error(res, e.message.includes('不足') || e.message.includes('停用') ? e.message : '转账失败', 400); // hazard-allow: bizFail 白名单文案（余额不足/账户停用）（设计输出，非内部细节）
   }
 }
 

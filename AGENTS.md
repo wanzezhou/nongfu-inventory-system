@@ -11,7 +11,12 @@ Vue3 + Element Plus 前端（:5173）｜ Node.js + Express 后端（:3000）｜ 
 1. **`docs/交接文档.md`** —— 项目交接主文档：背景/架构/决策/进度/待办/规范/入口/环境，从这里建立全局认知。
 2. **`docs/项目概览.md`** —— ★ 唯一事实源：真实数据模型、功能模块、核心业务规则、历史变更日志。**改任何代码前查它，改完必须同步它**（〇节追加变更记录）。
 3. **`docs/技术债务审查报告.md`** —— 历史债务与处置记录（P0–P3 已全部闭环）。
-4. `.workbuddy/memory/MEMORY.md` —— 项目长期硬性约定原文；`.workbuddy/memory/2026-*.md` —— 按日开发日志与踩坑。
+4. **`docs/代码审查标准.md`** —— ★ **写码前必读**：不可变式 I1–I5、红线 R1–R7、**AI 生成代码专项规则（六大失败模式 + 三问法）**、分层检查清单。配套 `docs/代码审查流程.md`（五道闸门 / PR 模板 / 评审 SLA）。
+5. `.workbuddy/memory/MEMORY.md` —— 项目长期硬性约定原文；`.workbuddy/memory/2026-*.md` —— 按日开发日志与踩坑。
+
+> ⚠️ **AI 智能体特别注意**：本项目已有机器门禁（`scripts/check-diff-hazards.mjs`、`eslint.config.mjs`）。提交前先自检 ——
+> `node scripts/check-diff-hazards.mjs --staged` 会拦住 mock 兜底 / 空 catch / `SELECT *` / `err.message` 出参 / 硬编码取数上限 / 硬编码地址 / 硬编码密钥。
+> 不要试图用 `hazard-allow` 绕过；确需豁免必须在行内写明原因，评审会看。
 
 ## 每次动手前（硬性检查清单）
 
@@ -22,6 +27,10 @@ Vue3 + Element Plus 前端（:5173）｜ Node.js + Express 后端（:3000）｜ 
 - [ ] **改营收/成本口径**：营收表达式唯一来源 `utils/revenueExpr.js`，前端只展示不计算；订单类型 4/6 营收走 machine_sales。
 - [ ] **写 controller**：`req.body` 一律驼峰单读（全局 normalizeBody 已归一），禁止蛇形别名回退；金额 `Math.round(n*100)/100`；分页 parseInt 内联（mysql2 不支持 `LIMIT ?`）。
   ⚠️ 归一化是**机械转换**（`delivery_type`→`deliveryType`）。若前端用的是另一个驼峰名，两者不会自动对齐、字段会静默取空 —— 订单接口已有三例（配送方式 `deliveryType`/`deliveryMethod`、配送员工 `workerId`/`deliveryStaffId`、创建人 `createdBy`/`createdById`）。**新增请求体字段前先 grep 前端确认实际键名。**
+- [ ] **写 response**：统一走 `utils/response.js`（`success` / `error` / `pagination` / `unauthorized` / `forbidden`），**不要裸 `res.json`**。
+  ⚠️ **鉴权失败 = HTTP 401 + 信封 code 401**（2026-09-18 起，此前是 HTTP 200 + code 401）；无权限 = HTTP 403。前端 `request.js` 在 **error 分支**处理 401（登出 + 跳登录）。非 axios 调用路径（`<img>`、直连、脚本探测）拿不到 401 的中文文案，探测服务是否就绪请用 **`GET /health`**（免鉴权、固定 200）。
+- [ ] **5xx 的 `message` 不得带 `err.message`**：`error(res, 'xx失败: ' + err.message)` 会泄露表名/列名/SQL/绝对路径（历史缺陷 S7 共 65 处，已收敛）。业务文案才允许 `err.message`（bizFail 模式，需带 `hazard-allow` 豁免注释）。
+- [ ] **下拉/选项类取数**：一律用专用全量接口 —— `/products/options`、`/inventory/options`、`/stations/all`、`/machine-stations/all`、`/suppliers/all`、`/workers/all`。**禁止**用 `getXxxList({ pageSize: N })` 拉下拉：分页有上限，实体一超上限选项就**静默缺失**（2026-09-18 发现：商品 159 > 上限 100，开单选不到后 59 个商品）。**接口失败时绝不能用假数据兜底**（红线 R1）。
 - [ ] **改前端**：菜单只改 `layout/menuConfig.js`；窄屏适配（对话框 ≤768px 94vw）；失败分支不得误报成功；完成后台账 `docs/项目概览.md`。
 - [ ] **验证**：改后端代码后必须重启服务再跑冒烟；相关冒烟基线见 `docs/交接文档.md` 第四节表格。
   ⚠️ `loginLimiter` 为 `max 10 / 15min`（按 IP），**连续跑整套冒烟会在第 11 个脚本处被限流**（登录返 `null`、断言连锁失败，极易误判为回归）—— 请分批跑，或每批前重启后端重置计数。

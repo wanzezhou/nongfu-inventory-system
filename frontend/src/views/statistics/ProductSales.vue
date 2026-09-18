@@ -180,8 +180,8 @@ import { Search, Refresh, Download, Box, DataLine, ShoppingCart, TrendCharts } f
 import { getProductSales, exportProductSales } from '@/api/statistics'
 import { getCategoryList } from '@/api/product'
 import { getAllWorkers } from '@/api/worker'
-import { getStations } from '@/api/station'
-import { getMachineStations } from '@/api/machineStation'
+import { getAllStations } from '@/api/station'
+import { getAllMachineStations } from '@/api/machineStation'
 import { downloadBlob } from '@/api/excel'
 
 const loading = ref(false)
@@ -376,7 +376,7 @@ const fetchWorkers = async () => {
 
 const fetchStations = async () => {
   try {
-    const res = await getStations({ pageSize: 999, status: 1 })
+        const res = await getAllStations({ status: 1 })
     if (res.data) {
       stationOptions.value = res.data.list || []
     }
@@ -387,7 +387,7 @@ const fetchStations = async () => {
 
 const fetchMachines = async () => {
   try {
-    const res = await getMachineStations({ pageSize: 999, status: 1 })
+        const res = await getAllMachineStations({ status: 1 })
     if (res.data) {
       machineOptions.value = res.data.list || []
     }

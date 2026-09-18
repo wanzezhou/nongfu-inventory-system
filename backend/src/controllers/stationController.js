@@ -47,7 +47,52 @@ async function getStationList(req, res) {
     return pagination(res, list, total, currentPage, size);
   } catch (err) {
     console.error('获取水站列表失败:', err);
-    return error(res, '获取水站列表失败: ' + err.message);
+    return error(res, '获取水站列表失败');
+  }
+}
+
+/**
+ * 水站下拉选项（2026-09-18 代码审查 #1 新增）
+ * 不分页全量返回，字段与列表接口一致（保持蛇形，前端既有映射零改动）。
+ * 与 /suppliers/all、/workers/all 同一惯例。
+ */
+const STATION_OPTIONS_MAX = Number(process.env.OPTIONS_MAX_ROWS || 5000);
+
+async function getAllStations(req, res) {
+  try {
+    const { status } = req.query;
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+    if (status !== undefined && status !== '') {
+      whereClause += ' AND status = ?';
+      params.push(Number(status));
+    }
+
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM sub_stations ${whereClause}`,
+      params
+    );
+    const total = Number(countResult[0].total) || 0;
+    if (total > STATION_OPTIONS_MAX) {
+      return error(res, `水站数量 ${total} 超过下拉上限 ${STATION_OPTIONS_MAX}`, 400);
+    }
+
+    // 显式列名（不使用 SELECT *）
+    const [list] = await pool.execute(
+      `SELECT station_id, station_name, contact_name, phone, address, area,
+              credit_limit, current_debt, payment_type,
+              bank_name, bank_account, account_name,
+              invoice_title, tax_number, invoice_address, invoice_phone,
+              status, created_at, updated_at
+       FROM sub_stations ${whereClause}
+       ORDER BY station_name ASC`,
+      params
+    );
+
+    return success(res, { list, total });
+  } catch (err) {
+    console.error('获取水站选项失败:', err);
+    return error(res, '获取水站选项失败');
   }
 }
 
@@ -66,7 +111,7 @@ async function getStationById(req, res) {
     return success(res, rows[0]);
   } catch (err) {
     console.error('获取水站详情失败:', err);
-    return error(res, '获取水站详情失败: ' + err.message);
+    return error(res, '获取水站详情失败');
   }
 }
 
@@ -141,7 +186,7 @@ async function createStation(req, res) {
     return success(res, rows[0], '水站创建成功');
   } catch (err) {
     console.error('创建水站失败:', err);
-    return error(res, '创建水站失败: ' + err.message);
+    return error(res, '创建水站失败');
   }
 }
 
@@ -260,7 +305,7 @@ async function updateStation(req, res) {
     return success(res, rows[0], '水站更新成功');
   } catch (err) {
     console.error('更新水站失败:', err);
-    return error(res, '更新水站失败: ' + err.message);
+    return error(res, '更新水站失败');
   }
 }
 
@@ -331,7 +376,7 @@ async function deleteStation(req, res) {
       `水站「${stationName}」存在关联数据（${detail}），已转为「停用」保留而非删除`);
   } catch (err) {
     console.error('删除水站失败:', err);
-    return error(res, '删除水站失败: ' + err.message);
+    return error(res, '删除水站失败');
   } finally {
     connection.release();
   }
@@ -339,6 +384,7 @@ async function deleteStation(req, res) {
 
 module.exports = {
   getStationList,
+  getAllStations,
   getStationById,
   createStation,
   updateStation,

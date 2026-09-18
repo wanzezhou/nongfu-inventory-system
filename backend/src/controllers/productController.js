@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const multer = require('multer');
 const { pool } = require('../config/db');
 const { success, error, pagination } = require('../utils/response');
@@ -41,7 +42,11 @@ const imageStorage = multer.diskStorage({
   filename(req, file, cb) {
     // 扩展名以 MIME 白名单为准，避免用户端带奇形怪状的后缀
     const ext = IMAGE_MIME_EXT[file.mimetype] || path.extname(file.originalname).toLowerCase() || '.png';
-    cb(null, `${generateId('IMG')}${ext}`);
+    // 文件名不可枚举化（2026-09-18 代码审查 #2）：原 `generateId('IMG')` 是
+    // 「时间戳 + 4 位随机数」，可被批量猜测遍历。改用 UUID。
+    // 注意：不能动 generateId 本身 —— 它同时用于各模块业务主键（订单/入库单等），
+    // 只替换图片文件名这一处。
+    cb(null, `IMG-${crypto.randomUUID()}${ext}`);
   }
 });
 
@@ -83,10 +88,10 @@ function uploadProductImage(req, res, next) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return error(res, '图片大小不能超过 5MB', 400);
       }
-      return error(res, `图片上传失败：${err.message}`, 400);
+      return error(res, '图片上传失败', 400);
     }
     // fileFilter 里自定义的 Error（格式不支持等）
-    return error(res, err.message || '图片上传失败', 400);
+    return error(res, '图片上传失败', 400);
   });
 }
 
@@ -157,7 +162,68 @@ async function getProductList(req, res) {
     return pagination(res, formattedList, total, currentPage, size);
   } catch (err) {
     console.error('获取商品列表失败:', err);
-    return error(res, '获取商品列表失败: ' + err.message);
+    return error(res, '获取商品列表失败');
+  }
+}
+
+/**
+ * 商品下拉选项（2026-09-18 代码审查 #1 新增）
+ *
+ * 为什么需要它：下拉/选项类数据此前一律借用分页列表接口并硬编码一个 `pageSize`
+ * （100 / 200 / 500 / 999）。一旦实体数超过该上限，**选项会静默缺失** ——
+ * 用户在下拉里根本选不到第 N+1 个商品，不报错也不提示。本库已有 159 个商品、
+ * 而开单表单只取前 100 条，即「选不到后 59 个商品」。
+ *
+ * 约定：选项接口**不分页**、全量返回，字段与列表接口保持完全一致（复用 formatProduct），
+ * 使前端改造只是换接口名、不换数据结构。
+ * 保护：仅设一个远高于真实业务量的安全阈值，超过时**显式报错**（而不是静默截断）。
+ */
+const PRODUCT_OPTIONS_MAX = Number(process.env.OPTIONS_MAX_ROWS || 5000);
+
+async function getProductOptions(req, res) {
+  try {
+    const { category, status } = req.query;
+
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+    if (category) {
+      whereClause += ' AND category = ?';
+      params.push(category);
+    }
+    if (status !== undefined && status !== '') {
+      whereClause += ' AND status = ?';
+      params.push(Number(status));
+    }
+
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM products ${whereClause}`,
+      params
+    );
+    const total = Number(countResult[0].total) || 0;
+    if (total > PRODUCT_OPTIONS_MAX) {
+      return error(res, `商品数量 ${total} 超过下拉上限 ${PRODUCT_OPTIONS_MAX}，请改用关键字搜索`, 400);
+    }
+
+    // 显式列名（不使用 SELECT *）
+    const [rows] = await pool.execute(
+      `SELECT product_id, product_code, product_name, specification, unit,
+              purchase_price, wholesale_price, retail_price, machine_price,
+              total_delivery_fee, distribution_delivery_fee,
+              worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee,
+              category, image_url, status, created_at, updated_at
+       FROM products ${whereClause}
+       ORDER BY product_name ASC`,
+      params
+    );
+
+    const baseUrl = getBaseUrl(req);
+    return success(res, {
+      list: rows.map((item) => formatProduct(item, baseUrl)),
+      total
+    });
+  } catch (err) {
+    console.error('获取商品选项失败:', err);
+    return error(res, '获取商品选项失败');
   }
 }
 
@@ -176,7 +242,7 @@ async function getProductById(req, res) {
     return success(res, formatProduct(rows[0], baseUrl));
   } catch (err) {
     console.error('获取商品详情失败:', err);
-    return error(res, '获取商品详情失败: ' + err.message);
+    return error(res, '获取商品详情失败');
   }
 }
 
@@ -249,7 +315,7 @@ async function createProduct(req, res) {
     return success(res, formatProduct(rows[0], baseUrl), '商品创建成功');
   } catch (err) {
     console.error('创建商品失败:', err);
-    return error(res, '创建商品失败: ' + err.message);
+    return error(res, '创建商品失败');
   }
 }
 
@@ -365,7 +431,7 @@ async function updateProduct(req, res) {
     return success(res, formatProduct(rows[0], baseUrl), '商品更新成功');
   } catch (err) {
     console.error('更新商品失败:', err);
-    return error(res, '更新商品失败: ' + err.message);
+    return error(res, '更新商品失败');
   }
 }
 
@@ -387,7 +453,7 @@ async function deleteProduct(req, res) {
     return success(res, null, '商品删除成功');
   } catch (err) {
     console.error('删除商品失败:', err);
-    return error(res, '删除商品失败: ' + err.message);
+    return error(res, '删除商品失败');
   }
 }
 
@@ -405,7 +471,7 @@ async function getCategoryList(req, res) {
     return success(res, data);
   } catch (err) {
     console.error('获取分类列表失败:', err);
-    return error(res, '获取分类列表失败: ' + err.message);
+    return error(res, '获取分类列表失败');
   }
 }
 
@@ -429,12 +495,13 @@ async function handleUploadImage(req, res) {
     );
   } catch (err) {
     console.error('上传商品图片失败:', err);
-    return error(res, '上传商品图片失败: ' + err.message);
+    return error(res, '上传商品图片失败');
   }
 }
 
 module.exports = {
   getProductList,
+  getProductOptions,
   getProductById,
   createProduct,
   updateProduct,

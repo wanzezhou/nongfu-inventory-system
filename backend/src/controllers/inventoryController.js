@@ -46,6 +46,60 @@ function formatInventory(item, baseUrl) {
   };
 }
 
+/**
+ * 库存下拉选项（2026-09-18 代码审查 #1 新增）
+ *
+ * 与「商品下拉」同因：下拉类数据此前借用分页接口 + 硬编码 pageSize 100/200，
+ * 实体数一超上限，选项就静默缺失（本库 159 个商品 → 只能选到前 100 个）。
+ * 本接口不分页、全量返回，字段与列表接口完全一致（复用 formatInventory），
+ * 前端只需换接口名，合并库存的既有逻辑零改动。
+ */
+const INVENTORY_OPTIONS_MAX = Number(process.env.OPTIONS_MAX_ROWS || 5000);
+
+async function getInventoryOptions(req, res) {
+  try {
+    const { category, categoryId } = req.query;
+    const actualCategory = category || categoryId;
+
+    let whereClause = 'WHERE p.status = 1';
+    const params = [];
+    if (actualCategory) {
+      whereClause += ' AND p.category = ?';
+      params.push(actualCategory);
+    }
+
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM products p LEFT JOIN inventory i ON p.product_id = i.product_id ${whereClause}`,
+      params
+    );
+    const total = Number(countResult[0].total) || 0;
+    if (total > INVENTORY_OPTIONS_MAX) {
+      return error(res, `库存记录 ${total} 条超过下拉上限 ${INVENTORY_OPTIONS_MAX}，请改用关键字搜索`, 400);
+    }
+
+    const [list] = await pool.execute(
+      `SELECT
+         i.inventory_id, p.product_id, i.quantity, i.last_in_time, i.last_out_time, i.updated_at,
+         p.product_code, p.product_name, p.specification, p.unit, p.category,
+         p.image_url, p.purchase_price
+       FROM products p
+       LEFT JOIN inventory i ON p.product_id = i.product_id
+       ${whereClause}
+       ORDER BY p.product_name ASC`,
+      params
+    );
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    return success(res, {
+      list: list.map((item) => formatInventory(item, baseUrl)),
+      total
+    });
+  } catch (err) {
+    console.error('获取库存选项失败:', err);
+    return error(res, '获取库存选项失败');
+  }
+}
+
 // 获取库存列表
 async function getInventoryList(req, res) {
   try {
@@ -137,7 +191,7 @@ async function getInventoryList(req, res) {
     });
   } catch (err) {
     console.error('获取库存列表失败:', err);
-    return error(res, '获取库存列表失败: ' + err.message);
+    return error(res, '获取库存列表失败');
   }
 }
 
@@ -175,7 +229,7 @@ async function getInventoryByProductId(req, res) {
     return success(res, rows[0]);
   } catch (err) {
     console.error('获取库存详情失败:', err);
-    return error(res, '获取库存详情失败: ' + err.message);
+    return error(res, '获取库存详情失败');
   }
 }
 
@@ -345,10 +399,10 @@ async function stockIn(req, res) {
     // 回滚事务：入库、扣款、流水一并撤销
     await connection.rollback();
     if (err.business) {
-      return error(res, err.message, 400);
+      return error(res, err.message, 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     }
     console.error('入库操作失败:', err);
-    return error(res, '入库操作失败: ' + err.message);
+    return error(res, '入库操作失败');
   } finally {
     // 释放连接
     connection.release();
@@ -422,7 +476,7 @@ async function getPurchaseRecords(req, res) {
     });
   } catch (err) {
     console.error('获取入库记录失败:', err);
-    return error(res, '获取入库记录失败: ' + err.message);
+    return error(res, '获取入库记录失败');
   }
 }
 
@@ -503,9 +557,9 @@ async function voidPurchaseRecord(req, res) {
     return success(res, { purchaseId: purchase_id, refundAmount, balanceAfter }, '入库单已作废，款项原路退回');
   } catch (err) {
     await connection.rollback();
-    if (err.business) return error(res, err.message, 400);
+    if (err.business) return error(res, err.message, 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('作废入库单失败:', err);
-    return error(res, '作废入库单失败: ' + err.message);
+    return error(res, '作废入库单失败');
   } finally {
     connection.release();
   }
@@ -610,7 +664,7 @@ async function stockOut(req, res) {
     // 回滚事务
     await connection.rollback();
     console.error('出库操作失败:', err);
-    return error(res, '出库操作失败: ' + err.message);
+    return error(res, '出库操作失败');
   } finally {
     // 释放连接
     connection.release();
@@ -686,6 +740,7 @@ async function getStockOutRecords(req, res) {
 
 module.exports = {
   getInventoryList,
+  getInventoryOptions,
   getInventoryByProductId,
   stockIn,
   stockOut,

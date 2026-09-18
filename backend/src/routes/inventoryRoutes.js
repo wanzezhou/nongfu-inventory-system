@@ -13,6 +13,9 @@ router.get('/stock-out-records', auth, inventoryController.getStockOutRecords);
 // 作废入库单（回退库存 + 原路退回）：仅管理员（S4）
 router.post('/purchases/:purchaseId/void', auth, requireAdmin, inventoryController.voidPurchaseRecord);
 
+// 库存下拉选项（不分页全量；须定义在 /:productId 之前）
+router.get('/options', auth, inventoryController.getInventoryOptions);
+
 // 获取库存列表
 router.get('/', auth, inventoryController.getInventoryList);
 

@@ -111,7 +111,7 @@ async function importExpenses(req, res) {
     }
   } catch (e) {
     console.error('importExpenses error:', e);
-    return error(res, '导入失败：' + e.message, 500);
+    return error(res, '导入失败', 500);
   }
 }
 

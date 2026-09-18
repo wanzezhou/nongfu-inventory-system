@@ -1,0 +1,18 @@
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+frontend/dist/
+backend/uploads/
+商品档案/
+database/backup/
+database/backup_*.sql
+database/full_schema_data.sql
+*.log
+package-lock.json
+backend/package-lock.json
+frontend/package-lock.json
+frontend/vite.config.js.timestamp-*
+.ui-shots/
+.workbuddy/
+# 保留原样的第三方/生成物
+frontend/src/styles/main-layout.css

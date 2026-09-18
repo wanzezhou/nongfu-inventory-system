@@ -1,0 +1,5 @@
+#!/bin/sh
+# 提交信息规范校验（G2 机器门禁）
+# 格式：type(scope): 中文描述      例：fix(order): 修水票未还原（F3）
+# 规范详见 docs/代码审查流程.md 第三章
+npx --no-install commitlint --edit "$1"

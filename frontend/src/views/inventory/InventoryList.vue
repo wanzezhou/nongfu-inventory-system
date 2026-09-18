@@ -182,7 +182,7 @@ import {
 } from '@element-plus/icons-vue'
 import { getInventoryList } from '@/api/inventory'
 import { getAccounts } from '@/api/account'
-import { getProductList, getCategoryList } from '@/api/product'
+import { getProductOptions, getCategoryList } from '@/api/product'
 import { getAllSuppliers } from '@/api/supplier'
 import { exportData, downloadBlob } from '@/api/excel'
 import ImportDialog from '@/components/ImportDialog.vue'
@@ -199,7 +199,12 @@ const handleExport = async () => {
   try {
     const response = await exportData('inventory')
     downloadBlob(response.data, `库存数据_${Date.now()}.xlsx`)
-  } catch { } finally {
+  } catch (e) {
+    // 失败提示由 request.js 响应拦截器统一弹出（blob 分支会解析后端返回的 message）。
+    // ⚠️ 这 6 个导出入口刻意不各自弹提示 —— 一旦拦截器的 blob 错误分支被改动，
+    //    它们会同时变成真正的静默失败。改动该分支时必须回归这 6 处（2026-09-18 代码审查 #9）。
+    console.error('导出失败（提示由响应拦截器给出）:', e)
+  } finally {
     exporting.value = false
   }
 }
@@ -290,7 +295,9 @@ const fetchCategories = async () => {
 
 const fetchProductOptions = async () => {
   try {
-    const res = await getProductList({ pageSize: 100 })
+          // 选项类数据走专用全量接口（2026-09-18 代码审查 #1）：
+      // 原 getProductList({ pageSize: 100 }) 在商品数 > 100 时会静默缺项（本库已有 159 个）
+      const res = await getProductOptions()
     if (res.data) {
       productOptions.value = res.data.list || res.data || []
     }

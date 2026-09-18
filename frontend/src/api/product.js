@@ -1,5 +1,18 @@
 import request from './request'
 
+/**
+ * 商品下拉选项（不分页全量）
+ * ⚠️ 下拉/选项类数据一律用本接口，**不要**再调 getProductList({ pageSize: N }) ——
+ * 分页接口有上限，实体数一超上限选项就静默缺失（2026-09-18 代码审查 #1）。
+ */
+export function getProductOptions(params) {
+  return request({
+    url: '/products/options',
+    method: 'get',
+    params
+  })
+}
+
 export function getProductList(params) {
   return request({
     url: '/products',

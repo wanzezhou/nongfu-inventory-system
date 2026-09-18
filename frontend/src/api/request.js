@@ -31,6 +31,8 @@ request.interceptors.response.use(
     }
     const res = response.data
     if (res.code !== undefined && res.code !== 200) {
+      // 兼容分支：后端自 2026-09-18 起鉴权失败统一返回 **HTTP 401 + code 401**，
+      // 会走下面的 error 分支；此处保留是为了兜住任何仍以 HTTP 200 返回信封错误的路径。
       if (res.code === 401) {
         useAuthStore().clear()
         router.push('/login')
@@ -41,6 +43,12 @@ request.interceptors.response.use(
     return res
   },
   error => {
+    const status = error.response?.status
+    const url = error.config?.url || ''
+    // 登录接口自身的 401 不在这里处理（那是「账号密码错误」，不是会话失效），
+    // 交给登录页 catch 展示；否则会先跳一次 /login 再弹两次提示。
+    const isLoginRequest = url.includes('/auth/login')
+
     // blob 响应的错误处理（如导出失败时服务器返回 JSON 错误信息）
     if (error.response && error.response.data instanceof Blob) {
       error.response.data.text().then(text => {
@@ -51,6 +59,12 @@ request.interceptors.response.use(
           ElMessage.error('请求失败')
         }
       })
+    } else if (status === 401 && !isLoginRequest) {
+      // 会话失效：清登录态 + 跳登录（2026-09-18 代码审查 #7：鉴权失败改用 HTTP 状态码，
+      // 不再依赖「HTTP 200 + body.code 401」，这样 Nginx/APM 也能从状态码识别未授权访问）
+      useAuthStore().clear()
+      if (router.currentRoute.value.path !== '/login') router.push('/login')
+      ElMessage.error(error.response.data?.message || '登录已过期，请重新登录')
     } else if (error.response && error.response.data && error.response.data.message) {
       // 后端已返回结构化业务错误（HTTP 4xx/5xx + {code, message}）：
       // 文案交由调用方 catch 展示（各页面统一读 e.response.data.message），

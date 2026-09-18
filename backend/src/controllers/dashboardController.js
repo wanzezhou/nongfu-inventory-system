@@ -69,7 +69,7 @@ async function getSummary(req, res) {
     return success(res, { totalInventoryValue });
   } catch (err) {
     console.error('获取统计数据失败:', err);
-    return error(res, '获取统计数据失败: ' + err.message);
+    return error(res, '获取统计数据失败');
   }
 }
 
@@ -159,7 +159,7 @@ async function getMetrics(req, res) {
     });
   } catch (err) {
     console.error('获取仪表盘周期指标失败:', err);
-    return error(res, '获取仪表盘周期指标失败: ' + err.message);
+    return error(res, '获取仪表盘周期指标失败');
   }
 }
 
@@ -281,7 +281,7 @@ async function getTrends(req, res) {
     return success(res, { granularity, start, end, buckets });
   } catch (err) {
     console.error('获取仪表盘趋势失败:', err);
-    return error(res, '获取仪表盘趋势失败: ' + err.message);
+    return error(res, '获取仪表盘趋势失败');
   }
 }
 

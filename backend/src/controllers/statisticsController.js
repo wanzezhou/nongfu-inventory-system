@@ -201,7 +201,7 @@ async function getProductSales(req, res) {
     return success(res, { list, summary });
   } catch (err) {
     console.error('获取商品销售统计失败:', err);
-    return error(res, '获取商品销售统计失败: ' + err.message);
+    return error(res, '获取商品销售统计失败');
   }
 }
 
@@ -232,7 +232,7 @@ async function exportProductSales(req, res) {
     res.send(buffer);
   } catch (err) {
     console.error('导出商品销售统计失败:', err);
-    return error(res, '导出商品销售统计失败: ' + err.message);
+    return error(res, '导出商品销售统计失败');
   }
 }
 

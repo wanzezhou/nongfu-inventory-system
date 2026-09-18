@@ -1,0 +1,29 @@
+# EditorConfig —— 编辑器层面的最低一致性保障
+# 目的：让不同编辑器/IDE/AI 工具产出的文件至少缩进与换行一致，
+#      减少 Prettier/ESLint 之外的纯格式噪音进入 PR。
+# 详见 docs/代码审查标准.md
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Markdown 的行尾双空格是换行语义，不能被裁掉
+trim_trailing_whitespace = false
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[database/*.sql]
+# SQL 保持换行不强制 LF（避免历史 dump 全文件 diff）
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+
+[*.bat]
+end_of_line = crlf

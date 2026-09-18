@@ -19,7 +19,7 @@ async function getPrintManager(req, res) {
     return success(res, manager);
   } catch (e) {
     console.error('getPrintManager error:', e);
-    return error(res, '获取打印店长配置失败: ' + e.message, 500);
+    return error(res, '获取打印店长配置失败', 500);
   }
 }
 
@@ -58,7 +58,7 @@ async function updatePrintManager(req, res) {
     return success(res, manager, '销售单打印店长已更新');
   } catch (e) {
     console.error('updatePrintManager error:', e);
-    return error(res, '保存打印店长配置失败: ' + e.message, 500);
+    return error(res, '保存打印店长配置失败', 500);
   }
 }
 

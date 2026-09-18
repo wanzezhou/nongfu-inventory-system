@@ -1,5 +1,18 @@
 import request from './request'
 
+/**
+ * 库存下拉选项（不分页全量）
+ * ⚠️ 下拉/选项类数据一律用本接口，不要再调 getInventoryList({ pageSize: N })
+ * （分页上限导致选项静默缺失，2026-09-18 代码审查 #1）。
+ */
+export function getInventoryOptions(params) {
+  return request({
+    url: '/inventory/options',
+    method: 'get',
+    params
+  })
+}
+
 export function getInventoryList(params) {
   return request({
     url: '/inventory',
