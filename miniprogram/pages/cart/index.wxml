@@ -1,0 +1,90 @@
+<!-- 购物车 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+
+  <view wx:elif="{{items.length === 0}}" class="empty">
+    <view class="empty-icon">🛒</view>
+    <view>购物车是空的</view>
+    <button class="btn btn-primary btn-sm mt-24" bindtap="goMall">去商城选商品</button>
+  </view>
+
+  <block wx:else>
+    <view wx:for="{{items}}" wx:key="productId" class="cart-item">
+
+      <view wx:if="{{item.failed}}" class="cart-failed">
+        <view class="flex-1">
+          <view class="t-strong">商品已不可购买</view>
+          <view class="t-sub mt-8">{{item.message}}</view>
+        </view>
+        <view class="cart-remove" data-id="{{item.productId}}" bindtap="onRemove">移除</view>
+      </view>
+
+      <block wx:else>
+        <view class="row">
+          <view class="cart-thumb">
+            <image wx:if="{{item.imageFull}}" src="{{item.imageFull}}" mode="aspectFill" class="cart-img" />
+            <view wx:else class="cart-ph">{{item.initial}}</view>
+          </view>
+          <view class="flex-1" style="margin-left: 20rpx;">
+            <view class="t-strong t-ellipsis">{{item.name}}</view>
+            <view class="t-sub mt-8">{{item.spec}}</view>
+            <view class="row-between mt-16">
+              <text class="t-primary t-strong">¥{{item.unitPriceText}}</text>
+              <view class="stepper">
+                <view class="step-btn" data-id="{{item.productId}}" data-delta="-1" bindtap="onQtyChange">−</view>
+                <input class="step-input" type="number" value="{{item.quantity}}" data-id="{{item.productId}}" bindinput="onQtyInput" />
+                <view class="step-btn" data-id="{{item.productId}}" data-delta="1" bindtap="onQtyChange">+</view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 水票抵扣（仅直营水站，§9.2 / §9.3 支持部分抵扣） -->
+        <block wx:if="{{role === 'station'}}">
+          <view class="ticket-row">
+            <view class="row-between">
+              <view class="row gap-12">
+                <view class="checkbox {{item.useTicket ? 'checked' : ''}}" data-id="{{item.productId}}" bindtap="onToggleTicket">
+                  {{item.useTicket ? '✓' : ''}}
+                </view>
+                <text class="t-sm">使用水票抵扣</text>
+                <text class="t-sub">可用 {{item.availableTicketQty}} 张</text>
+              </view>
+              <text class="t-sub">本行小计 ¥{{item.lineAmountText}}</text>
+            </view>
+            <view wx:if="{{item.useTicket}}" class="row-between mt-16">
+              <text class="t-sub">抵扣数量（最多 {{item.quantity}} 件）</text>
+              <input
+                class="ticket-input"
+                type="number"
+                value="{{item.ticketQty}}"
+                data-id="{{item.productId}}"
+                bindinput="onTicketQtyInput"
+              />
+            </view>
+          </view>
+        </block>
+
+        <view class="row-between mt-16">
+          <text class="t-sub">小计 ¥{{item.lineAmountText}}</text>
+          <text class="cart-remove" data-id="{{item.productId}}" bindtap="onRemove">移除</text>
+        </view>
+      </block>
+    </view>
+
+    <view wx:if="{{items.length > 1}}" class="cart-clear" bindtap="onClear">清空购物车</view>
+  </block>
+
+  <view wx:if="{{items.length > 0}}" class="footer-bar">
+    <view class="col">
+      <text class="t-sub">预览合计（最终以服务端计价为准）</text>
+      <text class="t-primary t-lg">¥{{previewAmount}}</text>
+    </view>
+    <button class="btn btn-primary" style="width: 260rpx;" bindtap="goCheckout">
+      去结算（{{totalQty}}）
+    </button>
+  </view>
+</view>

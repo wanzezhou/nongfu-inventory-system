@@ -1,0 +1,38 @@
+/* 积分钱包 */
+.wallet-hero {
+  margin: 24rpx;
+  padding: 48rpx 36rpx 36rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #c8102e 0%, #a30d24 100%);
+  color: #ffffff;
+}
+.wh-label { font-size: 24rpx; opacity: 0.86; }
+.wh-value { font-size: 76rpx; font-weight: 700; line-height: 1.15; margin: 6rpx 0; }
+.wh-rmb { font-size: 24rpx; opacity: 0.82; }
+.wh-actions { display: flex; gap: 20rpx; margin-top: 32rpx; }
+.wh-btn {
+  flex: 1;
+  height: 72rpx;
+  line-height: 72rpx;
+  text-align: center;
+  border-radius: 36rpx;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 28rpx;
+}
+.wh-btn:active { background: rgba(255, 255, 255, 0.28); }
+
+.type-row { padding: 16rpx 0; }
+.type-row + .type-row { border-top: 2rpx solid #f7f8fa; }
+
+.quick3 { display: flex; gap: 20rpx; margin: 20rpx 24rpx; }
+.quick3-item {
+  flex: 1;
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 26rpx 20rpx;
+  text-align: center;
+  box-shadow: 0 2rpx 12rpx rgba(24, 28, 35, 0.05);
+}
+.quick3-title { font-size: 28rpx; font-weight: 600; }
+.quick3-sub { font-size: 22rpx; color: #8a8f99; margin-top: 6rpx; }

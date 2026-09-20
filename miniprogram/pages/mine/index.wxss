@@ -1,0 +1,60 @@
+/* 我的 */
+.mine-head {
+  display: flex;
+  align-items: center;
+  padding: 48rpx 32rpx 36rpx;
+  background: #ffffff;
+}
+.mh-avatar {
+  width: 116rpx;
+  height: 116rpx;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+  border-radius: 58rpx;
+  background: #fdecee;
+  color: #c8102e;
+  font-size: 48rpx;
+  font-weight: 700;
+  text-align: center;
+  line-height: 116rpx;
+}
+.mh-name { font-size: 34rpx; font-weight: 700; }
+.mh-sub { font-size: 24rpx; color: #8a8f99; margin-top: 6rpx; }
+
+.mine-points {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 20rpx 24rpx;
+  padding: 32rpx;
+  border-radius: 16rpx;
+  background: #ffffff;
+  box-shadow: 0 2rpx 12rpx rgba(24, 28, 35, 0.05);
+}
+
+.mlink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  font-size: 28rpx;
+}
+.mlink + .mlink { border-top: 2rpx solid #f7f8fa; }
+
+.perm-row {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 0;
+  font-size: 26rpx;
+}
+.perm-row + .perm-row { border-top: 2rpx solid #f7f8fa; }
+
+.kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 0;
+  font-size: 26rpx;
+}
+.kv-k { color: #8a8f99; }
+.kv-v { color: #1f2329; }

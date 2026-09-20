@@ -1,0 +1,99 @@
+/* 首页 */
+.hero {
+  margin: 24rpx;
+  padding: 44rpx 36rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #c8102e 0%, #a30d24 100%);
+  color: #ffffff;
+}
+.hero-label { font-size: 24rpx; opacity: 0.86; }
+.hero-value {
+  font-size: 68rpx;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 8rpx 0;
+}
+.hero-sub { font-size: 24rpx; opacity: 0.82; }
+
+.stat-grid {
+  display: flex;
+  margin: 0 24rpx 8rpx;
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 24rpx 0;
+  box-shadow: 0 2rpx 12rpx rgba(24, 28, 35, 0.05);
+}
+.stat-cell {
+  flex: 1;
+  text-align: center;
+  position: relative;
+}
+.stat-cell + .stat-cell::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12rpx;
+  bottom: 12rpx;
+  width: 2rpx;
+  background: #eef0f3;
+}
+.stat-num { font-size: 38rpx; font-weight: 700; color: #1f2329; }
+.stat-label { font-size: 22rpx; color: #8a8f99; margin-top: 6rpx; }
+
+.quick-row {
+  display: flex;
+  margin: 20rpx 24rpx;
+  gap: 20rpx;
+}
+.quick-item {
+  flex: 1;
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 26rpx 20rpx;
+  text-align: center;
+  box-shadow: 0 2rpx 12rpx rgba(24, 28, 35, 0.05);
+}
+.quick-item:active { background: #fafafb; }
+.quick-title { font-size: 28rpx; font-weight: 600; color: #1f2329; }
+.quick-sub { font-size: 22rpx; color: #8a8f99; margin-top: 6rpx; }
+
+/* 管理员仪表盘 */
+.dash-head {
+  margin: 24rpx;
+  padding: 40rpx 36rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #c8102e 0%, #a30d24 100%);
+  color: #ffffff;
+}
+.dash-head-label { font-size: 24rpx; opacity: 0.86; }
+.dash-head-value { font-size: 64rpx; font-weight: 700; line-height: 1.2; }
+.dash-head-sub { font-size: 24rpx; opacity: 0.86; }
+
+.kv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10rpx 0;
+}
+.kv-sub { padding-top: 0; }
+.kv-sub .t-sub { font-size: 22rpx; color: #b6bbc4; }
+
+.todo-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+.todo-cell {
+  width: 33.33%;
+  text-align: center;
+  padding: 18rpx 0;
+}
+.todo-num { font-size: 34rpx; font-weight: 700; color: #1f2329; }
+.todo-label { font-size: 22rpx; color: #8a8f99; margin-top: 4rpx; }
+
+.inv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 0;
+  font-size: 26rpx;
+}

@@ -1,0 +1,35 @@
+/* 我的订单 */
+.filter-bar {
+  white-space: nowrap;
+  background: #ffffff;
+  padding: 20rpx 24rpx;
+  border-bottom: 2rpx solid #eef0f3;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.filter-item {
+  display: inline-block;
+  height: 56rpx;
+  line-height: 56rpx;
+  padding: 0 26rpx;
+  margin-right: 16rpx;
+  border-radius: 28rpx;
+  background: #f2f3f5;
+  color: #5a6371;
+  font-size: 26rpx;
+}
+.filter-item.is-active {
+  background: #fdecee;
+  color: #c8102e;
+  font-weight: 600;
+}
+
+.order-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16rpx;
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid #f2f3f5;
+}

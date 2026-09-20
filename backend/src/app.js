@@ -125,6 +125,17 @@ app.use(
 // 除白名单外，所有 /api 接口必须携带有效 JWT（覆盖历史遗漏 auth 的路由组）
 // 注意：app.use('/api', ...) 挂载后 req.path 为相对路径（如 /auth/login）
 const AUTH_WHITELIST = new Set(['/auth/login']);
+
+// ⚠️⚠️ 小程序路由必须挂在全局 Web 鉴权**之前**（2026-09-20，文档 §22.4 / §51）
+// 原因：下面的 `app.use('/api', apiLimiter, auth)` 给整个 /api 套的是 **Web** JWT 鉴权，
+// 而小程序令牌用的是独立密钥 + 独立 aud/iss（middleware/miniAuth.js），
+// 且 middleware/auth.js 会**显式拒绝**小程序令牌（§51.2 第 1 条要求双向拒绝）。
+// 若把 /api/mini 挂在它后面，小程序请求会先被 Web 的 auth 拦成 401，
+// 永远走不到 miniAuth —— 表现为「小程序全部接口 401，但令牌明明是新签的」。
+// Express 按注册顺序匹配，因此这里**先挂** /api/mini，它自带限流与鉴权，不受下面影响。
+const miniRoutes = require('./routes/miniRoutes');
+app.use('/api/mini', miniRoutes);
+
 app.use('/api', apiLimiter, (req, res, next) => {
   if (AUTH_WHITELIST.has(req.path)) return next();
   return auth(req, res, next);

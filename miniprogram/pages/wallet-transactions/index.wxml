@@ -1,0 +1,49 @@
+<!-- 积分流水 -->
+<view class="page {{isTab ? 'page-with-tabbar' : ''}}">
+
+  <scroll-view class="filter-bar" scroll-x enable-flex>
+    <view
+      wx:for="{{typeFilters}}"
+      wx:key="key"
+      class="filter-item {{type === item.key ? 'is-active' : ''}}"
+      data-type="{{item.key}}"
+      bindtap="onTypeTap"
+    >{{item.label}}</view>
+  </scroll-view>
+
+  <view wx:if="{{list.length === 0 && !loading}}" class="empty">
+    <view class="empty-icon">🧾</view>
+    <view wx:if="{{loadError}}">{{loadError}}</view>
+    <view wx:else>暂无流水记录</view>
+  </view>
+
+  <!-- ⚠️ 用固定 handler + 内部判断，而不是 bindtap="{{cond ? 'a' : 'b'}}"：
+       动态事件绑定在部分基础库版本上不可靠（空字符串会直接报错）。 -->
+  <view
+    wx:for="{{list}}"
+    wx:key="transactionId"
+    class="list-item"
+    data-id="{{item.relatedId}}"
+    data-viewable="{{item.canViewOrder}}"
+    bindtap="onItemTap"
+  >
+    <view class="row-between">
+      <view class="col flex-1">
+        <text class="t-strong">{{item.typeLabel}}</text>
+        <text class="t-sub mt-8">{{item.timeText}}</text>
+      </view>
+      <view class="col" style="align-items: flex-end;">
+        <text class="{{item.isIn ? 'amount-in' : 'amount-out'}}">{{item.signedText}}</text>
+        <text class="t-sub mt-8">余额 {{item.balanceAfterText}}</text>
+      </view>
+    </view>
+    <view wx:if="{{item.remark}}" class="t-sub mt-8">{{item.remark}}</view>
+    <view class="row-between mt-8">
+      <text class="t-sub">{{item.transactionNo}}</text>
+      <text wx:if="{{item.canViewOrder}}" class="t-primary t-sm">查看订单 ›</text>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{list.length > 0 && !hasMore}}" class="empty">已加载全部 {{total}} 条流水</view>
+</view>

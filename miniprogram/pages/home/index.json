@@ -1,0 +1,6 @@
+{
+  "usingComponents": {},
+  "navigationBarTitleText": "农夫订货",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark"
+}

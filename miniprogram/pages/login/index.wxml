@@ -1,0 +1,78 @@
+<!-- 登录 / 绑定 -->
+<view class="page login-page">
+  <view class="login-hero">
+    <view class="login-logo">农夫</view>
+    <view class="login-title">农夫库存管理系统</view>
+    <view class="login-sub">微信订货小程序</view>
+  </view>
+
+  <view wx:if="{{errorMessage}}" class="banner banner-warn">{{errorMessage}}</view>
+
+  <view class="card">
+    <view wx:if="{{mode === 'wx'}}">
+      <view class="t-sub" style="margin-bottom: 24rpx;">
+        首次登录将使用微信手机号匹配后台已维护的业务员 / 直营水站 / 管理员身份，
+        由系统自动判定角色，无需选择。
+      </view>
+
+      <!-- ② 已拿到 openid 未绑定 → 走手机号授权完成绑定 -->
+      <block wx:if="{{bindTicket}}">
+        <button
+          class="btn btn-primary btn-block"
+          open-type="getPhoneNumber"
+          bindgetphonenumber="onGetPhoneNumber"
+          disabled="{{loading}}"
+        >授权手机号并完成绑定</button>
+      </block>
+
+      <!-- ① 常规入口：先走一次微信登录，未绑定会自动引导授权手机号 -->
+      <block wx:else>
+        <button class="btn btn-primary btn-block" bindtap="onWxLogin" disabled="{{loading}}">
+          {{loading ? '登录中…' : '微信一键登录'}}
+        </button>
+      </block>
+
+      <view class="login-tip">登录即表示同意仅将手机号用于身份匹配与订单联系</view>
+    </view>
+
+    <view wx:if="{{mode === 'dev'}}">
+      <view class="banner banner-info" style="margin: 0 0 20rpx;">
+        本地开发登录：仅在后端 <text class="t-strong">MINI_DEV_LOGIN=1</text> 时可用，
+        会按手机号匹配**真实存在**的业务员 / 水站 / 管理员，不创建任何假数据。
+        生产环境必须关闭。
+      </view>
+
+      <view class="form-row">
+        <view class="form-label">手机号</view>
+        <input
+          class="form-input"
+          type="number"
+          maxlength="20"
+          placeholder="后台维护的手机号"
+          value="{{phone}}"
+          bindinput="onPhoneInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <view class="form-label">身份消歧</view>
+        <picker mode="selector" range="{{roleOptions}}" range-key="label" value="{{roleIndex}}" bindchange="onRoleChange">
+          <view class="form-input">{{roleOptions[roleIndex].label}}</view>
+        </picker>
+      </view>
+
+      <view class="t-sub mt-16">
+        仅当同一手机号在库里匹配到多条真实记录（如 users 与 sub_stations 重号）时才需要选择，
+        否则系统会自动判定。
+      </view>
+
+      <button class="btn btn-primary btn-block mt-24" bindtap="onDevLogin" disabled="{{loading}}">
+        {{loading ? '登录中…' : '开发环境登录'}}
+      </button>
+    </view>
+  </view>
+
+  <view wx:if="{{apiConfig && apiConfig.devLoginEnabled && apiConfig.wxLoginConfigured}}" class="login-switch" bindtap="switchMode" data-mode="{{mode === 'wx' ? 'dev' : 'wx'}}">
+    切换到{{mode === 'wx' ? '本地开发登录' : '微信登录'}}
+  </view>
+</view>

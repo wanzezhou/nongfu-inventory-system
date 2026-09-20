@@ -1,0 +1,78 @@
+<!-- 我的 -->
+<view class="page page-with-tabbar">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <view class="mine-head">
+    <view class="mh-avatar">{{subject && subject.name ? subject.name[0] : '农'}}</view>
+    <view class="flex-1">
+      <view class="mh-name">{{subject.name || account.nickname || '未绑定'}}</view>
+      <view class="mh-sub">{{roleLabel}} · {{subject.id || account.targetId}}</view>
+      <view class="mh-sub" wx:if="{{account.phoneTail}}">手机号 ****{{account.phoneTail}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{role !== 'admin'}}" class="mine-points" bindtap="goWallet">
+    <view class="col">
+      <text class="t-sub">当前积分</text>
+      <text class="t-xl">{{wallet ? wallet.balanceText : '—'}}</text>
+    </view>
+    <text class="t-sub">查看钱包 ›</text>
+  </view>
+
+  <view class="card">
+    <view class="section-title">我的</view>
+    <view class="mlink" bindtap="goOrders">
+      <text>我的订单</text><text class="t-sub">›</text>
+    </view>
+    <block wx:if="{{role !== 'admin'}}">
+      <view class="mlink" bindtap="goTransactions">
+        <text>积分流水</text><text class="t-sub">›</text>
+      </view>
+      <view class="mlink" bindtap="goWallet">
+        <text>积分钱包 / 充值</text><text class="t-sub">›</text>
+      </view>
+    </block>
+    <block wx:if="{{isStation}}">
+      <view class="mlink" bindtap="goTickets">
+        <text>我的水票</text>
+        <text class="t-sub">{{ticketSummary ? '可用 ' + ticketSummary.totalAvailable + ' 张 ›' : '›'}}</text>
+      </view>
+      <view class="mlink" bindtap="goStationProfile">
+        <text>我的水站</text><text class="t-sub">›</text>
+      </view>
+    </block>
+    <block wx:if="{{isAdmin}}">
+      <view class="mlink" bindtap="goAdminWallet">
+        <text>积分钱包后台</text><text class="t-sub">查看流水 / 手工调整 ›</text>
+      </view>
+    </block>
+  </view>
+
+  <view class="card">
+    <view class="section-title">当前身份可用的能力</view>
+    <view class="t-sub" style="margin-bottom: 12rpx;">权限由服务端下发，前端不做角色硬编码判断</view>
+    <view wx:for="{{permissionRows}}" wx:key="label" class="perm-row">
+      <view class="flex-1">
+        <view>{{item.label}}</view>
+        <view class="t-sub">{{item.desc}}</view>
+      </view>
+      <text class="tag {{item.enabled ? 'tag-ok' : 'tag-plain'}}">{{item.enabled ? '可用' : '不可用'}}</text>
+    </view>
+  </view>
+
+  <view class="card card-flat">
+    <view class="section-title">账号信息</view>
+    <view class="kv"><text class="kv-k">身份</text><text class="kv-v">{{roleLabel}}</text></view>
+    <view class="kv"><text class="kv-k">上次登录</text><text class="kv-v">{{account.lastLoginText || '—'}}</text></view>
+    <view class="kv"><text class="kv-k">版本</text><text class="kv-v">{{version}}</text></view>
+  </view>
+
+  <view class="card">
+    <button class="btn btn-ghost btn-block" bindtap="onLogout">退出登录</button>
+  </view>
+
+  <view class="t-sub" style="text-align: center; padding: 20rpx 40rpx 40rpx;">
+    农夫库存管理系统 · 微信订货小程序
+  </view>
+</view>

@@ -1,0 +1,68 @@
+/* 商品详情 */
+.hero-img {
+  width: 100%;
+  height: 520rpx;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.hero-image { width: 100%; height: 520rpx; }
+.hero-ph {
+  width: 100%;
+  height: 520rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 160rpx;
+  font-weight: 700;
+  color: #c8102e;
+  background: #fdecee;
+}
+.price-big { font-size: 44rpx; font-weight: 700; color: #c8102e; }
+
+.stepper {
+  display: flex;
+  align-items: center;
+  border: 2rpx solid #dcdfe6;
+  border-radius: 10rpx;
+  overflow: hidden;
+}
+.step-btn {
+  width: 68rpx;
+  height: 64rpx;
+  line-height: 64rpx;
+  text-align: center;
+  font-size: 34rpx;
+  color: #5a6371;
+  background: #fafafb;
+}
+.step-btn:active { background: #f2f3f5; }
+.step-input {
+  width: 110rpx;
+  height: 64rpx;
+  text-align: center;
+  font-size: 28rpx;
+}
+
+.cart-entry {
+  position: relative;
+  font-size: 26rpx;
+  color: #5a6371;
+  padding: 0 20rpx 0 4rpx;
+}
+.cart-badge {
+  position: absolute;
+  top: -10rpx;
+  right: 6rpx;
+  min-width: 30rpx;
+  height: 30rpx;
+  padding: 0 6rpx;
+  border-radius: 15rpx;
+  background: #c8102e;
+  color: #fff;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  text-align: center;
+}

@@ -1,0 +1,70 @@
+/* 自定义 tabBar 样式（本文件由脚本生成，改图标请改 SVG 定义后重跑）
+   ==========================================================================
+   图标 = 内联 SVG data URI：好处是仓库里不需要放任何二进制图片资源，
+   且颜色只在这里出现一次；微信开发者工具与真机均支持。
+   ========================================================================== */
+
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  background: #ffffff;
+  border-top: 2rpx solid #eef0f3;
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 100;
+}
+
+.tabbar-item {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 108rpx;
+}
+.tabbar-item:active { background: #fafafb; }
+
+.tabbar-icon {
+  width: 44rpx;
+  height: 44rpx;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+}
+
+.tabbar-text {
+  font-size: 22rpx;
+  color: #8a8f99;
+  margin-top: 4rpx;
+  line-height: 1.2;
+}
+.is-active .tabbar-text { color: #c8102e; font-weight: 600; }
+
+.tabbar-badge {
+  position: absolute;
+  top: 8rpx;
+  left: 50%;
+  margin-left: 8rpx;
+  min-width: 30rpx;
+  height: 30rpx;
+  padding: 0 6rpx;
+  border-radius: 15rpx;
+  background: #c8102e;
+  color: #fff;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.icon-home.off { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%238a8f99%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2010.2%2012%203l9%207.2V21h-6v-6H9v6H3z%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-home.on  { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23c8102e%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2010.2%2012%203l9%207.2V21h-6v-6H9v6H3z%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-mall.off { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%238a8f99%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%207h16l-1.2%2013H5.2z%22%2F%3E%3Cpath%20d%3D%22M9%207a3%203%200%200%201%206%200%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-mall.on  { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23c8102e%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%207h16l-1.2%2013H5.2z%22%2F%3E%3Cpath%20d%3D%22M9%207a3%203%200%200%201%206%200%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-cart.off { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%238a8f99%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%229%22%20cy%3D%2220%22%20r%3D%221.6%22%2F%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%2220%22%20r%3D%221.6%22%2F%3E%3Cpath%20d%3D%22M3%204h2.4l2.6%2011h10.6l2-8H6%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-cart.on  { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23c8102e%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%229%22%20cy%3D%2220%22%20r%3D%221.6%22%2F%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%2220%22%20r%3D%221.6%22%2F%3E%3Cpath%20d%3D%22M3%204h2.4l2.6%2011h10.6l2-8H6%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-wallet.off { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%238a8f99%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223%22%20y%3D%226%22%20width%3D%2218%22%20height%3D%2213%22%20rx%3D%222.6%22%2F%3E%3Cpath%20d%3D%22M3%2010h18%22%2F%3E%3Ccircle%20cx%3D%2217%22%20cy%3D%2214.6%22%20r%3D%221.2%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-wallet.on  { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23c8102e%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223%22%20y%3D%226%22%20width%3D%2218%22%20height%3D%2213%22%20rx%3D%222.6%22%2F%3E%3Cpath%20d%3D%22M3%2010h18%22%2F%3E%3Ccircle%20cx%3D%2217%22%20cy%3D%2214.6%22%20r%3D%221.2%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-mine.off { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%238a8f99%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%228%22%20r%3D%223.6%22%2F%3E%3Cpath%20d%3D%22M4.6%2020.4c1.2-3.6%204-5.4%207.4-5.4s6.2%201.8%207.4%205.4%22%2F%3E%3C%2Fsvg%3E"); }
+.icon-mine.on  { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23c8102e%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%228%22%20r%3D%223.6%22%2F%3E%3Cpath%20d%3D%22M4.6%2020.4c1.2-3.6%204-5.4%207.4-5.4s6.2%201.8%207.4%205.4%22%2F%3E%3C%2Fsvg%3E"); }

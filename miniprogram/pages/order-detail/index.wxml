@@ -1,0 +1,104 @@
+<!-- 订单详情（§32） -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{!order}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError || '订单不存在'}}</view>
+  </view>
+
+  <block wx:else>
+    <!-- 状态头 -->
+    <view class="status-head">
+      <view class="status-label">{{order.refundStatus === 'REFUNDED' ? '已退款' : order.fulfillmentStatusLabel}}</view>
+      <view class="status-sub">
+        {{order.fulfillmentTypeLabel}} · {{order.delivery.deliveryTypeLabel}}
+      </view>
+    </view>
+
+    <!-- 商品 -->
+    <view class="card">
+      <view class="section-title">商品明细</view>
+      <view wx:for="{{order.items}}" wx:key="itemId" class="od-item">
+        <view class="row">
+          <view class="od-thumb">
+            <image wx:if="{{item.imageFull}}" src="{{item.imageFull}}" mode="aspectFill" class="od-img" />
+            <view wx:else class="od-ph">{{item.initial}}</view>
+          </view>
+          <view class="flex-1" style="margin-left: 20rpx;">
+            <view class="t-strong">{{item.productName}}</view>
+            <view class="t-sub mt-8">{{item.specification || '—'}} · {{item.unit || '件'}}</view>
+            <view class="row-between mt-8">
+              <text class="t-sub">¥{{item.unitPriceText}} × {{item.quantity}}</text>
+              <text class="t-strong">¥{{item.subtotalText}}</text>
+            </view>
+            <view wx:if="{{item.ticketQty > 0}}" class="t-sub mt-8">水票抵扣 {{item.ticketQty}} 件</view>
+            <!-- §32：业务员订单显示最低成交价校验结果（内部审计） -->
+            <view wx:if="{{showAudit && item.minPriceCheck}}" class="t-sub mt-8">
+              最低价校验：成交 ¥{{item.minPriceCheck.unitPrice}} vs 底线 ¥{{item.minPriceCheck.minPrice}}
+              <text class="{{item.minPriceCheck.passed ? 'amount-in' : 'amount-out'}}">{{item.minPriceCheck.passed ? '通过' : '未通过'}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="divider"></view>
+      <view class="row-between">
+        <text class="t-sub">订单积分（实扣）</text>
+        <text class="t-primary t-lg">{{order.pointsPaidText}}</text>
+      </view>
+      <view wx:if="{{order.amount.pointsRefunded > 0}}" class="row-between mt-8">
+        <text class="t-sub">已退回积分</text>
+        <text class="amount-in">+{{order.pointsRefundedText}}</text>
+      </view>
+    </view>
+
+    <!-- 订单与支付信息（§32 清单） -->
+    <view class="card">
+      <view class="section-title">订单信息</view>
+      <view class="kv"><text class="kv-k">订单编号</text><text class="kv-v" bindtap="copyOrderId">{{order.orderId}}<text class="t-sub"> 复制</text></text></view>
+      <view class="kv"><text class="kv-k">订单来源</text><text class="kv-v">{{order.sourceLabel}}</text></view>
+      <view class="kv"><text class="kv-k">下单主体</text><text class="kv-v">{{order.buyerLabel || '—'}}</text></view>
+      <view class="kv"><text class="kv-k">订单类型</text><text class="kv-v">{{order.orderTypeLabel}}</text></view>
+      <view wx:if="{{order.orderScene}}" class="kv">
+        <text class="kv-k">订货场景</text>
+        <text class="kv-v">{{order.orderScene === 'SELF_PURCHASE' ? '自己订货' : '代客户订货'}}</text>
+      </view>
+      <view class="kv"><text class="kv-k">支付方式</text><text class="kv-v">{{order.paymentMethodLabel}}</text></view>
+      <view wx:if="{{order.walletTransactions.payment}}" class="kv">
+        <text class="kv-k">钱包流水号</text>
+        <text class="kv-v">{{order.walletTransactions.payment.transactionNo}}</text>
+      </view>
+      <view class="kv"><text class="kv-k">订单金额</text><text class="kv-v">¥{{order.orderAmountText}}</text></view>
+      <view class="kv"><text class="kv-k">应收总额</text><text class="kv-v">¥{{order.totalReceivableText}}</text></view>
+      <view class="kv"><text class="kv-k">履约状态</text><text class="kv-v">{{order.fulfillmentStatusLabel}}</text></view>
+      <view class="kv"><text class="kv-k">退款状态</text><text class="kv-v">{{order.refundStatusLabel}}</text></view>
+      <view class="kv"><text class="kv-k">下单时间</text><text class="kv-v">{{order.createdAtText}}</text></view>
+      <view wx:if="{{order.canceledAtText}}" class="kv"><text class="kv-k">取消时间</text><text class="kv-v">{{order.canceledAtText}}</text></view>
+      <view wx:if="{{order.remark}}" class="kv"><text class="kv-k">备注</text><text class="kv-v">{{order.remark}}</text></view>
+    </view>
+
+    <!-- 客户与地址快照（§10.3：历史订单不随水站档案地址变化）
+         ⚠️ 2026-09-20 自提下线：标题与地址标签原先按 fulfillmentType 三元判断（自提/配送），
+              现已固定为「配送信息 / 配送地址」，不再依赖该字段。 -->
+    <view class="card">
+      <view class="section-title">配送信息</view>
+      <view class="kv"><text class="kv-k">联系人</text><text class="kv-v">{{order.customer.name || '—'}}</text></view>
+      <view class="kv"><text class="kv-k">联系电话</text><text class="kv-v">{{order.customer.phone}}</text></view>
+      <view wx:if="{{order.customer.address}}" class="kv">
+        <text class="kv-k">配送地址</text>
+        <text class="kv-v">{{order.customer.address}}</text>
+      </view>
+      <view wx:if="{{order.delivery.deliveryStaffName}}" class="kv">
+        <text class="kv-k">配送员工</text>
+        <text class="kv-v">{{order.delivery.deliveryStaffName}}</text>
+      </view>
+    </view>
+  </block>
+
+  <view wx:if="{{order && (order.canCancel || order.canRefund)}}" class="footer-bar">
+    <view class="flex-1"></view>
+    <view wx:if="{{order.canCancel}}" class="btn btn-ghost btn-sm" style="margin-right: 16rpx;" bindtap="onCancel">取消订单</view>
+    <view wx:if="{{order.canRefund}}" class="btn btn-primary btn-sm" bindtap="onRefund">申请退款</view>
+  </view>
+</view>

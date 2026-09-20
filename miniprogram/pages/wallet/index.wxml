@@ -1,0 +1,76 @@
+<!-- 积分钱包（§33） -->
+<view class="page {{isTab ? 'page-with-tabbar' : ''}}">
+
+  <view wx:if="{{!loading && !loadError}}" class="wallet-hero">
+    <view class="wh-label">当前积分（可用订货额度）</view>
+    <view class="wh-value">{{wallet.balanceText}}</view>
+    <view class="wh-rmb">等值 ¥{{wallet.rmbText}} · 1 元 = 1 积分</view>
+    <view class="wh-actions">
+      <view class="wh-btn" bindtap="goRecharge">充值</view>
+      <view class="wh-btn" bindtap="goTransactions">查看流水</view>
+    </view>
+  </view>
+
+  <view wx:if="{{identityWarn}}" class="banner banner-danger">⚠ {{identityWarn}}</view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:else>
+    <!-- 汇总（来自服务端聚合，前端不加总） -->
+    <view class="card">
+      <view class="section-title">收支概览</view>
+      <view class="row-between">
+        <text class="t-sub">累计入账</text>
+        <text class="amount-in">+{{wallet.totalInText}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">累计出账</text>
+        <text class="amount-out">−{{wallet.totalOutText}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">期初余额</text>
+        <text class="t-sub">{{wallet.initialBalance}}</text>
+      </view>
+      <view class="divider"></view>
+      <view class="t-sub">恒等式：期初 + 入账 − 出账 = 当前余额（{{wallet.identityOk ? '校验通过' : '校验异常'}}）</view>
+    </view>
+
+    <!-- 按类型的明细 -->
+    <view class="card">
+      <view class="section-title">分类汇总</view>
+      <view wx:if="{{byType.length === 0}}" class="t-sub">暂无流水</view>
+      <view wx:for="{{byType}}" wx:key="type" class="row-between type-row">
+        <view class="col">
+          <text>{{item.label}}</text>
+          <text class="t-sub">{{item.count}} 笔</text>
+        </view>
+        <text class="{{item.direction === 1 ? 'amount-in' : 'amount-out'}}">
+          {{item.direction === 1 ? '+' : '−'}}{{item.totalText}}
+        </text>
+      </view>
+    </view>
+
+    <!-- 水站：分销配送费与充值入口 -->
+    <view wx:if="{{role === 'station'}}" class="quick3">
+      <view class="quick3-item" bindtap="goTickets">
+        <view class="quick3-title">我的水票</view>
+        <view class="quick3-sub">按商品查看</view>
+      </view>
+      <view class="quick3-item" bindtap="goRecharge">
+        <view class="quick3-title">充值</view>
+        <view class="quick3-sub">微信充值（未开通）</view>
+      </view>
+    </view>
+
+    <view class="banner banner-info">
+      积分是公司的内部订货预存额度，不是微信零钱，也不能在用户之间转移（文档 §3.3）。
+    </view>
+    <view class="banner banner-warn">
+      {{wallet.tips.wechatPayNotOpen}}
+    </view>
+  </block>
+</view>

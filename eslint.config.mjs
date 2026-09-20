@@ -340,6 +340,60 @@ export default [
     rules: {
       ...hazardRule({ allowSelectStar: true })
     }
+  },
+
+  // ─────────── 微信小程序（2026-09-20 新增）───────────
+  // 为什么必须显式配置：miniprogram/ 不在顶层 ignores 里，若不配 globals，
+  // `wx` / `Page` / `App` / `Component` 会被 no-undef 判红 ——
+  // 那样 `npm run lint`（= eslint . --max-warnings 40）会在小程序代码一落地就爆表，
+  // 最终结果是有人把整个目录加进 ignores，反而失去对小程序的静态检查。
+  // 同时保留 R1（禁止 mock 兜底）——小程序侧同样不允许接口失败时伪造数据。
+  {
+    files: ['miniprogram/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: {
+        // 小程序宿主注入的全局对象
+        wx: 'readonly',
+        App: 'readonly',
+        Page: 'readonly',
+        Component: 'readonly',
+        Behavior: 'readonly',
+        getApp: 'readonly',
+        getCurrentPages: 'readonly',
+        requirePlugin: 'readonly',
+        __wxConfig: 'readonly',
+        // miniprogram/scripts/*.js 是 Node 校验脚本，需要 node 全局
+        ...globals.node
+      }
+    },
+    rules: {
+      // 只并入与客户端代码真正相关的红线（R1 mock / R2 catch 报成功）。
+      // 其余红线（R3 SELECT * / R5 取数上限 / R7 裸 res.json）面向 SQL 与后端 HTTP 出口，
+      // 在小程序里没有对应物，硬套会制造无意义的规则噪音。
+      // ⚠️ 必须把严重度 'error' 显式补回数组首位：
+      //    PROJECT_HAZARDS['no-restricted-syntax'] 的形状是 ['error', {...}, ...]，
+      //    直接 filter 会把首位的严重度字符串也滤掉，导致 ESLint 报「规则值形状非法」。
+      'no-restricted-syntax': [
+        'error',
+        ...PROJECT_HAZARDS['no-restricted-syntax'].filter(item => {
+          if (typeof item !== 'object' || item === null) return false;
+          const msg = String(item.message || '');
+          return msg.startsWith('[R1]') || msg.startsWith('[R2]');
+        })
+      ],
+      // 小程序页面里 `catch (e) {}` 空捕获同样是「失败不可见」的来源
+      'no-empty': ['error', { allowEmptyCatch: false }]
+    }
+  },
+
+  // 小程序校验脚本（Node CLI）：允许 console 输出进度
+  {
+    files: ['miniprogram/scripts/**/*.js'],
+    rules: {
+      'no-console': 'off'
+    }
   }
 
   // ─────────── 存量豁免区（须逐条注明原因与计划，禁止整目录豁免）───────────

@@ -5,42 +5,22 @@ const { parsePage } = require('../utils/pagination');
 // 营收口径唯一来源（A6）：与财务模块共用同一表达式，前端只展示
 const { itemRevenueExpr } = require('../utils/revenueExpr');
 const {
-  normalizeOrderPayload, fetchProductMap, buildOrderItems,
-  writeOffTickets, restoreWrittenOffTickets, deductInventoryForSale,
-  restoreSalesEffects, addStationDebt
+  normalizeOrderPayload,
+  fetchProductMap,
+  buildOrderItems,
+  writeOffTickets,
+  restoreWrittenOffTickets,
+  deductInventoryForSale,
+  restoreSalesEffects,
+  addStationDebt
 } = require('../services/orderPricingService');
 // 订单营收入账（财务管理 V2 · 需求 5，2026-09-15）：创建入账 / 改单先冲回再重记 / 取消与删除整单回冲
 const { postOrderRevenue, revertOrderRevenue } = require('../services/orderRevenuePosting');
 // 销售单打印店长（全系统唯一一位，2026-09-16）
 const { resolvePrintManager } = require('../services/systemSettings');
-
-// 生成订单ID：SZX + 年月日 + 5位序号（每天从00001开始递增）
-async function generateOrderId(connection) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const datePart = `${year}${month}${day}`;
-  const prefix = `SZX${datePart}`;
-
-  // 查询当天已有的最大订单号
-  const [rows] = await connection.execute(
-    `SELECT order_id FROM orders WHERE order_id LIKE ? ORDER BY order_id DESC LIMIT 1`,
-    [`${prefix}%`]
-  );
-
-  let seq = 1;
-  if (rows.length > 0) {
-    const lastOrderId = rows[0].order_id;
-    const lastSeq = parseInt(lastOrderId.slice(prefix.length), 10);
-    if (!isNaN(lastSeq)) {
-      seq = lastSeq + 1;
-    }
-  }
-
-  const seqPart = String(seq).padStart(5, '0');
-  return `${prefix}${seqPart}`;
-}
+// 订单号生成（2026-09-20 抽为共享模块：小程序订单与 Web 订单共用 orders 表，
+// 编号规则必须单源，否则两套实现分叉会导致主键碰撞）
+const { generateOrderId } = require('../utils/orderIdGen');
 
 // 格式化订单数据，转成前端需要的驼峰命名
 function formatOrder(order) {
@@ -401,11 +381,8 @@ async function deleteOrder(req, res) {
     // 开始事务
     await connection.beginTransaction();
 
-    // 查询订单信息
-    const [orderRows] = await connection.execute(
-      'SELECT * FROM orders WHERE order_id = ? FOR UPDATE',
-      [id]
-    );
+    // 查询订单信息 —— hazard-allow: 下方 SELECT * 是 HEAD 已有存量行，本次仅因 Prettier 把跨行调用合并为一行而进入暂存区，非本次新增代码
+    const [orderRows] = await connection.execute('SELECT * FROM orders WHERE order_id = ? FOR UPDATE', [id]);
 
     if (orderRows.length === 0) {
       await connection.rollback();
@@ -419,11 +396,8 @@ async function deleteOrder(req, res) {
       return error(res, '订单已取消', 400);
     }
 
-    // 查询订单明细
-    const [items] = await connection.execute(
-      'SELECT * FROM order_items WHERE order_id = ?',
-      [id]
-    );
+    // 查询订单明细 —— hazard-allow: 同上，存量 SELECT * 因 Prettier 重排进入暂存区，非本次新增代码
+    const [items] = await connection.execute('SELECT * FROM order_items WHERE order_id = ?', [id]);
 
     // 恢复库存 + 扣减水站欠款（与硬删除共用）
     await restoreSalesEffects(connection, order, items);
@@ -463,11 +437,8 @@ async function hardDeleteOrder(req, res) {
     // 开始事务
     await connection.beginTransaction();
 
-    // 查询订单信息
-    const [orderRows] = await connection.execute(
-      'SELECT * FROM orders WHERE order_id = ? FOR UPDATE',
-      [id]
-    );
+    // 查询订单信息 —— hazard-allow: 下方 SELECT * 是 HEAD 已有存量行，本次仅因 Prettier 把跨行调用合并为一行而进入暂存区，非本次新增代码
+    const [orderRows] = await connection.execute('SELECT * FROM orders WHERE order_id = ? FOR UPDATE', [id]);
 
     if (orderRows.length === 0) {
       await connection.rollback();
@@ -476,11 +447,8 @@ async function hardDeleteOrder(req, res) {
 
     const order = orderRows[0];
 
-    // 查询订单明细
-    const [items] = await connection.execute(
-      'SELECT * FROM order_items WHERE order_id = ?',
-      [id]
-    );
+    // 查询订单明细 —— hazard-allow: 同上，存量 SELECT * 因 Prettier 重排进入暂存区，非本次新增代码
+    const [items] = await connection.execute('SELECT * FROM order_items WHERE order_id = ?', [id]);
 
     // 恢复库存 + 扣减水站欠款（与取消订单共用）
     await restoreSalesEffects(connection, order, items);
@@ -562,16 +530,56 @@ async function updateOrder(req, res) {
     const totalReceivable = orderAmount + deliveryFee;
 
     // 更新订单主表
-    await connection.execute(`UPDATE orders SET order_type=?, platform_type=?, platform_order_no=?, station_id=?, machine_station_id=?, customer_name=?, customer_phone=?, customer_address=?, contact_name=?, order_amount=?, delivery_fee=?, total_receivable=?, delivery_type=?, worker_id=?, created_by=?, remark=?, updated_at=? WHERE order_id=?`,
-      [Number(p.orderType), p.platformType || null, p.platformOrderNo || null, p.stationId, p.machineStationId || null, p.customerName, p.customerPhone || null, p.customerAddress || null, p.contactName || null, orderAmount, deliveryFee, totalReceivable, Number(p.deliveryType), p.workerId, p.createdById, req.body.remark || null, new Date(), id]);
+    await connection.execute(
+      `UPDATE orders SET order_type=?, platform_type=?, platform_order_no=?, station_id=?, machine_station_id=?, customer_name=?, customer_phone=?, customer_address=?, contact_name=?, order_amount=?, delivery_fee=?, total_receivable=?, delivery_type=?, worker_id=?, created_by=?, remark=?, updated_at=? WHERE order_id=?`,
+      [
+        Number(p.orderType),
+        p.platformType || null,
+        p.platformOrderNo || null,
+        p.stationId,
+        p.machineStationId || null,
+        p.customerName,
+        p.customerPhone || null,
+        p.customerAddress || null,
+        p.contactName || null,
+        orderAmount,
+        deliveryFee,
+        totalReceivable,
+        Number(p.deliveryType),
+        p.workerId,
+        p.createdById,
+        req.body.remark || null,
+        new Date(),
+        id
+      ]
+    );
 
     // 删除旧明细
     await connection.execute('DELETE FROM order_items WHERE order_id = ?', [id]);
 
     // 插入新明细 + 销售扣库存
     for (const item of orderItems) {
-      await connection.execute(`INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, pricing_type, ticket_qty, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, item.product_id, item.quantity, item.unit_price, item.purchase_price, item.wholesale_price, item.retail_price, item.machine_price, item.total_delivery_fee, item.distribution_delivery_fee, item.worker_retail_delivery_fee, item.worker_wholesale_delivery_fee, item.worker_machine_delivery_fee, item.pricing_type || 1, item.ticket_qty || 0, item.subtotal]);
+      await connection.execute(
+        `INSERT INTO order_items (order_id, product_id, quantity, unit_price, purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee, distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee, worker_machine_delivery_fee, pricing_type, ticket_qty, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          item.product_id,
+          item.quantity,
+          item.unit_price,
+          item.purchase_price,
+          item.wholesale_price,
+          item.retail_price,
+          item.machine_price,
+          item.total_delivery_fee,
+          item.distribution_delivery_fee,
+          item.worker_retail_delivery_fee,
+          item.worker_wholesale_delivery_fee,
+          item.worker_machine_delivery_fee,
+          item.pricing_type || 1,
+          item.ticket_qty || 0,
+          item.subtotal
+        ]
+      );
 
       await deductInventoryForSale(connection, item.product_id, item.quantity);
     }
@@ -605,7 +613,6 @@ async function updateOrder(req, res) {
     connection.release();
   }
 }
-
 
 module.exports = {
   getOrderList,

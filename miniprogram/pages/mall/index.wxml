@@ -1,0 +1,66 @@
+<!-- 商城 / 订货商城 -->
+<view class="page page-with-tabbar">
+
+  <view class="search-bar">
+    <view class="search-box">
+      <input
+        class="search-input"
+        placeholder="搜索商品名称 / 编码 / 规格"
+        value="{{keyword}}"
+        confirm-type="search"
+        bindinput="onKeywordInput"
+        bindconfirm="onSearch"
+      />
+      <view wx:if="{{keyword}}" class="search-clear" bindtap="clearKeyword">✕</view>
+    </view>
+    <view class="search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <scroll-view wx:if="{{categories.length}}" class="cat-bar" scroll-x enable-flex>
+    <view
+      class="cat-item {{category === '' ? 'is-active' : ''}}"
+      data-value=""
+      bindtap="onCategoryTap"
+    >全部</view>
+    <view
+      wx:for="{{categories}}"
+      wx:key="category"
+      class="cat-item {{category === item.category ? 'is-active' : ''}}"
+      data-value="{{item.category}}"
+      bindtap="onCategoryTap"
+    >{{item.category}}<text class="cat-count">{{item.count}}</text></view>
+  </scroll-view>
+
+  <view wx:if="{{list.length === 0 && !loading}}" class="empty">
+    <view class="empty-icon">🔍</view>
+    <view wx:if="{{loadError}}">{{loadError}}</view>
+    <view wx:else>没有符合条件的商品</view>
+  </view>
+
+  <view
+    wx:for="{{list}}"
+    wx:key="productId"
+    class="goods"
+    data-id="{{item.productId}}"
+    bindtap="goDetail"
+  >
+    <view class="goods-thumb">
+      <image wx:if="{{item.imageFull}}" class="goods-img" src="{{item.imageFull}}" mode="aspectFill" lazy-load />
+      <view wx:else class="goods-ph">{{item.initial}}</view>
+    </view>
+    <view class="goods-body">
+      <view class="goods-name">{{item.productName}}</view>
+      <view class="goods-spec">{{item.specification || '—'}} · {{item.unit || '件'}}</view>
+      <view class="goods-price-row">
+        <view class="col">
+          <text class="goods-price">{{item.priceText}}<text class="goods-price-label"> / {{item.priceLabel}}</text></text>
+          <text wx:if="{{item.minPriceText}}" class="goods-min">{{item.minPriceText}}</text>
+        </view>
+        <view class="goods-add" catchtap="addToCart" data-id="{{item.productId}}">加入</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{list.length > 0 && !hasMore}}" class="empty">已加载全部 {{total}} 个商品</view>
+</view>

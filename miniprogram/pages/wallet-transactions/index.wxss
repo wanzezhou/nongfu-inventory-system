@@ -1,0 +1,22 @@
+/* 积分流水 */
+.filter-bar {
+  white-space: nowrap;
+  background: #ffffff;
+  padding: 20rpx 24rpx;
+  border-bottom: 2rpx solid #eef0f3;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.filter-item {
+  display: inline-block;
+  height: 56rpx;
+  line-height: 56rpx;
+  padding: 0 24rpx;
+  margin-right: 14rpx;
+  border-radius: 28rpx;
+  background: #f2f3f5;
+  color: #5a6371;
+  font-size: 24rpx;
+}
+.filter-item.is-active { background: #fdecee; color: #c8102e; font-weight: 600; }

@@ -1,0 +1,30 @@
+/* 我的水站 */
+.sp-head {
+  margin: 24rpx;
+  padding: 40rpx 36rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #c8102e 0%, #a30d24 100%);
+  color: #ffffff;
+}
+.sp-name { font-size: 42rpx; font-weight: 700; }
+.sp-sub { font-size: 24rpx; opacity: 0.86; margin-top: 8rpx; }
+.sp-points { font-size: 28rpx; margin-top: 20rpx; font-weight: 600; }
+
+.kv {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12rpx 0;
+  font-size: 26rpx;
+}
+.kv-k { color: #8a8f99; flex-shrink: 0; margin-right: 24rpx; }
+.kv-v { color: #1f2329; text-align: right; flex: 1; word-break: break-all; }
+
+.sp-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx 0;
+  font-size: 28rpx;
+}
+.sp-link + .sp-link { border-top: 2rpx solid #f7f8fa; }

@@ -1,0 +1,14 @@
+<!-- 自定义 tabBar（按角色动态渲染，见 index.js 的 TABS） -->
+<view class="tabbar">
+  <view
+    wx:for="{{list}}"
+    wx:key="key"
+    class="tabbar-item {{selected === index ? 'is-active' : ''}}"
+    data-index="{{index}}"
+    bindtap="onTap"
+  >
+    <view class="tabbar-icon icon-{{item.key}} {{selected === index ? 'on' : 'off'}}"></view>
+    <view wx:if="{{item.badge === 'cart' && cartCount > 0}}" class="tabbar-badge">{{cartCount > 99 ? '99+' : cartCount}}</view>
+    <view class="tabbar-text">{{item.text}}</view>
+  </view>
+</view>

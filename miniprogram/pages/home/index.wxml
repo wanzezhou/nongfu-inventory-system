@@ -1,0 +1,251 @@
+<!-- 首页（按角色分流） -->
+<view class="page page-with-tabbar">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <!-- ═════════════ 业务员首页（文档 §29）═════════════ -->
+  <block wx:if="{{role === 'salesman'}}">
+    <view class="hero">
+      <view class="hero-label">当前积分（可用订货额度）</view>
+      <view class="hero-value">{{wallet ? wallet.balance : '—'}}</view>
+      <view class="hero-sub">1 元 = 1 积分</view>
+    </view>
+
+    <view class="stat-grid">
+      <view class="stat-cell">
+        <view class="stat-num">{{today ? today.orderCount : 0}}</view>
+        <view class="stat-label">今日订货</view>
+      </view>
+      <view class="stat-cell">
+        <view class="stat-num">{{month ? month.orderCount : 0}}</view>
+        <view class="stat-label">本月订货</view>
+      </view>
+      <view class="stat-cell" bindtap="viewAllPipeline">
+        <view class="stat-num">{{pipeline ? pipeline.delivering : 0}}</view>
+        <view class="stat-label">配送中</view>
+      </view>
+    </view>
+
+    <view class="quick-row">
+      <view class="quick-item" bindtap="goMall">
+        <view class="quick-title">去订货</view>
+        <view class="quick-sub">浏览商品</view>
+      </view>
+      <view class="quick-item" bindtap="goOrders">
+        <view class="quick-title">我的订单</view>
+        <view class="quick-sub">查看进度</view>
+      </view>
+      <view class="quick-item" bindtap="goWallet">
+        <view class="quick-title">积分钱包</view>
+        <view class="quick-sub">充值 / 流水</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- ═════════════ 直营水站首页（文档 §30）═════════════ -->
+  <block wx:if="{{role === 'station'}}">
+    <view class="hero">
+      <view class="hero-label">当前积分（可用订货额度）</view>
+      <view class="hero-value">{{wallet ? wallet.balance : '—'}}</view>
+      <view class="hero-sub">可用水票 {{waterTickets ? waterTickets.available : 0}} 张 · 1 元 = 1 积分</view>
+    </view>
+
+    <view class="stat-grid">
+      <view class="stat-cell">
+        <view class="stat-num">{{month ? month.recharge : 0}}</view>
+        <view class="stat-label">本月充值</view>
+      </view>
+      <view class="stat-cell">
+        <view class="stat-num">{{month ? month.distributionPoints : 0}}</view>
+        <view class="stat-label">本月分销配送费积分</view>
+      </view>
+      <view class="stat-cell">
+        <view class="stat-num">{{waterTickets ? waterTickets.available : 0}}</view>
+        <view class="stat-label">可用水票</view>
+      </view>
+    </view>
+
+    <view class="stat-grid">
+      <view class="stat-cell" bindtap="viewAllPipeline">
+        <view class="stat-num">{{pipeline ? pipeline.delivering : 0}}</view>
+        <view class="stat-label">配送中</view>
+      </view>
+      <!-- ⚠️ 2026-09-20 自提下线：「待自提」统计格已移除（后端 pipeline.readyForPickup 同步删除）。
+           未用别的新指标顶替 —— 只做删除，避免顺手改变首页口径。 -->
+      <view class="stat-cell">
+        <view class="stat-num">{{month ? month.orderCount : 0}}</view>
+        <view class="stat-label">本月订单</view>
+      </view>
+    </view>
+
+    <view class="quick-row">
+      <view class="quick-item" bindtap="goMall">
+        <view class="quick-title">订货商城</view>
+        <view class="quick-sub">下单 / 用水票</view>
+      </view>
+      <view class="quick-item" bindtap="goTickets">
+        <view class="quick-title">我的水票</view>
+        <view class="quick-sub">按商品查看</view>
+      </view>
+      <view class="quick-item" bindtap="goStationProfile">
+        <view class="quick-title">我的水站</view>
+        <view class="quick-sub">档案 / 地址</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- ═════════════ 管理员首页 = 仪表盘（文档 §28 / Phase 8a 只读）═════════════ -->
+  <block wx:if="{{role === 'admin'}}">
+    <block wx:if="{{dashboard}}">
+      <view class="dash-head">
+        <view class="dash-head-label">今日订单</view>
+        <view class="dash-head-value">{{dashboard.today.orderCount}}</view>
+        <view class="dash-head-sub">今日营收（订单口径） ¥{{dashboard.today.revenue.order}}</view>
+      </view>
+
+      <view class="card">
+        <view class="section-title">本月经营（总口径）</view>
+        <view class="kv-row">
+          <text class="t-sub">总营收</text>
+          <text class="t-strong">¥{{dashboard.month.revenue.total}}</text>
+        </view>
+        <view class="kv-row kv-sub">
+          <text class="t-sub">订单 ¥{{dashboard.month.revenue.order}} · 机台 ¥{{dashboard.month.revenue.machine}} · 其他收入 ¥{{dashboard.month.revenue.otherIncome}}</text>
+        </view>
+        <view class="kv-row">
+          <text class="t-sub">总成本</text>
+          <text class="t-strong">¥{{dashboard.month.cost.total}}</text>
+        </view>
+        <view class="kv-row kv-sub">
+          <text class="t-sub">商品 ¥{{dashboard.month.cost.order}} · 工资 ¥{{dashboard.month.cost.salary}} · 其他支出 ¥{{dashboard.month.cost.otherExpense}}</text>
+        </view>
+        <view class="divider"></view>
+        <view class="kv-row">
+          <text class="t-strong">总利润</text>
+          <text class="t-primary t-lg">¥{{dashboard.month.profit}}</text>
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="section-title">待办与预警</view>
+        <view class="todo-grid">
+          <view class="todo-cell">
+            <view class="todo-num">{{dashboard.pipeline.pendingStock}}</view>
+            <view class="todo-label">待备货</view>
+          </view>
+          <view class="todo-cell">
+            <view class="todo-num">{{dashboard.pipeline.delivering}}</view>
+            <view class="todo-label">配送中</view>
+          </view>
+          <!-- ⚠️ 2026-09-20 自提下线：「待自提」待办格已移除（后端 dashboard.pipeline.readyForPickup
+               同步删除）。.todo-grid 是 flex-wrap + 33.33% 宽，少一格后末行两格，布局正常。 -->
+          <view class="todo-cell">
+            <view class="todo-num">{{dashboard.pipeline.unpaidOrders}}</view>
+            <view class="todo-label">未收款订单</view>
+          </view>
+          <view class="todo-cell">
+            <view class="todo-num">{{dashboard.pipeline.refunding}}</view>
+            <view class="todo-label">退款中</view>
+          </view>
+          <view class="todo-cell">
+            <view class="todo-num">{{dashboard.waterTickets.pendingUse}}</view>
+            <view class="todo-label">待使用水票</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="section-title">库存预警</view>
+        <view class="kv-row">
+          <text class="t-sub">缺货（≤0）</text>
+          <text class="t-primary t-strong">{{dashboard.inventory.outOfStock}}</text>
+        </view>
+        <view class="kv-row">
+          <text class="t-sub">低库存（≤{{dashboard.inventory.threshold}}，展示阈值非业务规则）</text>
+          <text class="t-strong">{{dashboard.inventory.lowStock}}</text>
+        </view>
+        <block wx:if="{{dashboard.inventory.detail.length}}">
+          <view class="divider"></view>
+          <view wx:for="{{dashboard.inventory.detail}}" wx:key="productId" class="inv-row">
+            <text class="flex-1 t-ellipsis">{{item.productName}}</text>
+            <text class="t-primary">{{item.quantity}}</text>
+          </view>
+        </block>
+      </view>
+
+      <view class="card" bindtap="goAdminWallet">
+        <view class="section-title">积分池</view>
+        <view class="kv-row">
+          <text class="t-sub">业务员积分总额</text>
+          <text class="t-strong">{{dashboard.stationPoints.salesmanTotal}}</text>
+        </view>
+        <view class="kv-row">
+          <text class="t-sub">水站积分总额</text>
+          <text class="t-strong">{{dashboard.stationPoints.stationTotal}}</text>
+        </view>
+        <view class="kv-row">
+          <text class="t-strong">合计</text>
+          <text class="t-primary t-strong">{{dashboard.stationPoints.total}}</text>
+        </view>
+        <view class="t-sub mt-16">点击进入钱包后台，可查看流水与手工调增/扣减积分 ›</view>
+      </view>
+
+      <view class="banner banner-info">
+        {{dashboard.writeNotice}}
+      </view>
+      <view class="card card-flat">
+        <view class="section-title">口径说明</view>
+        <view class="t-sub">{{dashboard.methodology.revenueFormula}}</view>
+        <view class="t-sub mt-8">{{dashboard.methodology.costFormula}}</view>
+        <view class="t-sub mt-8">{{dashboard.methodology.rangeConvention}}</view>
+        <view class="t-sub mt-8">{{dashboard.methodology.machineRevenueConvention}}</view>
+      </view>
+    </block>
+    <view wx:elif="{{loading}}" class="empty">加载中…</view>
+    <view wx:else class="empty">
+      <view class="empty-icon">⚠</view>
+      <view>{{loadError || '暂无数据'}}</view>
+    </view>
+  </block>
+
+  <!-- ═════════════ 最近订单（业务员 / 水站共用）═════════════ -->
+  <block wx:if="{{role !== 'admin'}}">
+    <view class="section-title" style="margin: 32rpx 24rpx 0;">最近订单</view>
+    <view wx:if="{{recentOrders.length === 0}}" class="empty">
+      <view class="empty-icon">📦</view>
+      <view>还没有订单，去商城下单试试</view>
+    </view>
+    <view
+      wx:for="{{recentOrders}}"
+      wx:key="orderId"
+      class="list-item"
+      data-id="{{item.orderId}}"
+      bindtap="goOrderDetail"
+    >
+      <view class="row-between">
+        <text class="t-sm t-sub">{{item.orderId}}</text>
+        <text class="tag {{item.refundLabel ? 'tag-warn' : 'tag-primary'}}">{{item.refundLabel || item.statusLabel}}</text>
+      </view>
+      <view class="row-between mt-16">
+        <view class="col flex-1">
+          <text class="t-strong t-ellipsis">{{item.customerName}}</text>
+          <text class="t-sub mt-8">{{item.fulfillmentLabel}} · {{item.itemCount}} 种商品 · {{item.timeText}}</text>
+        </view>
+        <text class="t-strong">¥{{item.amountText}}</text>
+      </view>
+    </view>
+  </block>
+
+  <!-- 口径提示（服务端下发，避免前端自己编文案） -->
+  <block wx:if="{{notes.length}}">
+    <view class="card card-flat">
+      <view class="section-title">说明</view>
+      <view wx:for="{{notes}}" wx:key="*this" class="t-sub mt-8">· {{item}}</view>
+    </view>
+  </block>
+
+  <view wx:if="{{role !== 'admin' && loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+</view>

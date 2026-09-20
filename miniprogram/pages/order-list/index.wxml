@@ -1,0 +1,60 @@
+<!-- 我的订单 -->
+<view class="page">
+
+  <scroll-view class="filter-bar" scroll-x enable-flex>
+    <view
+      wx:for="{{filters}}"
+      wx:key="key"
+      class="filter-item {{status === item.key ? 'is-active' : ''}}"
+      data-status="{{item.key}}"
+      bindtap="onFilterTap"
+    >{{item.label}}</view>
+  </scroll-view>
+
+  <view wx:if="{{list.length === 0 && !loading}}" class="empty">
+    <view class="empty-icon">📦</view>
+    <view wx:if="{{loadError}}">{{loadError}}</view>
+    <view wx:else>该筛选下暂无订单</view>
+    <button wx:if="{{!loadError}}" class="btn btn-primary btn-sm mt-24" bindtap="goMall">去商城下单</button>
+  </view>
+
+  <view
+    wx:for="{{list}}"
+    wx:key="orderId"
+    class="list-item"
+    data-id="{{item.orderId}}"
+    bindtap="goDetail"
+  >
+    <view class="row-between">
+      <text class="t-sm t-sub">{{item.orderId}}</text>
+      <text class="tag {{item.refundLabel ? 'tag-warn' : 'tag-primary'}}">{{item.refundLabel || item.statusLabel}}</text>
+    </view>
+
+    <view class="row-between mt-16">
+      <view class="col flex-1">
+        <text class="t-strong t-ellipsis">{{item.customerName}}</text>
+        <text class="t-sub mt-8">{{item.fulfillmentLabel}} · {{item.itemCount}} 种商品</text>
+        <text class="t-sub mt-8">{{item.timeText}}</text>
+      </view>
+      <text class="t-primary t-lg">¥{{item.amountText}}</text>
+    </view>
+
+    <view wx:if="{{item.canCancel || item.canRefund}}" class="order-actions">
+      <view
+        wx:if="{{item.canCancel}}"
+        class="btn btn-ghost btn-sm"
+        data-id="{{item.orderId}}"
+        catchtap="onCancel"
+      >取消订单</view>
+      <view
+        wx:if="{{item.canRefund}}"
+        class="btn btn-ghost btn-sm"
+        data-id="{{item.orderId}}"
+        catchtap="onRefund"
+      >申请退款</view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{list.length > 0 && !hasMore}}" class="empty">已加载全部 {{total}} 笔订单</view>
+</view>

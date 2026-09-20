@@ -1,0 +1,78 @@
+/* 确认订单 */
+.seg {
+  display: flex;
+  background: #f2f3f5;
+  border-radius: 12rpx;
+  padding: 6rpx;
+}
+.seg-item {
+  flex: 1;
+  height: 68rpx;
+  line-height: 68rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: #5a6371;
+  border-radius: 10rpx;
+}
+.seg-item.is-active {
+  background: #ffffff;
+  color: #c8102e;
+  font-weight: 600;
+  box-shadow: 0 2rpx 8rpx rgba(24, 28, 35, 0.08);
+}
+.seg-item.is-disabled { color: #b6bbc4; }
+
+.chip {
+  height: 52rpx;
+  padding: 0 22rpx;
+  line-height: 52rpx;
+  border-radius: 26rpx;
+  background: #f2f3f5;
+  color: #5a6371;
+  font-size: 24rpx;
+}
+.chip.is-active { background: #fdecee; color: #c8102e; font-weight: 600; }
+
+/* ⚠️ 2026-09-20 自提下线：`.pickup-addr`（自提地点展示块）样式已删除 ——
+   对应 WXML 节点已移除，留着就是无引用的死样式。 */
+
+.confirm-item + .confirm-item {
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx solid #f2f3f5;
+}
+.ci-thumb {
+  width: 130rpx;
+  height: 130rpx;
+  flex-shrink: 0;
+  border-radius: 12rpx;
+  overflow: hidden;
+  background: #f2f3f5;
+}
+.ci-img { width: 130rpx; height: 130rpx; }
+.ci-ph {
+  width: 130rpx;
+  height: 130rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 46rpx;
+  font-weight: 700;
+  color: #c8102e;
+  background: #fdecee;
+}
+
+/* 业务员成交价输入框（§8.4：前端可填、服务端强制下界）
+   裸 input 在 rpx 下宽度会塌陷，故显式给宽高与右对齐；
+   数字键盘（type=digit）已在小程序侧限制字符，此处只负责视觉。 */
+.price-input {
+  width: 200rpx;
+  height: 60rpx;
+  padding: 0 16rpx;
+  border: 2rpx solid #e6e8ec;
+  border-radius: 10rpx;
+  background: #fafafb;
+  font-size: 26rpx;
+  color: #1f2329;
+  text-align: right;
+}

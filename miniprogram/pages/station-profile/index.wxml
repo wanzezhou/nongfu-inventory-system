@@ -1,0 +1,52 @@
+<!-- 我的水站 -->
+<view class="page">
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:else>
+    <view class="sp-head">
+      <view class="sp-name">{{subject.name}}</view>
+      <view class="sp-sub">{{subject.id}} · {{subject.address || '未维护地址'}}</view>
+      <view class="sp-points">可用积分 {{wallet ? wallet.balanceText : '—'}}</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">档案信息</view>
+      <view class="kv"><text class="kv-k">水站名称</text><text class="kv-v">{{subject.name}}</text></view>
+      <view class="kv"><text class="kv-k">水站编号</text><text class="kv-v">{{subject.id}}</text></view>
+      <view class="kv"><text class="kv-k">联系人</text><text class="kv-v">{{subject.contact_name || '—'}}</text></view>
+      <view class="kv"><text class="kv-k">联系电话</text><text class="kv-v">{{subject.phoneText || '—'}}</text></view>
+      <view class="kv"><text class="kv-k">默认地址</text><text class="kv-v">{{subject.address || '—'}}</text></view>
+      <view class="kv"><text class="kv-k">状态</text><text class="kv-v">{{subject.status == 1 ? '启用' : '停用'}}</text></view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">快捷入口</view>
+      <view class="sp-link" bindtap="goTickets">
+        <text>我的水票</text>
+        <text class="t-sub">›</text>
+      </view>
+      <view class="sp-link" bindtap="goOrders">
+        <text>我的订单</text>
+        <text class="t-sub">›</text>
+      </view>
+    </view>
+
+    <view class="banner banner-info">
+      本页为只读。水站档案的维护在 Web 管理端进行；小程序端的水站写操作属 Phase 8b（逐域验收后开放）。
+    </view>
+
+    <view class="card card-flat">
+      <view class="section-title">关于地址快照</view>
+      <view class="t-sub">
+        下单时若选择「水站默认地址」，系统会把当时的地址**快照**写入订单。
+        之后再修改档案地址，**历史订单的地址不会改变**（文档 §10.3）——
+        这是为了保住「订单当时到底送到哪里」这个事实。
+      </view>
+    </view>
+  </block>
+</view>

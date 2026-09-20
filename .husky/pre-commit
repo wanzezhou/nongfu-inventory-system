@@ -5,17 +5,49 @@
 # 详见 docs/代码审查标准.md、docs/代码审查流程.md 第四章 G2
 set -e
 
-STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+# ⚠️ `-c core.quotepath=false` 不可省：git 默认会把非 ASCII 路径转义成 `"\345\225\206..."`，
+#    于是下面 `商品档案/` 这条守卫拿到的是转义串、**永远匹配不到** —— 守卫形同虚设。
+#    关掉 quotepath 后中文路径原样输出，守卫才真正生效。
+STAGED=$(git -c core.quotepath=false diff --cached --name-only --diff-filter=ACM)
 
 # ── 1. 敏感文件阻断（防止运行期私密内容或密钥进仓库）────────────────
-for p in ".env" "backend/.env" "backend/uploads/" "商品档案/"; do
-  if echo "$STAGED" | grep -q "^${p}"; then
-    echo "❌ 禁止提交敏感路径：$p"
-    echo "   .env / uploads / 商品档案 属运行期私密内容，已在 .gitignore 中排除。"
-    echo "   如确需提交，请先确认无密钥与真实业务数据，并修改 .gitignore。"
-    exit 1
-  fi
-done
+# ⚠️ 2026-09-20 修门禁自身缺陷：原实现是 `for p in ...; grep -q "^${p}"`，
+#    属于**裸前缀匹配**，`backend/.env` 会命中 `backend/.env.example` ——
+#    即「提交示例环境变量文件」这种完全合法的操作被误拦。
+#    误报的代价不只是不便：它会把开发者推向 `--no-verify`，那才是真正危险的。
+#
+#    改为逐个文件 `case` 判断，分两类：
+#      ① 明确的私密路径：整串相等，或以该路径为父目录（.env / backend/.env / uploads / 商品档案）
+#      ② `.env.<后缀>` 一族：**默认拦**（.env.local / .env.production / .env.bak …），
+#         只放行登记用的三种示例后缀 .example / .sample / .template
+#    ⚠️ 不能图省事用 `^\.env` 一把扫：那正是误拦 .env.example 的原因；
+#       也不能只写 `.env` 精确匹配：那会漏掉 .env.local（收窄时实测踩到过）。
+#    （`case` 是 POSIX 内建、按字面 glob 比较，没有正则元字符被误解释的余地。）
+blocked_path=''
+while IFS= read -r staged_path; do
+  [ -z "$staged_path" ] && continue
+  case "$staged_path" in
+    .env|.env/*|backend/.env|backend/.env/*|backend/uploads/*|商品档案|商品档案/*)
+      blocked_path="$staged_path"
+      ;;
+    .env.*|backend/.env.*)
+      case "$staged_path" in
+        *.example|*.sample|*.template) ;;                 # 登记用示例文件，允许入库
+        *) blocked_path="$staged_path" ;;
+      esac
+      ;;
+  esac
+  [ -n "$blocked_path" ] && break
+done <<STAGED_LIST
+$STAGED
+STAGED_LIST
+
+if [ -n "$blocked_path" ]; then
+  echo "❌ 禁止提交敏感路径：$blocked_path"
+  echo "   .env / uploads / 商品档案 属运行期私密内容，已在 .gitignore 中排除。"
+  echo "   如确需提交，请先确认无密钥与真实业务数据，并修改 .gitignore。"
+  exit 1
+fi
 
 if echo "$STAGED" | grep -qE "^database/backup_.*\.sql$"; then
   echo "❌ 禁止提交数据库备份：含真实业务数据（含客户手机号/银行账号）。"

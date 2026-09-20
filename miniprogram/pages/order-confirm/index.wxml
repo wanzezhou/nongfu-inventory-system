@@ -1,0 +1,206 @@
+<!-- 确认订单 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:else>
+    <!-- 配送方式：自提已于 2026-09-20 下线，本期**只有配送**。
+         这里刻意不再渲染任何「配送 / 自提」切换控件 —— 页面不存在被禁用的自提入口，
+         比「显示一个永远点不动的选项」更诚实（后端也只接受 DELIVERY，见 miniOrderService）。
+         收货信息卡片（下方）因而不带条件，所有订单都必须填地址。 -->
+
+    <!-- 业务员：订货场景（§7.1 / §7.5） -->
+    <view wx:if="{{role === 'salesman'}}" class="card">
+      <view class="section-title">订货场景</view>
+      <view class="seg">
+        <view
+          class="seg-item {{orderScene === 'SELF_PURCHASE' ? 'is-active' : ''}}"
+          data-scene="SELF_PURCHASE"
+          bindtap="onSceneChange"
+        >自己订货</view>
+        <view
+          class="seg-item {{orderScene === 'CUSTOMER_ORDER' ? 'is-active' : ''}}"
+          data-scene="CUSTOMER_ORDER"
+          bindtap="onSceneChange"
+        >代客户订货</view>
+      </view>
+      <view class="t-sub mt-16">
+        两种场景都受「最低成交价」约束（文档 §7.5：V1.1 暂按同样受约束执行）
+      </view>
+    </view>
+
+    <!-- 收货信息（§7.2 / §10.2 / §10.3）
+         自提下线后无「免地址」场景，所以这里不带 wx:if —— 地址对每单都必填 -->
+    <view class="card">
+      <view class="section-title">收货信息</view>
+
+      <block wx:if="{{role === 'station' && stationDefault}}">
+        <view class="form-row">
+          <view class="form-label">地址来源</view>
+          <view class="flex-1 row gap-12" style="justify-content: flex-end;">
+            <view
+              class="chip {{addressSource === 'STATION_DEFAULT' ? 'is-active' : ''}}"
+              data-source="STATION_DEFAULT"
+              bindtap="onAddressSourceChange"
+            >水站默认</view>
+            <view
+              class="chip {{addressSource === 'ORDER_CUSTOM' ? 'is-active' : ''}}"
+              data-source="ORDER_CUSTOM"
+              bindtap="onAddressSourceChange"
+            >本次填写</view>
+          </view>
+        </view>
+      </block>
+
+      <view class="form-row">
+        <view class="form-label">收货人<text class="form-required">*</text></view>
+        <input class="form-input" placeholder="请输入收货人姓名" value="{{customerName}}" data-field="customerName" bindinput="onInput" />
+      </view>
+
+      <view class="form-row">
+        <view class="form-label">联系电话<text class="form-required">*</text></view>
+        <input
+          class="form-input"
+          type="number"
+          placeholder="{{role === 'station' && stationDefault && addressSource === 'STATION_DEFAULT' ? '留空则由水站档案自动带出' : '请输入联系电话'}}"
+          value="{{customerPhone}}"
+          data-field="customerPhone"
+          bindinput="onInput"
+          bindblur="loadCustomerHistory"
+        />
+      </view>
+
+      <view class="form-row">
+        <view class="form-label">配送地址<text class="form-required">*</text></view>
+        <input
+          class="form-input"
+          placeholder="请输入详细地址"
+          value="{{customerAddress}}"
+          data-field="customerAddress"
+          bindinput="onInput"
+        />
+      </view>
+    </view>
+
+    <view wx:else class="card">
+      <view class="section-title">提货人信息</view>
+      <view class="form-row">
+        <view class="form-label">联系人<text class="form-required">*</text></view>
+        <input class="form-input" placeholder="请输入联系人姓名" value="{{customerName}}" data-field="customerName" bindinput="onInput" />
+      </view>
+      <view class="form-row">
+        <view class="form-label">联系电话<text class="form-required">*</text></view>
+        <input class="form-input" type="number" placeholder="请输入联系电话" value="{{customerPhone}}" data-field="customerPhone" bindinput="onInput" />
+      </view>
+    </view>
+
+    <!-- 商品明细 -->
+    <view class="card">
+      <view class="section-title">商品明细</view>
+      <view wx:for="{{items}}" wx:key="productId" class="confirm-item">
+        <view class="row">
+          <view class="ci-thumb">
+            <image wx:if="{{item.imageFull}}" src="{{item.imageFull}}" mode="aspectFill" class="ci-img" />
+            <view wx:else class="ci-ph">{{item.initial}}</view>
+          </view>
+          <view class="flex-1" style="margin-left: 20rpx;">
+            <view class="t-strong t-ellipsis">{{item.name}}</view>
+            <view class="t-sub mt-8">{{item.spec}}</view>
+            <!-- 业务员成交价：前端可填（Phase 3），下界由服务端强制（§8.4 / §8.5）。
+                 ⚠️ §7.5（2026-09-20 业务方确认）：自购 / 代客两种场景**同样受约束**，
+                    所以此入口不区分 orderScene。对比：水站订单不可改价（§9.1）。 -->
+            <view wx:if="{{!item.isStation}}" class="row-between mt-8">
+              <text class="t-sub">成交价 ¥/{{item.unitText}}</text>
+              <view class="row gap-12" style="align-items: flex-end; justify-content: flex-end;">
+                <input
+                  class="price-input"
+                  type="digit"
+                  value="{{item.priceInput}}"
+                  data-index="{{index}}"
+                  bindinput="onPriceInput"
+                  placeholder="填写成交价"
+                />
+                <text class="t-sub">参考零售价 ¥{{item.retailPriceText}}</text>
+              </view>
+            </view>
+            <view wx:if="{{!item.isStation && item.minPriceText}}" class="t-sub mt-8">
+              最低成交价 ¥{{item.minPriceText}}（服务端强制校验，低于即拒单）
+            </view>
+
+            <view class="row-between mt-8">
+              <text class="t-sub">¥{{item.unitPriceText}} × {{item.billableQty}}</text>
+              <text class="t-strong">¥{{item.lineAmountText}}</text>
+            </view>
+            <view wx:if="{{item.ticketQty > 0}}" class="t-sub mt-8">
+              水票抵扣 {{item.ticketQty}} 件（抵扣部分不计积分）
+            </view>
+            <!-- §8.6 历史成交价参考：仅展示，不自动套用 -->
+            <block wx:if="{{recentPrices[item.productId]}}">
+              <view class="t-sub mt-8">
+                历史成交价（本业务员自己的记录，仅供参考）：
+                最近 ¥{{recentPrices[item.productId].latestText}}
+                <text wx:if="{{recentPrices[item.productId].recent.length > 1}}">
+                  · 近 {{recentPrices[item.productId].recent.length}} 次 ¥{{recentPrices[item.productId].recent}}
+                </text>
+              </view>
+            </block>
+            <view wx:if="{{item.priceError}}" class="t-primary t-sm mt-8">{{item.priceError}}</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="divider"></view>
+      <view class="row-between">
+        <text class="t-sub">合计（预览）</text>
+        <text class="t-primary t-xl">¥{{previewAmount}}</text>
+      </view>
+      <view class="t-sub mt-8">
+        此处金额为预览，下单时由服务端按商品档案重算（不信任前端金额）
+      </view>
+    </view>
+
+    <!-- 钱包 -->
+    <view class="card">
+      <view class="row-between">
+        <text class="t-sub">当前积分</text>
+        <text class="t-strong">{{wallet ? wallet.balance : '—'}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">支付后余额（预估）</text>
+        <text class="{{balanceEnough ? 't-strong' : 't-primary t-strong'}}">
+          {{wallet ? wallet.balance : 0}} − {{previewAmount}} 积分
+        </text>
+      </view>
+      <view wx:if="{{!balanceEnough}}" class="banner banner-warn" style="margin: 16rpx 0 0;">
+        积分可能不足。本单只支持积分钱包支付，不接受混合支付（§14.4），请先由管理员调增积分。
+      </view>
+      <view class="t-sub mt-16">微信充值（Phase 6）尚未开通，正向入账由管理员调增承担（§13.8 降级路径）</view>
+    </view>
+
+    <!-- 备注 -->
+    <view class="card">
+      <view class="form-row form-row-stack">
+        <view class="form-label">备注</view>
+        <textarea class="form-textarea" placeholder="选填，如送货时间要求" value="{{remark}}" data-field="remark" bindinput="onInput" maxlength="200" />
+      </view>
+    </view>
+  </block>
+
+  <view wx:if="{{!loadError}}" class="footer-bar">
+    <view class="col">
+      <text class="t-sub">应付积分（预估）</text>
+      <text class="t-primary t-lg">{{previewAmount}}</text>
+    </view>
+    <button
+      class="btn btn-primary"
+      style="width: 300rpx;"
+      bindtap="submit"
+      disabled="{{submitting || priceErrors.length > 0 || !balanceEnough}}"
+    >{{submitting ? '提交中…' : '提交订单'}}</button>
+  </view>
+</view>

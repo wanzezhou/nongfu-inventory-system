@@ -1,0 +1,99 @@
+/* 购物车 */
+.cart-item {
+  background: #ffffff;
+  border-radius: 16rpx;
+  margin: 20rpx 24rpx;
+  padding: 28rpx;
+  box-shadow: 0 2rpx 12rpx rgba(24, 28, 35, 0.05);
+}
+.cart-thumb {
+  width: 150rpx;
+  height: 150rpx;
+  flex-shrink: 0;
+  border-radius: 12rpx;
+  overflow: hidden;
+  background: #f2f3f5;
+}
+.cart-img { width: 150rpx; height: 150rpx; }
+.cart-ph {
+  width: 150rpx;
+  height: 150rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 52rpx;
+  font-weight: 700;
+  color: #c8102e;
+  background: #fdecee;
+}
+.cart-failed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cart-remove {
+  font-size: 26rpx;
+  color: #8a8f99;
+  padding: 0 12rpx;
+}
+.cart-clear {
+  text-align: center;
+  font-size: 26rpx;
+  color: #8a8f99;
+  padding: 24rpx;
+  text-decoration: underline;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  border: 2rpx solid #dcdfe6;
+  border-radius: 10rpx;
+  overflow: hidden;
+}
+.step-btn {
+  width: 60rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  text-align: center;
+  font-size: 30rpx;
+  color: #5a6371;
+  background: #fafafb;
+}
+.step-btn:active { background: #f2f3f5; }
+.step-input {
+  width: 90rpx;
+  height: 56rpx;
+  text-align: center;
+  font-size: 26rpx;
+}
+
+.ticket-row {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx dashed #eef0f3;
+}
+.checkbox {
+  width: 36rpx;
+  height: 36rpx;
+  border: 2rpx solid #dcdfe6;
+  border-radius: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  color: #ffffff;
+  box-sizing: border-box;
+}
+.checkbox.checked {
+  background: #c8102e;
+  border-color: #c8102e;
+}
+.ticket-input {
+  width: 120rpx;
+  height: 56rpx;
+  border: 2rpx solid #dcdfe6;
+  border-radius: 10rpx;
+  text-align: center;
+  font-size: 26rpx;
+}

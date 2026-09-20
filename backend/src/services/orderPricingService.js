@@ -16,7 +16,7 @@
  */
 const { TICKET_STATUS } = require('../constants/waterTicket');
 
-const bizFail = (message) => {
+const bizFail = message => {
   const e = new Error(message);
   e.business = true;
   return e;
@@ -53,6 +53,94 @@ function pick(item, snake, camel) {
   return item[snake] !== undefined ? item[snake] : item[camel];
 }
 
+/** 行手填单价的规范化读取（type 2/3/5 共用） */
+function pickItemUnitPrice(item) {
+  if (item.unit_price !== undefined) return Number(item.unit_price);
+  if (item.unitPrice !== undefined) return Number(item.unitPrice);
+  return null;
+}
+
+/**
+ * 业务员小程序最低成交价校验（文档 §8.4 / §8.5 / §7.5）
+ *
+ * ⚠️ 为什么必须放在这里而不是 miniOrderController：§42.3 明确要求
+ *    「订单修改必须优先扩展 services/orderPricingService.js，不要复制到 miniOrderController.js」。
+ *    成交价的最终取值逻辑（手填 → 回退 retail_price）本来就在本文件的 buildOrderItems 里，
+ *    校验若在别处再推一遍，两处一旦分叉就会出现「校验用 A、入库用 B」的静默漏洞。
+ *
+ * 规则（**V1.1 已定，不允许 AI 自行改变**）：
+ *   ① 业务员成交价必须 >= salesman_min_price，否则拒绝下单（HTTP 400
+ *      业务提示：「成交价低于公司允许的最低价格」）；
+ *   ② 允许高于最低价，也允许高于商品参考零售价（只校验下界）；
+ *   ③ §8.5：未开启 salesman_mini_enabled，**或**未配置有效 salesman_min_price 的商品，
+ *      业务员**不可下单** —— 不得把「未配置」当成 0 元最低价
+ *      （否则 retail_price = 0 的商品会意外变成可零元销售；现状核实：products.retail_price
+ *        多数为 0.00，这正是必须守住这条的原因）；
+ *   ④ §7.5：`order_scene`（SELF_PURCHASE / CUSTOMER_ORDER）**不影响**本校验 ——
+ *      无论自购还是代客下单，一律执行。理由：最低成交价保护的是公司价格体系；
+ *      若只约束「代客下单」，则任何低价单只要选「自购」即可绕过，规则形同虚设。
+ *      ✅ **业务方已确认（2026-09-20）**：自购同样受最低成交价约束。
+ *      文档原文即按此方向编写（§7.5「无论 SELF_PURCHASE 还是 CUSTOMER_ORDER，一律执行」），
+ *      现由业务方拍板确认，不再是「按假设实现」。
+ *      ⚠️ 因此本函数**不得**接收 `order_scene` 参数、不得按场景分支 ——
+ *         一旦按场景放行，自购就成了绕过最低价的免费通道。
+ *
+ * ⚠️ 与前端的分工：前端 成交价输入框 + 最低价红字提示 只是**体验优化**，
+ *    安全边界**只有**服务端这一处。前端可填成交价（Phase 3「成交价（前端可填）」），
+ *    所以这里的校验不是可有可无的兜底，而是唯一的约束点。
+ *
+ * @param {object} productMap product_id → products 行（须含 salesman_mini_enabled / salesman_min_price）
+ * @param {Array}  items      原始请求明细
+ * @returns {Array<{productId:string, productName:string, unitPrice:number, minPrice:number}>} 校验明细（供审计）
+ */
+function assertSalesmanMinPrice(productMap, items) {
+  const checked = [];
+  for (const item of items) {
+    const pid = item.product_id || item.productId;
+    const product = productMap[pid];
+    if (!product) throw bizFail(`商品不存在: ${pid}`);
+    const name = product.product_name || pid;
+
+    if (!Number(product.salesman_mini_enabled)) {
+      throw bizFail(`商品「${name}」未开启业务员小程序销售，无法下单`);
+    }
+
+    const rawMin = product.salesman_min_price;
+    const hasMin = rawMin !== null && rawMin !== undefined && rawMin !== '' && !isNaN(Number(rawMin));
+    if (!hasMin) {
+      throw bizFail(`商品「${name}」未配置最低成交价，无法下单（请联系管理员配置）`);
+    }
+    const minPrice = Number(rawMin);
+
+    const rawUnit = pickItemUnitPrice(item);
+    const unitPrice = rawUnit !== null && !isNaN(rawUnit) ? rawUnit : Number(product.retail_price);
+
+    if (unitPrice + 1e-9 < minPrice) {
+      throw bizFail(`商品「${name}」成交价 ${unitPrice} 低于公司允许的最低价格 ${minPrice}`);
+    }
+    checked.push({ productId: pid, productName: name, unitPrice, minPrice });
+  }
+  return checked;
+}
+
+/**
+ * 直营水站小程序订单：把小程序的请求明细**规范化成服务端定价的输入**
+ * （文档 §9.1：小程序首期禁止水站手工修改商品单价，直接使用系统水站分销价格）
+ *
+ * 做法：显式把手填单价抹掉（置 undefined），让 buildOrderItems 的 type 2 分支
+ * 回退到 `product.wholesale_price`。这样价格**只能**由服务端从商品档案取，
+ * 前端传什么都无效（§22.1 / §22.6「一切金额均由服务端重算」）。
+ * ⚠️ 不要图省事在这里自己算价 —— 那是复制第二套价格算法（§41 头号禁止项）。
+ */
+function stripClientUnitPrice(items) {
+  return items.map(it => {
+    const next = { ...it };
+    delete next.unit_price;
+    delete next.unitPrice;
+    return next;
+  });
+}
+
 /** 查询并映射商品价格档案；任一商品不存在即 bizFail */
 async function fetchProductMap(connection, items) {
   const productIds = items.map(item => item.product_id || item.productId);
@@ -87,8 +175,12 @@ function buildOrderItems({ orderType, items, productMap }) {
     const pid = item.product_id || item.productId;
     const product = productMap[pid];
     const quantity = Number(item.quantity);
-    const itemUnitPrice = item.unit_price !== undefined ? Number(item.unit_price)
-      : (item.unitPrice !== undefined ? Number(item.unitPrice) : null);
+    const itemUnitPrice =
+      item.unit_price !== undefined
+        ? Number(item.unit_price)
+        : item.unitPrice !== undefined
+          ? Number(item.unitPrice)
+          : null;
 
     if (isNaN(quantity) || quantity <= 0) throw bizFail('商品数量必须为正数');
 
@@ -111,8 +203,12 @@ function buildOrderItems({ orderType, items, productMap }) {
     // 根据订单类型计算商品单价（配送费统一不计算，2026-08-27）
     let unitPrice = 0;
     switch (typeNum) {
-      case 1: unitPrice = product.purchase_price; break;
-      case 2: unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price; break;
+      case 1:
+        unitPrice = product.purchase_price;
+        break;
+      case 2:
+        unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.wholesale_price;
+        break;
       case 3:
       case 5: // 水公社（2026-09-14）：与线下零售同口径——单价可手填，不填回退零售价
         unitPrice = itemUnitPrice !== null && !isNaN(itemUnitPrice) ? itemUnitPrice : product.retail_price;
@@ -124,9 +220,7 @@ function buildOrderItems({ orderType, items, productMap }) {
     }
 
     // 行级小计：水票抵扣件数不计金额，仅未抵扣件数按分销价（2026-08-27）
-    const subtotal = isStationType && ticketQty > 0
-      ? unitPrice * (quantity - ticketQty)
-      : unitPrice * quantity;
+    const subtotal = isStationType && ticketQty > 0 ? unitPrice * (quantity - ticketQty) : unitPrice * quantity;
     orderAmount += subtotal;
 
     // 快照价：水站分销(2)/线下零售(3)/水公社(5) 的单价由前端手动填写，快照需用手填值，
@@ -170,7 +264,9 @@ async function writeOffTickets(connection, stationId, ticketDemand, orderId, pro
       [stationId, pid, TICKET_STATUS.UNUSED]
     );
     if (tickets.length < need) {
-      throw bizFail(`水站水票不足：商品「${productMap[pid].product_name}」需抵扣 ${need} 张，可用 ${tickets.length} 张（剩余数量按分销价计价）`);
+      throw bizFail(
+        `水站水票不足：商品「${productMap[pid].product_name}」需抵扣 ${need} 张，可用 ${tickets.length} 张（剩余数量按分销价计价）`
+      );
     }
     const placeholders = tickets.map(() => '?').join(',');
     await connection.execute(
@@ -209,17 +305,17 @@ async function deductInventoryForSale(connection, productId, quantity, now = new
 async function restoreSalesEffects(connection, order, items) {
   const now = new Date();
   for (const item of items) {
-    const [invRows] = await connection.execute(
-      'SELECT quantity FROM inventory WHERE product_id = ? FOR UPDATE',
-      [item.product_id]
-    );
+    const [invRows] = await connection.execute('SELECT quantity FROM inventory WHERE product_id = ? FOR UPDATE', [
+      item.product_id
+    ]);
     if (invRows.length > 0) {
       const q = Number(invRows[0].quantity);
       const newQty = q + Number(item.quantity);
-      await connection.execute(
-        'UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?',
-        [newQty, now, item.product_id]
-      );
+      await connection.execute('UPDATE inventory SET quantity = ?, updated_at = ? WHERE product_id = ?', [
+        newQty,
+        now,
+        item.product_id
+      ]);
     }
   }
 
@@ -231,26 +327,27 @@ async function restoreSalesEffects(connection, order, items) {
     );
     if (stRows.length > 0) {
       const newDebt = Math.max(0, Number(stRows[0].current_debt) - Number(order.order_amount));
-      await connection.execute(
-        'UPDATE sub_stations SET current_debt = ?, updated_at = ? WHERE station_id = ?',
-        [newDebt, now, order.station_id]
-      );
+      await connection.execute('UPDATE sub_stations SET current_debt = ?, updated_at = ? WHERE station_id = ?', [
+        newDebt,
+        now,
+        order.station_id
+      ]);
     }
   }
 }
 
 /** 水站订单欠款 += 金额（调用方自行判断订单类型） */
 async function addStationDebt(connection, stationId, amount, now = new Date()) {
-  const [stRows] = await connection.execute(
-    'SELECT current_debt FROM sub_stations WHERE station_id = ? FOR UPDATE',
-    [stationId]
-  );
+  const [stRows] = await connection.execute('SELECT current_debt FROM sub_stations WHERE station_id = ? FOR UPDATE', [
+    stationId
+  ]);
   if (stRows.length > 0) {
     const newDebt = Number(stRows[0].current_debt) + Number(amount);
-    await connection.execute(
-      'UPDATE sub_stations SET current_debt = ?, updated_at = ? WHERE station_id = ?',
-      [newDebt, now, stationId]
-    );
+    await connection.execute('UPDATE sub_stations SET current_debt = ?, updated_at = ? WHERE station_id = ?', [
+      newDebt,
+      now,
+      stationId
+    ]);
   }
 }
 
@@ -262,5 +359,9 @@ module.exports = {
   restoreWrittenOffTickets,
   deductInventoryForSale,
   restoreSalesEffects,
-  addStationDebt
+  addStationDebt,
+  // 小程序扩展（2026-09-20，文档 §8.4 / §9.1）—— 追加导出，不改既有行为
+  assertSalesmanMinPrice,
+  stripClientUnitPrice,
+  pickItemUnitPrice
 };

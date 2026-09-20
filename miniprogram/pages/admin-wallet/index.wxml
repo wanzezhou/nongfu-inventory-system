@@ -1,0 +1,135 @@
+<!-- 管理员 · 积分钱包后台（§18 / §21.8 / Phase 5） -->
+<view class="page">
+
+  <!-- ═══════ 钱包列表 ═══════ -->
+  <block wx:if="{{tab === 'list'}}">
+    <view class="hero-sm">
+      <view class="hs-label">积分池合计（启用钱包）</view>
+      <view class="hs-value">{{totals ? totals.total : '—'}}</view>
+      <view class="hs-sub">
+        业务员 {{totals ? totals.SALESMAN : 0}} · 水站 {{totals ? totals.STATION : 0}}
+      </view>
+    </view>
+
+    <scroll-view class="filter-bar" scroll-x enable-flex>
+      <view class="filter-item {{ownerType === '' ? 'is-active' : ''}}" data-type="" bindtap="onFilterChange">全部</view>
+      <view class="filter-item {{ownerType === 'SALESMAN' ? 'is-active' : ''}}" data-type="SALESMAN" bindtap="onFilterChange">业务员</view>
+      <view class="filter-item {{ownerType === 'STATION' ? 'is-active' : ''}}" data-type="STATION" bindtap="onFilterChange">直营水站</view>
+    </scroll-view>
+
+    <view wx:if="{{loading}}" class="empty">加载中…</view>
+    <view wx:elif="{{loadError}}" class="empty">
+      <view class="empty-icon">⚠</view>
+      <view>{{loadError}}</view>
+    </view>
+    <view wx:elif="{{wallets.length === 0}}" class="empty">
+      <view class="empty-icon">💰</view>
+      <view>暂无钱包（钱包在下单或调增时自动开立）</view>
+    </view>
+
+    <view
+      wx:for="{{wallets}}"
+      wx:key="walletId"
+      class="list-item"
+      data-id="{{item.walletId}}"
+      bindtap="openWallet"
+    >
+      <view class="row-between">
+        <view class="col flex-1">
+          <text class="t-strong">{{item.ownerName}}</text>
+          <text class="t-sub mt-8">{{item.ownerLabel}} · {{item.ownerId}}</text>
+          <text class="t-sub mt-8">{{item.txCount}} 条流水 · 最近 {{item.lastTxText || '—'}}</text>
+        </view>
+        <view class="col" style="align-items: flex-end;">
+          <text class="t-primary t-lg">{{item.balanceText}}</text>
+          <text class="tag {{item.statusText === '启用' ? 'tag-ok' : 'tag-plain'}} mt-8">{{item.statusText}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <!-- ═══════ 钱包详情 + 手工调整 ═══════ -->
+  <block wx:else>
+    <view class="card" bindtap="backToList">
+      <text class="t-sub">‹ 返回钱包列表</text>
+    </view>
+
+    <view wx:if="{{loading}}" class="empty">加载中…</view>
+    <view wx:elif="{{loadError}}" class="empty">
+      <view class="empty-icon">⚠</view>
+      <view>{{loadError}}</view>
+    </view>
+
+    <block wx:else>
+      <view class="hero-sm">
+        <view class="hs-label">{{walletOwnerLabel}}</view>
+        <view class="hs-value">{{wallet.balanceText}}</view>
+        <view class="hs-sub">
+          累计入账 +{{wallet.totalInText}} · 累计出账 −{{wallet.totalOutText}} ·
+          {{wallet.statusText}}
+        </view>
+      </view>
+
+      <view wx:if="{{!wallet.identityOk}}" class="banner banner-danger">
+        ⚠ 账实不符：账面 {{wallet.balance}}，按流水应为 {{wallet.expected}}（差额 {{wallet.diff}}）
+      </view>
+
+      <!-- 手工增减积分（§18） -->
+      <view class="card">
+        <view class="section-title">手工调整积分</view>
+        <view class="seg">
+          <view class="seg-item {{adjustDirection === 'IN' ? 'is-active' : ''}}" data-dir="IN" bindtap="onDirChange">增加积分</view>
+          <view class="seg-item {{adjustDirection === 'OUT' ? 'is-active' : ''}}" data-dir="OUT" bindtap="onDirChange">扣减积分</view>
+        </view>
+
+        <view class="form-row">
+          <view class="form-label">数量<text class="form-required">*</text></view>
+          <input class="form-input" type="digit" placeholder="请输入积分数量" value="{{adjustAmount}}" data-field="adjustAmount" bindinput="onInput" />
+        </view>
+        <view class="form-row">
+          <view class="form-label">操作原因<text class="form-required">*</text></view>
+          <input class="form-input" placeholder="必填，将写入流水备注" value="{{adjustReason}}" data-field="adjustReason" bindinput="onInput" />
+        </view>
+        <view class="form-row">
+          <view class="form-label">备注</view>
+          <input class="form-input" placeholder="选填" value="{{adjustRemark}}" data-field="adjustRemark" bindinput="onInput" />
+        </view>
+
+        <view class="t-sub mt-16">
+          操作人取自当前登录令牌，不接受前端传入；调整会生成独立流水并写入审计日志（§18 / §40）。
+        </view>
+
+        <button
+          class="btn btn-primary btn-block mt-24"
+          bindtap="submitAdjust"
+          disabled="{{submitting}}"
+        >{{submitting ? '提交中…' : (adjustDirection === 'IN' ? '确认增加积分' : '确认扣减积分')}}</button>
+      </view>
+
+      <view class="card">
+        <view class="section-title">流水（最近 50 条）</view>
+        <view wx:if="{{transactions.length === 0}}" class="t-sub">暂无流水</view>
+        <view wx:for="{{transactions}}" wx:key="transactionId" class="tx-row">
+          <view class="flex-1">
+            <view class="t-strong">{{item.typeLabel}}</view>
+            <view class="t-sub">{{item.timeText}} · {{item.operatorId || '系统'}}</view>
+            <view wx:if="{{item.remark}}" class="t-sub">{{item.remark}}</view>
+          </view>
+          <view class="col" style="align-items: flex-end;">
+            <text class="{{item.isIn ? 'amount-in' : 'amount-out'}}">{{item.signedText}}</text>
+            <text class="t-sub">余额 {{item.balanceAfterText}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{reconciliation}}" class="card card-flat">
+        <view class="section-title">对账（区间：start 含 / end 含）</view>
+        <view class="row-between"><text class="t-sub">期初</text><text>{{reconciliation.openingBalance}}</text></view>
+        <view class="row-between mt-8"><text class="t-sub">区间入账</text><text class="amount-in">+{{reconciliation.totalIn}}</text></view>
+        <view class="row-between mt-8"><text class="t-sub">区间出账</text><text class="amount-out">−{{reconciliation.totalOut}}</text></view>
+        <view class="row-between mt-8"><text class="t-strong">期末（当前余额）</text><text class="t-primary t-strong">{{reconciliation.closingBalance}}</text></view>
+        <view class="t-sub mt-8">恒等式校验：{{reconciliation.identityOk ? '通过' : '异常'}}</view>
+      </view>
+    </block>
+  </block>
+</view>

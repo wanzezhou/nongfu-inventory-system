@@ -41,9 +41,14 @@ backend.pid
 frontend.pid
 
 # Mini program build
+# ⚠️ 目录名是 miniprogram（无连字符）。旧规则写的是 mini-program/，而那个目录已于
+#    2026-08-23 随上一版小程序整体删除 —— 规则因此从未生效，导致开发者工具的
+#    本机私有配置被反复纳入 git add。已按真实目录名修正。
+miniprogram/miniprogram_npm/
 mini-program/miniprogram_npm/
 
-# WeChat devtools private config
+# WeChat devtools private config（每个开发者本地，工具每次打开都会重写）
+miniprogram/project.private.config.json
 mini-program/project.private.config.json
 
 # Vite 临时产物（构建/启动时生成，不参与版本控制）

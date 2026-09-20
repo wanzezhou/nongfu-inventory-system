@@ -1,0 +1,222 @@
+/* 全局样式 —— 中性极简 + 品牌红单一强调色
+   ==========================================================================
+   与 Web 端一致的视觉基调（仓库约定：品牌红 --primary 是唯一强调色，
+   无色系基底；改版只动样式文件，不逐页写死颜色）。
+   小程序不支持 CSS 变量（WXSS 无 :root 变量继承），因此这里用类名约定，
+   页面样式只引用类名，不写字面量色值。
+   ========================================================================== */
+
+page {
+  background: #f5f6f8;
+  color: #1f2329;
+  font-size: 28rpx;
+  line-height: 1.55;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, sans-serif;
+}
+
+/* ── 容器 ─────────────────────────────────────────────────────────────── */
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding-bottom: 40rpx;
+}
+.page-with-tabbar {
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+}
+.page-with-footer {
+  padding-bottom: calc(180rpx + env(safe-area-inset-bottom));
+}
+.section {
+  margin: 20rpx 24rpx;
+}
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2329;
+  margin-bottom: 16rpx;
+}
+.section-extra {
+  font-size: 24rpx;
+  color: #8a8f99;
+}
+
+/* ── 卡片 ─────────────────────────────────────────────────────────────── */
+.card {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 28rpx;
+  margin: 20rpx 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(24, 28, 35, 0.05);
+}
+.card-flat {
+  box-shadow: none;
+  border: 2rpx solid #eef0f3;
+}
+.card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-row + .card-row {
+  margin-top: 20rpx;
+}
+
+/* ── 文本 ─────────────────────────────────────────────────────────────── */
+.t-main { color: #1f2329; }
+.t-sub { color: #8a8f99; font-size: 24rpx; }
+.t-strong { font-weight: 600; }
+.t-primary { color: #c8102e; }
+.t-muted { color: #b6bbc4; }
+.t-sm { font-size: 24rpx; }
+.t-lg { font-size: 34rpx; }
+.t-xl { font-size: 44rpx; font-weight: 700; }
+.t-ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.amount-in { color: #c8102e; font-weight: 600; }
+.amount-out { color: #5a6371; font-weight: 600; }
+
+/* ── 布局 ─────────────────────────────────────────────────────────────── */
+.row { display: flex; align-items: center; }
+.row-between { display: flex; align-items: center; justify-content: space-between; }
+.row-center { display: flex; align-items: center; justify-content: center; }
+.col { display: flex; flex-direction: column; }
+.flex-1 { flex: 1; min-width: 0; }
+.mt-8 { margin-top: 8rpx; }
+.mt-16 { margin-top: 16rpx; }
+.mt-24 { margin-top: 24rpx; }
+.gap-12 { gap: 12rpx; }
+
+/* ── 按钮 ─────────────────────────────────────────────────────────────── */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84rpx;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+.btn::after { border: none; }
+.btn-primary { background: #c8102e; color: #ffffff; }
+.btn-primary.btn-disabled,
+.btn-primary[disabled] { background: #e3c3c9; color: #fff; }
+.btn-ghost { background: #ffffff; color: #1f2329; border: 2rpx solid #dcdfe6; }
+.btn-ghost.btn-disabled,
+.btn-ghost[disabled] { color: #b6bbc4; }
+.btn-sm { height: 60rpx; font-size: 26rpx; padding: 0 24rpx; }
+.btn-block { width: 100%; }
+
+/* ── 徽标 / 标签 ──────────────────────────────────────────────────────── */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 36rpx;
+  padding: 0 12rpx;
+  border-radius: 6rpx;
+  font-size: 22rpx;
+  background: #f2f3f5;
+  color: #5a6371;
+}
+.tag-primary { background: #fdecee; color: #c8102e; }
+.tag-warn { background: #fff5e6; color: #b8730a; }
+.tag-ok { background: #eaf7ee; color: #2b8a4b; }
+.tag-plain { background: #f2f3f5; color: #5a6371; }
+
+/* ── 空态 / 错误态 ────────────────────────────────────────────────────── */
+.empty {
+  padding: 100rpx 40rpx;
+  text-align: center;
+  color: #8a8f99;
+  font-size: 26rpx;
+}
+.empty-icon {
+  font-size: 80rpx;
+  color: #dcdfe6;
+  margin-bottom: 16rpx;
+}
+
+/* ── 提示条（禁用态 / 未开通功能等）──────────────────────────────────── */
+.banner {
+  margin: 20rpx 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+.banner-warn { background: #fff7e6; color: #a15c00; }
+.banner-info { background: #eef4ff; color: #2c5aa0; }
+.banner-danger { background: #fdecee; color: #a3122b; }
+
+/* ── 分隔线 ───────────────────────────────────────────────────────────── */
+.divider { height: 2rpx; background: #eef0f3; margin: 20rpx 0; }
+
+/* ── 底部固定操作栏（确认订单等）─────────────────────────────────────── */
+.footer-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #ffffff;
+  border-top: 2rpx solid #eef0f3;
+  padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 20;
+}
+
+/* ── 列表项 ───────────────────────────────────────────────────────────── */
+.list-item {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 28rpx;
+  margin: 20rpx 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(24, 28, 35, 0.05);
+}
+.list-item:active { background: #fafafb; }
+
+/* ── 表单 ─────────────────────────────────────────────────────────────── */
+.form-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid #f2f3f5;
+}
+.form-row:last-child { border-bottom: none; }
+.form-label {
+  width: 160rpx;
+  flex-shrink: 0;
+  color: #5a6371;
+  font-size: 28rpx;
+}
+.form-row-stack {
+  display: block;
+}
+.form-row-stack .form-label {
+  width: auto;
+  margin-bottom: 12rpx;
+}
+.form-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #1f2329;
+  text-align: right;
+}
+.form-textarea {
+  width: 100%;
+  min-height: 120rpx;
+  font-size: 28rpx;
+  color: #1f2329;
+}
+.form-required { color: #c8102e; margin-left: 4rpx; }
+
+/* ── 窄屏适配（用户约定：任何前端改动必须兼顾窄屏可用性）────────────── */
+@media (max-width: 360px) {
+  .form-row { display: block; }
+  .form-label { width: auto; margin-bottom: 12rpx; }
+  .form-input { text-align: left; }
+}

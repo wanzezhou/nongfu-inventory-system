@@ -24,14 +24,24 @@
  */
 const MARKERS = {
   workers: "worker_name LIKE '冒烟%'",
-  miniAccounts: "username LIKE 'smoke\\_%'",
-  products: "(product_name LIKE '冒烟%' OR product_name LIKE '%测试商品%' OR product_code LIKE 'SMK%' OR product_code LIKE 'TESTP%')",
+  // ⚠️ 2026-09-20 修正：mini_accounts.username / password_hash 两列已按文档 §4.1.1
+  //    在小程序迁移中移除（新版走 wx.login + 微信实名手机号，不需要口令）。
+  //    原标记 `username LIKE 'smoke\\_%'` 会让**所有**冒烟脚本在收尾时抛
+  //    「Unknown column 'username'」—— 冒烟主体跑通了、收尾却炸，最容易被误判成回归。
+  //    改用 openid 前缀识别（openid 仍存在，且是绑定关系的事实主键）。
+  //    注意：**不**把 dev_ 前缀纳入标记 —— 那是本地开发登录建立的真实绑定，不该被清理。
+  miniAccounts: "openid LIKE 'smoke\\_%'",
+  // 小程序钱包：冒烟自建钱包用 SMKW 前缀或挂在冒烟主体名下
+  walletAccounts:
+    "(wallet_id LIKE 'SMKW%' OR owner_id IN (SELECT worker_id FROM workers WHERE worker_name LIKE '冒烟%'))",
+  products:
+    "(product_name LIKE '冒烟%' OR product_name LIKE '%测试商品%' OR product_code LIKE 'SMK%' OR product_code LIKE 'TESTP%')",
   orders: "customer_name LIKE '冒烟%'",
   purchaseRecords: "(remark LIKE '%冒烟%' OR void_reason LIKE '%冒烟%')",
   txByRemark: "remark LIKE '%冒烟%'",
   subStations: "(station_name LIKE '冒烟%' OR station_id LIKE 'SMKST%')",
   machineStations: "(station_name LIKE '冒烟%' OR machine_id LIKE 'SMKM%')",
-  users: "username LIKE 'smoke\\_%'",
+  users: "username LIKE 'smoke\\_%'"
 };
 
 async function cleanupSmokeResidue(pool, opts = {}) {
@@ -42,6 +52,20 @@ async function cleanupSmokeResidue(pool, opts = {}) {
   try {
     const pick = async (sql, args = []) => (await conn.query(sql, args))[0];
 
+    // 小程序相关表是否存在（2026-09-20 新增）：
+    // 迁移 migration_mini_program_v1.sql 应用前，wallet_* / mini_idempotency / mini_audit_logs
+    // 并不存在。这里做一次存在性探测，使本收尾函数对新旧两种库都可用 ——
+    // 若不加判断，未迁移的库上所有冒烟脚本都会在收尾阶段报「表不存在」。
+    const [miniTableRows] = await conn.query(
+      `SELECT TABLE_NAME AS t FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME IN ('wallet_accounts','wallet_transactions','mini_idempotency','mini_audit_logs')`
+    );
+    const miniTables = new Set(miniTableRows.map(r => r.t));
+    const hasWallets = miniTables.has('wallet_accounts') && miniTables.has('wallet_transactions');
+    const hasIdem = miniTables.has('mini_idempotency');
+    const hasAudit = miniTables.has('mini_audit_logs');
+
     const smokeWorkers = await pick(`SELECT worker_id FROM workers WHERE ${MARKERS.workers}`);
     const smokeAccounts = await pick(`SELECT id FROM mini_accounts WHERE ${MARKERS.miniAccounts}`);
     const smokeProducts = await pick(`SELECT product_id FROM products WHERE ${MARKERS.products}`);
@@ -50,6 +74,9 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const smokeStations = await pick(`SELECT station_id FROM sub_stations WHERE ${MARKERS.subStations}`);
     const smokeMachines = await pick(`SELECT machine_id FROM machine_stations WHERE ${MARKERS.machineStations}`);
     const smokeUsers = await pick(`SELECT id FROM users WHERE ${MARKERS.users}`);
+    const smokeWallets = hasWallets
+      ? await pick(`SELECT wallet_id FROM wallet_accounts WHERE ${MARKERS.walletAccounts}`)
+      : [];
 
     const workerIds = smokeWorkers.map(r => r.worker_id);
     const accountIds = smokeAccounts.map(r => r.id);
@@ -59,29 +86,41 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const stationIds = smokeStations.map(r => r.station_id);
     const machineIds = smokeMachines.map(r => r.machine_id);
     const userIds = smokeUsers.map(r => r.id);
+    const walletIds = smokeWallets.map(r => r.wallet_id);
 
     // 冒烟订单曾引用的水站（删除订单前先记下，删完再按凭证重算欠款；见下方「水站欠款回补」）
     const touchedStationRows = orderIds.length
-      ? await pick('SELECT DISTINCT station_id FROM orders WHERE order_id IN (?) AND station_id IS NOT NULL', [orderIds])
+      ? await pick('SELECT DISTINCT station_id FROM orders WHERE order_id IN (?) AND station_id IS NOT NULL', [
+          orderIds
+        ])
       : [];
     const touchedStationIds = touchedStationRows.map(r => r.station_id);
 
     const txConds = [MARKERS.txByRemark];
     const txArgs = [];
-    if (purchaseIds.length) { txConds.push('related_id IN (?)'); txArgs.push(purchaseIds); }
+    if (purchaseIds.length) {
+      txConds.push('related_id IN (?)');
+      txArgs.push(purchaseIds);
+    }
     if (extraSalaryPayments.length) {
       txConds.push("(related_module = 'salary_payment' AND related_id IN (?))");
       txArgs.push(extraSalaryPayments);
     }
-    const txRows = await pick(
-      `SELECT tx_id FROM finance_transactions WHERE ${txConds.join(' OR ')}`, txArgs
-    );
+    const txRows = await pick(`SELECT tx_id FROM finance_transactions WHERE ${txConds.join(' OR ')}`, txArgs);
     const txIds = txRows.map(r => r.tx_id);
 
     const touched = [
-      workerIds.length, accountIds.length, productIds.length,
-      orderIds.length, purchaseIds.length, txIds.length, extraSalaryPayments.length,
-      stationIds.length, machineIds.length, userIds.length,
+      workerIds.length,
+      accountIds.length,
+      productIds.length,
+      orderIds.length,
+      purchaseIds.length,
+      txIds.length,
+      extraSalaryPayments.length,
+      stationIds.length,
+      machineIds.length,
+      userIds.length,
+      walletIds.length
     ].reduce((a, b) => a + b, 0);
     if (!touched) return { total: 0, resume: '无残留' };
 
@@ -103,7 +142,10 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     await del('water_tickets', "DELETE FROM water_tickets WHERE remark LIKE '%冒烟%'");
     // 水票永远按真实当月发行，2099 开头的月份必然来自冒烟脚本的 month: '2099-01'
     await del('water_tickets', "DELETE FROM water_tickets WHERE month LIKE '2099%'");
-    await del('water_ticket_issuance', "DELETE FROM water_ticket_issuance WHERE month LIKE '2099%' OR remark LIKE '%冒烟%'");
+    await del(
+      'water_ticket_issuance',
+      "DELETE FROM water_ticket_issuance WHERE month LIKE '2099%' OR remark LIKE '%冒烟%'"
+    );
     await del('machine_sales', "DELETE FROM machine_sales WHERE sale_date >= '2099-01-01' OR remark LIKE '%冒烟%'");
     if (productIds.length) {
       await del('order_items', 'DELETE FROM order_items WHERE product_id IN (?)', [productIds]);
@@ -115,21 +157,97 @@ async function cleanupSmokeResidue(pool, opts = {}) {
       await del('inventory', 'DELETE FROM inventory WHERE product_id IN (?)', [productIds]);
     }
     if (extraSalaryPayments.length) {
-      await del('salary_payment_advances', 'DELETE FROM salary_payment_advances WHERE payment_id IN (?)', [extraSalaryPayments]);
+      await del('salary_payment_advances', 'DELETE FROM salary_payment_advances WHERE payment_id IN (?)', [
+        extraSalaryPayments
+      ]);
     }
     if (txIds.length) {
       await del('finance_transactions', 'DELETE FROM finance_transactions WHERE tx_id IN (?)', [txIds]);
     }
+    // ---- 小程序钱包 / 幂等 / 审计 清理（2026-09-20 新增）----
+    // ⚠️ 为什么必须在这里清：钱包的「余额 = 期初 + Σ正向流水 − Σ负向流水」是资金恒等式
+    //    （文档 §11.5 / §44.12），只要留下一条孤儿流水或留下被改动过的余额，恒等式即破。
+    //    冒烟脚本若只删订单、不清钱包流水，下一次跑「钱包恒等式」断言就会假红。
+    if (hasWallets) {
+      if (orderIds.length) {
+        await del(
+          'wallet_transactions',
+          "DELETE FROM wallet_transactions WHERE related_type = 'ORDER' AND related_id IN (?)",
+          [orderIds]
+        );
+      }
+      // 冒烟备注 / 冒烟操作人标记（与 ORDER 关联之外的手工调整、充值等）
+      await del('wallet_transactions', "DELETE FROM wallet_transactions WHERE remark LIKE '%冒烟%'");
+      await del('wallet_transactions', "DELETE FROM wallet_transactions WHERE operator_id LIKE '%smoke%'");
+      if (walletIds.length) {
+        // 先删流水（外键 ON DELETE RESTRICT：钱包下有流水就删不掉钱包）
+        await del('wallet_transactions', 'DELETE FROM wallet_transactions WHERE wallet_id IN (?)', [walletIds]);
+        await del('wallet_accounts', 'DELETE FROM wallet_accounts WHERE wallet_id IN (?)', [walletIds]);
+      }
+      // 挂在本轮冒烟主体名下的钱包（可能未被 wallet_id 前缀命中）
+      if (workerIds.length) {
+        const [w] = await conn.query(
+          "SELECT wallet_id FROM wallet_accounts WHERE owner_type = 'SALESMAN' AND owner_id IN (?)",
+          [workerIds]
+        );
+        const ids = w.map(r => r.wallet_id);
+        if (ids.length) {
+          await del('wallet_transactions', 'DELETE FROM wallet_transactions WHERE wallet_id IN (?)', [ids]);
+          await del('wallet_accounts', 'DELETE FROM wallet_accounts WHERE wallet_id IN (?)', [ids]);
+        }
+      }
+      if (stationIds.length) {
+        const [w] = await conn.query(
+          "SELECT wallet_id FROM wallet_accounts WHERE owner_type = 'STATION' AND owner_id IN (?)",
+          [stationIds]
+        );
+        const ids = w.map(r => r.wallet_id);
+        if (ids.length) {
+          await del('wallet_transactions', 'DELETE FROM wallet_transactions WHERE wallet_id IN (?)', [ids]);
+          await del('wallet_accounts', 'DELETE FROM wallet_accounts WHERE wallet_id IN (?)', [ids]);
+        }
+      }
+      await del('mini_payment_orders', "DELETE FROM mini_payment_orders WHERE out_trade_no LIKE 'SMK%'");
+    }
+    if (hasIdem) {
+      // ⚠️ 幂等键残留会**污染下一次运行**：同键重试会被判定为「重复请求」而直接返回首次结果，
+      //    表现为「第二次跑冒烟时下单没有真的落库」。故必须清理。
+      await del('mini_idempotency', "DELETE FROM mini_idempotency WHERE idem_key LIKE 'smoke%'");
+      await del('mini_idempotency', "DELETE FROM mini_idempotency WHERE scope LIKE '%SMK%'");
+      if (accountIds.length) {
+        await del('mini_idempotency', 'DELETE FROM mini_idempotency WHERE mini_account_id IN (?)', [accountIds]);
+      }
+    }
+    if (hasAudit) {
+      if (accountIds.length) {
+        await del('mini_audit_logs', 'DELETE FROM mini_audit_logs WHERE actor_id IN (?)', [
+          accountIds.map(id => `mini:${id}`)
+        ]);
+      }
+      if (orderIds.length) {
+        await del('mini_audit_logs', "DELETE FROM mini_audit_logs WHERE target_type = 'ORDER' AND target_id IN (?)", [
+          orderIds
+        ]);
+      }
+      // 本地开发登录建立的绑定也会留审计，但那是真实绑定，不清理
+      await del('mini_audit_logs', "DELETE FROM mini_audit_logs WHERE actor_type = 'DEV' AND detail LIKE '%冒烟%'");
+    }
+
     // 订单营收入账流水（需求 5）的孤儿：
     // 多个老冒烟脚本（smoke_order_pricing / smoke_a6_revenue / smoke_salary_advance）
     // 会用**原生 SQL 直删订单**，绕过 DELETE /orders 的回冲逻辑，
     // 于是 related_module='order_revenue' 的流水成了悬挂数据，且账户余额被抬高。
     // 这里按「关联订单已不存在」清理，随后统一按恒等式重算余额即可自愈。
-    await del('finance_transactions', `DELETE FROM finance_transactions
+    await del(
+      'finance_transactions',
+      `DELETE FROM finance_transactions
       WHERE related_module = 'order_revenue'
-        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = finance_transactions.related_id)`);
+        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = finance_transactions.related_id)`
+    );
     // 订单已不存在却仍留在 water_tickets.order_id 上的悬挂引用（同理由直删订单造成）
-    await conn.query('UPDATE water_tickets SET order_id = NULL WHERE order_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = water_tickets.order_id)');
+    await conn.query(
+      'UPDATE water_tickets SET order_id = NULL WHERE order_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = water_tickets.order_id)'
+    );
     if (purchaseIds.length) {
       await del('purchase_records', 'DELETE FROM purchase_records WHERE purchase_id IN (?)', [purchaseIds]);
     }
@@ -200,17 +318,52 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     for (const a of accounts) {
       const target = Math.round((Number(a.initial_balance) + (netMap[a.account_id] || 0)) * 100) / 100;
       if (Math.abs(target - Number(a.current_balance)) > 0.001) {
-        await conn.query('UPDATE finance_accounts SET current_balance = ? WHERE account_id = ?', [target, a.account_id]);
+        await conn.query('UPDATE finance_accounts SET current_balance = ? WHERE account_id = ?', [
+          target,
+          a.account_id
+        ]);
         summary.balanceFixed = (summary.balanceFixed || 0) + 1;
+      }
+    }
+
+    // 按恒等式重算**钱包**余额（2026-09-20 新增，与上面 finance_accounts 同一手法）
+    // ⚠️ 为什么两套账本都要自愈：文档 §24.5 约束 1 要求「两套账本必须同事务」。
+    //    冒烟若删掉钱包流水却不动 balance，钱包恒等式（§11.5）就破了 ——
+    //    下一次跑「钱包恒等式」断言会假红，而真实原因在上一次运行的收尾阶段。
+    //    这个自愈对**停用钱包同样生效**（§11.7 第 4 条：恒等式在 status=0 时也必须成立）。
+    if (hasWallets) {
+      const [wallets] = await conn.query('SELECT wallet_id, initial_balance, balance FROM wallet_accounts');
+      const [wnets] = await conn.query(
+        `SELECT wallet_id, ROUND(COALESCE(SUM(CASE WHEN direction = 1 THEN amount WHEN direction = 2 THEN -amount ELSE 0 END), 0), 2) net
+           FROM wallet_transactions GROUP BY wallet_id`
+      );
+      const wnetMap = {};
+      for (const n of wnets) wnetMap[n.wallet_id] = Number(n.net);
+      for (const w of wallets) {
+        const target = Math.round((Number(w.initial_balance) + (wnetMap[w.wallet_id] || 0)) * 100) / 100;
+        if (Math.abs(target - Number(w.balance)) > 0.001) {
+          await conn.query('UPDATE wallet_accounts SET balance = ? WHERE wallet_id = ?', [target, w.wallet_id]);
+          summary.walletBalanceFixed = (summary.walletBalanceFixed || 0) + 1;
+        }
       }
     }
 
     await conn.commit();
     const total = Object.values(summary).reduce((a, b) => a + b, 0);
-    log(`  [清理] 冒烟残留已清除：${Object.entries(summary).map(([k, v]) => `${k}×${v}`).join(' ') || '无'}`);
+    log(
+      `  [清理] 冒烟残留已清除：${
+        Object.entries(summary)
+          .map(([k, v]) => `${k}×${v}`)
+          .join(' ') || '无'
+      }`
+    );
     return { total, detail: summary };
   } catch (e) {
-    try { await conn.rollback(); } catch { /* ignore */ }
+    try {
+      await conn.rollback();
+    } catch {
+      /* ignore */
+    }
     log(`  [清理] ⚠️ 收尾清理失败（不影响冒烟结论）：${e.message}`);
     return { total: 0, error: e.message };
   } finally {
@@ -243,7 +396,10 @@ async function revertOrderRevenueBySql(pool, orderIds) {
   );
   let reverted = 0;
   for (const t of txs) {
-    await pool.query('UPDATE finance_accounts SET current_balance = current_balance - ? WHERE account_id = ?', [Number(t.amount), t.account_id]);
+    await pool.query('UPDATE finance_accounts SET current_balance = current_balance - ? WHERE account_id = ?', [
+      Number(t.amount),
+      t.account_id
+    ]);
     await pool.query('DELETE FROM finance_transactions WHERE tx_id = ?', [t.tx_id]);
     reverted += Number(t.amount) || 0;
   }
@@ -315,7 +471,9 @@ async function reconcileStationDebt(pool, stationIds = null, apply = false) {
 }
 
 module.exports = {
-  cleanupSmokeResidue, MARKERS,
-  revertOrderRevenueBySql, sweepOrphanOrderRevenue,
+  cleanupSmokeResidue,
+  MARKERS,
+  revertOrderRevenueBySql,
+  sweepOrphanOrderRevenue,
   reconcileStationDebt
 };

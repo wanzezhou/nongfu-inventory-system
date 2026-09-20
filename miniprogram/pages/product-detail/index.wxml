@@ -1,0 +1,69 @@
+<!-- 商品详情 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{!product}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError || '商品不存在'}}</view>
+  </view>
+
+  <block wx:else>
+    <view class="hero-img">
+      <image wx:if="{{product.imageFull}}" src="{{product.imageFull}}" mode="aspectFill" class="hero-image" />
+      <view wx:else class="hero-ph">{{product.initial}}</view>
+    </view>
+
+    <view class="card">
+      <view class="t-lg t-strong">{{product.productName}}</view>
+      <view class="t-sub mt-8">{{product.specification || '—'}} · {{product.unit || '件'}}</view>
+      <view class="t-sub mt-8">商品编码 {{product.productCode}} · 分类 {{product.category || '未分类'}}</view>
+
+      <view class="divider"></view>
+
+      <view class="row-between">
+        <view class="col">
+          <text class="price-big">{{product.priceText}}</text>
+          <text class="t-sub">{{product.priceLabel}}</text>
+        </view>
+        <view wx:if="{{role === 'salesman' && product.salesmanMinPrice !== null && product.salesmanMinPrice !== undefined}}" class="col" style="align-items: flex-end;">
+          <text class="t-primary t-strong">最低成交价 ¥{{product.salesmanMinPrice}}</text>
+          <text class="t-sub">成交价不得低于此价（服务端强制校验）</text>
+        </view>
+      </view>
+
+      <block wx:if="{{role === 'station'}}">
+        <view class="divider"></view>
+        <view class="row-between">
+          <text class="t-sub">该商品可用水票</text>
+          <text class="t-primary t-strong">{{product.availableTicketQty}} 张</text>
+        </view>
+        <view class="t-sub mt-8">
+          下单时可按明细选择抵扣数量（0 ≤ 抵扣数 ≤ 购买数量），抵扣部分不扣积分
+        </view>
+      </block>
+    </view>
+
+    <view class="card">
+      <view class="row-between">
+        <text class="t-strong">购买数量</text>
+        <view class="stepper">
+          <view class="step-btn" data-delta="-1" bindtap="onQtyChange">−</view>
+          <input class="step-input" type="number" value="{{quantity}}" bindinput="onQtyInput" />
+          <view class="step-btn" data-delta="1" bindtap="onQtyChange">+</view>
+        </view>
+      </view>
+      <view class="t-sub mt-16">下单时服务端会按商品档案重算金额与积分，前端不参与计价</view>
+    </view>
+  </block>
+
+  <view class="footer-bar">
+    <view class="cart-entry" bindtap="goCart">
+      <text>购物车</text>
+      <text wx:if="{{cartCount > 0}}" class="cart-badge">{{cartCount}}</text>
+    </view>
+    <view class="row gap-12 flex-1" style="justify-content: flex-end;">
+      <button class="btn btn-ghost btn-sm" bindtap="addToCart">加入购物车</button>
+      <button class="btn btn-primary btn-sm" bindtap="goCart">去结算</button>
+    </view>
+  </view>
+</view>

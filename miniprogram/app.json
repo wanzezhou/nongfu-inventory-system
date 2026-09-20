@@ -1,0 +1,49 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/mall/index",
+    "pages/cart/index",
+    "pages/wallet/index",
+    "pages/mine/index",
+    "pages/login/index",
+    "pages/product-detail/index",
+    "pages/order-confirm/index",
+    "pages/order-list/index",
+    "pages/order-detail/index",
+    "pages/wallet-transactions/index",
+    "pages/wallet-recharge/index",
+    "pages/station-tickets/index",
+    "pages/station-profile/index",
+    "pages/admin-wallet/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#c8102e",
+    "navigationBarTitleText": "农夫订货",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f6f8",
+    "enablePullDownRefresh": false
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#8a8f99",
+    "selectedColor": "#c8102e",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "首页" },
+      { "pagePath": "pages/mall/index", "text": "商城" },
+      { "pagePath": "pages/cart/index", "text": "购物车" },
+      { "pagePath": "pages/wallet/index", "text": "积分" },
+      { "pagePath": "pages/mine/index", "text": "我的" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于填写配送地址（选填，不授权也可手工输入地址）"
+    }
+  }
+}
