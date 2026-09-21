@@ -130,6 +130,14 @@ Page({
   goAdminMaster() {
     ui.navTo('/pages/admin-master/index');
   },
+  /** Phase 8b 业务域：库存（入库 / 出库；入库会在同一事务里扣付款账户余额） */
+  goAdminInventory() {
+    ui.navTo('/pages/admin-inventory/index');
+  },
+  /** Phase 8b 业务域：出入库记录（入库记录可作废，出库台账只读） */
+  goAdminPurchases() {
+    ui.navTo('/pages/admin-purchases/index');
+  },
   goOrderDetail(e) {
     ui.navTo(`/pages/order-detail/index?id=${e.currentTarget.dataset.id}`);
   },

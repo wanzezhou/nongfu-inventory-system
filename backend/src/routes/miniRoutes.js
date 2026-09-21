@@ -40,6 +40,7 @@ const adminCtrl = require('../controllers/mini/adminController');
 const adminExpenseCtrl = require('../controllers/mini/admin/expenseController');
 const adminIncomeCtrl = require('../controllers/mini/admin/incomeController');
 const adminProductCtrl = require('../controllers/mini/admin/productController');
+const adminInventoryCtrl = require('../controllers/mini/admin/inventoryController');
 // 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
 const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
@@ -62,7 +63,10 @@ const miniLoginLimiter = rateLimit({
 // 常规小程序接口限流：每 IP 每分钟 120 次
 const miniApiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  // ⚠️ 默认 120 次/分钟对真实用户足够，但 `smoke_mini_admin.js` 一轮要打 240+ 个
+  //    mini 接口 —— 第 14 节开始集体 429，排查方向极易被带偏到业务代码上（实测踩到）。
+  //    跑冒烟时以 `MINI_API_RATE_MAX=1000 node src/app.js` 启动放宽；生产不设该变量，维持 120。
+  max: Number(process.env.MINI_API_RATE_MAX) || 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { code: 429, message: '请求过于频繁，请稍后再试', data: null }
@@ -217,7 +221,24 @@ router.post('/admin/machines', requireMiniAdmin, requireMiniActive, mc.create);
 router.put('/admin/machines/:id', requireMiniAdmin, requireMiniActive, mc.update);
 router.delete('/admin/machines/:id', requireMiniAdmin, requireMiniActive, mc.remove);
 
+// ── 域 8/17：库存（入库 / 出库 / 作废 + 进货记录 + 出库台账）────────────────────
+// ⚠️ 本域三个写接口的**核心事务体已抽到 Web 控制器**（applyStockIn / applyStockOut /
+//    applyPurchaseVoid 并导出），Web 与小程序共用同一段资金纪律 —— 两端不可能分叉。
+// ⚠️ 库存**没有编辑接口**：入库单记错要「作废重开」（作废会回退库存 + 原路退回款项），
+//    直接把历史入库单的数量改掉会让它与资金流水对不上、账实关系失去可追溯性。
+// ⚠️ `/admin/inventory/options` 必须早于 `/admin/inventory/:productId`（仓库陷阱）。
+// ⚠️ `/admin/purchases/:purchaseId/void` 是静态尾段，与 `/admin/purchases` 无冲突。
+router.get('/admin/inventory/options', requireMiniAdmin, adminInventoryCtrl.getFormOptions);
+router.post('/admin/inventory/in', requireMiniAdmin, requireMiniActive, adminInventoryCtrl.stockIn);
+router.post('/admin/inventory/out', requireMiniAdmin, requireMiniActive, adminInventoryCtrl.stockOut);
+router.get('/admin/inventory', requireMiniAdmin, adminInventoryCtrl.listInventory);
+router.get('/admin/inventory/:productId', requireMiniAdmin, adminInventoryCtrl.getProductStock);
+router.get('/admin/purchases', requireMiniAdmin, adminInventoryCtrl.listPurchases);
+router.post('/admin/purchases/:purchaseId/void', requireMiniAdmin, requireMiniActive, adminInventoryCtrl.voidPurchase);
+router.get('/admin/stock-out-records', requireMiniAdmin, adminInventoryCtrl.listStockOutRecords);
+
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
+
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，
 //    返回「未登录」401 —— 把「接口不存在」伪装成「鉴权失败」，
 //    排障时会往错误方向查（且会让 §22.4 的隔离验证出现假阳性）。

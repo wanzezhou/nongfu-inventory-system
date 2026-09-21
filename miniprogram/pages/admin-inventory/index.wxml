@@ -1,0 +1,79 @@
+<!-- 库存列表（管理员 · Phase 8b 第 8 域「库存」）
+     ⚠️ 库存价值合计（totalValue）由**服务端**按 Σ max(库存,0) × 进货价 算出，前端只展示 ——
+        前端算钱一律违规，且这里若自己累加，翻页时只会算当前页（静默算少）。
+     ⚠️ 「偏低」标签用的是**展示提示阈值**（与仪表盘库存预警同一口径，10），
+        它是给人看的提示，**不是业务规则** —— 不要据此拦截任何操作。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <!-- 排序：两档，字段名与后端 INVENTORY_SORT_FIELDS 白名单一致 -->
+  <view class="iv-filter">
+    <view
+      wx:for="{{sorts}}"
+      wx:key="key"
+      class="iv-chip {{sortKey === item.key ? 'is-active' : ''}}"
+      data-sort="{{item.key}}"
+      data-order="{{item.order}}"
+      bindtap="onSortTap"
+    >{{item.label}}</view>
+  </view>
+
+  <view class="iv-search">
+    <input
+      class="iv-search-input"
+      value="{{keyword}}"
+      placeholder="按商品名称或编码搜索"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onSearch"
+    />
+    <view class="iv-search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">库存价值合计</text>
+      <text class="t-primary t-strong">¥{{totalValueText}}</text>
+    </view>
+    <view class="t-sub mt-8">共 {{total}} 个商品（负库存不计入金额）</view>
+  </view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:elif="{{list.length}}">
+    <view wx:for="{{list}}" wx:key="id" class="list-item" data-id="{{item.id}}" bindtap="onItemTap">
+      <view class="row-between">
+        <text class="t-strong flex-1 t-ellipsis">{{item.name}}</text>
+        <text class="{{item.stock <= 0 ? 'amount-out' : 't-strong'}}">{{item.stock}}{{item.unit}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">{{item.code}} · {{item.spec || '—'}}</text>
+        <!-- 标签只做提示：缺货/负库存是**事实**；「偏低」用展示阈值 -->
+        <text
+          wx:if="{{item.stock <= 0}}"
+          class="tag tag-primary"
+        >{{item.stock < 0 ? '负库存' : '缺货'}}</text>
+        <text wx:elif="{{item.stock < lowStockHint}}" class="tag tag-warn">偏低</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">进货价 ¥{{item.purchasePriceText}}</text>
+        <text class="t-sub">最近入库 {{item.lastInText}}</text>
+      </view>
+    </view>
+    <view wx:if="{{!hasMore}}" class="empty">— 没有更多了 —</view>
+  </block>
+
+  <view wx:else class="empty">
+    <view class="empty-icon">📦</view>
+    <view>该条件下没有商品</view>
+  </view>
+
+  <view class="footer-bar">
+    <view class="btn btn-ghost btn-sm" bindtap="onStockOut">－ 出库</view>
+    <view class="btn btn-primary btn-sm" bindtap="onStockIn">＋ 入库</view>
+  </view>
+</view>

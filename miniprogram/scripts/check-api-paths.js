@@ -31,13 +31,79 @@ function walk(dir, out = []) {
 
 // ── 1. 抽取小程序侧引用的路径 ────────────────────────────────────────────────
 const calls = new Map(); // path -> 首个引用文件
+const nonLiteral = []; // 无法被静态抽取的调用点（见 findNonLiteralCalls）
 const jsFiles = walk(MP_ROOT).filter(f => f.endsWith('.js') && !f.includes(path.sep + 'scripts' + path.sep));
 
 const TPL_VAR = /\$\{[^}]*\}/g;
 
+/**
+ * 去掉注释（**保留换行与字符偏移**，便于继续用偏移换算行号）
+ * ---------------------------------------------------------------------------
+ * 为什么必须去注释：本仓库的注释里大量出现「正确写法 / 反例」示例
+ * （例如库存域就写了一段 `ui.request.get(isPurchase ? …)` 的反例说明），
+ * 不去注释会让这些示例被当成真实调用 —— 而门禁的误报会训练人忽略告警。
+ * ⚠️ `://` 不当作行注释起点（否则 `'https://…'` 会被截断，藏掉同一行后半段的调用）。
+ */
+function stripComments(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
+}
+
+/**
+ * 盲区探测：调用点**第一个实参不是字符串字面量**的写法
+ * ---------------------------------------------------------------------------
+ * 上面的抽取全是正则，只能认「紧跟在 `(` 后的字符串字面量」。于是下面这类写法
+ * **一条都抽不到**，而它们看起来完全正常：
+ *
+ *     ui.request.get(isPurchase ? '/admin/purchases' : '/admin/stock-out-records', q)
+ *     ui.request.get(path, q)            // path 是上面算出来的
+ *     ui.request.get(`${base}/:id`, q)
+ *
+ * 实测代价：整个库存域的两个列表接口在门禁里消失，交叉校验反过来报
+ * 「后端已注册但小程序未调用」—— 排查方向会被引到「是不是忘了写页面」。
+ *
+ * 处置：**不试图去正则解析表达式**（那会引入更隐蔽的误判），而是把这类调用点
+ * 原样列出来交给人工确认。约定（定式 ⑭）是「接口路径必须写成字面量」，
+ * 所以这里出现条目本身就是待修项 —— 但**不阻断**提交（存量代码可能已若干处）。
+ *
+ * ⚠️ 两类**已被其它规则覆盖**的写法要排除，否则本清单会长期挂着固定几条噪声，
+ *    而「长期存在的告警」等于没有告警：
+ *      ① 配置驱动页面的 `domain.routes.list` 等 —— 路径在 config 里，已被
+ *         `list|detail|create|update|remove` 那条规则读到（主数据四域就是这种写法）；
+ *      ② `upload(...)` —— 它的第一个参数是**本地文件路径**，接口地址在第二个参数的
+ *         `url:` 字段里，已被 `url:` 那条规则读到（商品图片上传就是这种写法）。
+ */
+function findNonLiteralCalls(src) {
+  const callRe = /\b(?:request|req|ui\.request)\.(get|post|put|del|delete|upload)\(\s*([^\s)]*)/g;
+  const out = [];
+  let m;
+  while ((m = callRe.exec(src)) !== null) {
+    const method = m[1];
+    const arg = m[2];
+    if (method === 'upload') continue; // 见上方 ②
+    if (/\.routes\./.test(arg)) continue; // 见上方 ①（配置驱动的路径）
+    // 首字符是引号 = 字面量，已被主规则抽取，不在此列
+    if (arg === '' || /^['"`]/.test(arg)) continue;
+    const line = src.slice(0, m.index).split('\n').length;
+    out.push({
+      line,
+      snippet: src
+        .slice(m.index, m.index + 90)
+        .split('\n')[0]
+        .trim()
+    });
+  }
+  return out;
+}
+
 for (const f of jsFiles) {
-  const src = fs.readFileSync(f, 'utf8');
+  // 先剥注释再抽取：注释里的示例路径/反例写法都不是真实调用
+  const src = stripComments(fs.readFileSync(f, 'utf8'));
   const rel = path.relative(MP_ROOT, f);
+  for (const hit of findNonLiteralCalls(src)) {
+    nonLiteral.push({ file: rel, line: hit.line, snippet: hit.snippet });
+  }
   // request.get('/x') / request.post('/x', ...) / req.get(
   const patterns = [
     // ⚠️ 方法名必须列全：早期只认 get/post，于是 put/del/upload 的调用**完全不被检查**。
@@ -109,6 +175,17 @@ const unused = registered.filter(r => ![...calls.keys()].some(c => matches(c, r.
 console.log(`\n后端已注册但小程序未调用 ${unused.length} 条：`);
 if (unused.length) unused.forEach(r => console.log(`   - ${r.method} ${r.path}`));
 else console.log('   （无）');
+
+// ── 4. 盲区提示：抽不到的调用点 ──────────────────────────────────────────────
+// ⚠️ 这一段的存在意义：上面的 ✅/未调用清单都可能**因为抽不到而失真**。
+//    只要这里非空，上面两段结论就都不完整 —— 所以必须显式打印，不能静默跳过。
+if (nonLiteral.length) {
+  console.log(`\n⚠️  有 ${nonLiteral.length} 处调用点的路径**不是字面量**，本脚本抽不到：`);
+  nonLiteral.forEach(n => console.log(`   - ${n.file}:${n.line}  ${n.snippet}`));
+  console.log('   → 这些接口不会被计入上面的校验结果。请改为字面量写法（定式 ⑭）。');
+} else {
+  console.log('\n（无「非字面量调用点」—— 上面的清单是完整的）');
+}
 
 if (bad) {
   console.log(`\n❌ ${bad} 条路径在后端不存在，小程序点击后会报「接口不存在」`);

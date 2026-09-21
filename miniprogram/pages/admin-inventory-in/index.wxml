@@ -1,0 +1,120 @@
+<!-- 入库（管理员 · Phase 8b 第 8 域）
+     ⚠️ 本页有两件事必须讲清楚，否则用户会误解资金状态：
+        ① 付款账户是**必选**的 —— 入库与扣款在同一事务，不存在「已入库未扣款」；
+        ② 「预计扣款」是前端按 单价×数量 算的**提示值**，不是最终入账金额；
+           真实金额由服务端在事务内重算并落流水（唯一安全边界在服务端）。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <view wx:if="{{loading}}" class="empty">正在加载…</view>
+
+  <view wx:elif="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:else>
+    <view class="card">
+      <view class="section-title">入库信息</view>
+
+      <picker
+        mode="selector"
+        range="{{productLabels}}"
+        value="{{productIndex < 0 ? 0 : productIndex}}"
+        bindchange="onProductChange"
+      >
+        <view class="form-row">
+          <text class="form-label">商品<text class="form-required">*</text></text>
+          <view class="iv-value {{productIndex < 0 ? 'is-placeholder' : ''}}">
+            {{productIndex < 0 ? '请选择商品' : productLabels[productIndex]}} ›
+          </view>
+        </view>
+      </picker>
+
+      <view wx:if="{{selectedProduct}}" class="form-row">
+        <text class="form-label">当前库存</text>
+        <view class="iv-value">{{selectedProduct.stock}}{{selectedProduct.unit}}</view>
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">入库数量<text class="form-required">*</text></text>
+        <input
+          class="form-input"
+          type="number"
+          value="{{quantity}}"
+          placeholder="件数（整数）"
+          bindinput="onQuantityInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">入库单价</text>
+        <input
+          class="form-input"
+          type="digit"
+          value="{{unitPrice}}"
+          placeholder="选商品后自动带出进货价"
+          bindinput="onPriceInput"
+        />
+      </view>
+
+      <picker
+        mode="selector"
+        range="{{supplierLabels}}"
+        value="{{supplierIndex}}"
+        bindchange="onSupplierChange"
+      >
+        <view class="form-row">
+          <text class="form-label">供应商</text>
+          <view class="iv-value">{{supplierLabels[supplierIndex]}} ›</view>
+        </view>
+      </picker>
+
+      <picker
+        mode="selector"
+        range="{{accountLabels}}"
+        value="{{accountIndex < 0 ? 0 : accountIndex}}"
+        bindchange="onAccountChange"
+      >
+        <view class="form-row">
+          <text class="form-label">付款账户<text class="form-required">*</text></text>
+          <view class="iv-value {{accountIndex < 0 ? 'is-placeholder' : ''}}">
+            {{accountIndex < 0 ? '请选择付款账户' : accountLabels[accountIndex]}} ›
+          </view>
+        </view>
+      </picker>
+
+      <view class="form-row form-row-stack">
+        <text class="form-label">备注</text>
+        <textarea
+          class="form-textarea"
+          value="{{remark}}"
+          placeholder="选填，如批次、送货单号"
+          maxlength="200"
+          bindinput="onRemarkInput"
+        />
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="row-between">
+        <text class="t-sub">预计扣款</text>
+        <text class="t-primary t-strong">¥{{previewText}}</text>
+      </view>
+      <view class="t-sub mt-8">实际金额由服务端在事务中重算并生成资金流水。</view>
+      <view wx:if="{{accountIndex >= 0}}" class="t-sub mt-8">
+        账户余额 ¥{{selectedAccountBalanceText}}（扣款前服务端会再校验一次）
+      </view>
+    </view>
+
+    <view wx:if="{{formError}}" class="banner banner-danger">{{formError}}</view>
+  </block>
+
+  <view class="footer-bar">
+    <view
+      class="btn btn-primary btn-block {{canSubmit ? '' : 'btn-disabled'}}"
+      bindtap="onSubmit"
+    >{{submitting ? '提交中…' : '确认入库'}}</view>
+  </view>
+</view>

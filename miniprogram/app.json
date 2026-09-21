@@ -22,7 +22,11 @@
     "pages/admin-products/index",
     "pages/admin-product-edit/index",
     "pages/admin-master/index",
-    "pages/admin-master-edit/index"
+    "pages/admin-master-edit/index",
+    "pages/admin-inventory/index",
+    "pages/admin-inventory-in/index",
+    "pages/admin-inventory-out/index",
+    "pages/admin-purchases/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

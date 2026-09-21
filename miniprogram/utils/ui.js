@@ -49,6 +49,34 @@ function confirm(title, content, confirmText) {
   });
 }
 
+/**
+ * 带输入的确认（Promise 风格）——用于「必须留下原因」的撤销类操作（如作废入库单）
+ *
+ * @returns {Promise<string|null>} 用户填写的文本（已 trim）；取消或留空返回 null
+ *
+ * ⚠️ 为什么不用两段式（先问确认、再单独问原因）：撤销类操作只有**一次**决策机会，
+ *    拆成两步会让用户在第二步放弃时误以为已经作废（而其实什么都没发生）。
+ * ⚠️ 留空即视为取消：撤销原因是要进审计与台账的，空原因等于没有可追溯性。
+ */
+function prompt(title, placeholder) {
+  return new Promise(resolve => {
+    wx.showModal({
+      title: title || '请输入',
+      editable: true,
+      placeholderText: placeholder || '',
+      confirmText: '确定',
+      confirmColor: '#c8102e',
+      success(res) {
+        const text = String((res && res.content) || '').trim();
+        resolve(res && res.confirm && text ? text : null);
+      },
+      fail() {
+        resolve(null);
+      }
+    });
+  });
+}
+
 /** 页面内导航（非 tab 页用 navigateTo） */
 function navTo(url) {
   wx.navigateTo({
@@ -90,6 +118,7 @@ module.exports = {
   syncTabBar,
   pageReady,
   confirm,
+  prompt,
   navTo,
   switchTab,
   showError,

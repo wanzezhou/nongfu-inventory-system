@@ -1,0 +1,95 @@
+<!-- 出库（管理员 · Phase 8b 第 8 域）
+     ⚠️ 出库**不涉及资金**（本域的钱只在入库与作废时动）：出库只减库存 + 写台账。
+        页面必须写清楚这一点，否则用户会以为「出库 = 收到钱」或「出库 = 要付款」。
+     ⚠️ 「其他」类型（out_type=3）允许库存扣成负数 —— 这是盘库调整的既有语义，
+        服务端不加拦截。页面对此有明确提示，避免用户误以为填错了。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <view wx:if="{{loading}}" class="empty">正在加载…</view>
+
+  <view wx:elif="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:else>
+    <view class="card">
+      <view class="section-title">出库信息</view>
+
+      <picker
+        mode="selector"
+        range="{{productLabels}}"
+        value="{{productIndex < 0 ? 0 : productIndex}}"
+        bindchange="onProductChange"
+      >
+        <view class="form-row">
+          <text class="form-label">商品<text class="form-required">*</text></text>
+          <view class="iv-value {{productIndex < 0 ? 'is-placeholder' : ''}}">
+            {{productIndex < 0 ? '请选择商品' : productLabels[productIndex]}} ›
+          </view>
+        </view>
+      </picker>
+
+      <view wx:if="{{selectedProduct}}" class="form-row">
+        <text class="form-label">当前库存</text>
+        <view class="iv-value">{{selectedProduct.stock}}{{selectedProduct.unit}}</view>
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">出库数量<text class="form-required">*</text></text>
+        <input
+          class="form-input"
+          type="number"
+          value="{{quantity}}"
+          placeholder="件数（整数）"
+          bindinput="onQuantityInput"
+        />
+      </view>
+
+      <picker
+        mode="selector"
+        range="{{outTypeLabels}}"
+        value="{{outTypeIndex}}"
+        bindchange="onOutTypeChange"
+      >
+        <view class="form-row">
+          <text class="form-label">出库类型</text>
+          <view class="iv-value">{{outTypeLabels[outTypeIndex]}} ›</view>
+        </view>
+      </picker>
+
+      <view class="form-row form-row-stack">
+        <text class="form-label">备注</text>
+        <textarea
+          class="form-textarea"
+          value="{{remark}}"
+          placeholder="选填，如去向、领用人"
+          maxlength="200"
+          bindinput="onRemarkInput"
+        />
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="row-between">
+        <text class="t-sub">出库后预计库存</text>
+        <text class="t-strong">{{afterStockText}}</text>
+      </view>
+      <view class="t-sub mt-8">出库不影响任何账户余额，也不生成资金流水。</view>
+      <view wx:if="{{outType === 3}}" class="banner banner-warn mt-16">
+        「其他」类型用于盘库调整：库存允许扣成负数，服务端不会拦。
+      </view>
+    </view>
+
+    <view wx:if="{{formError}}" class="banner banner-danger">{{formError}}</view>
+  </block>
+
+  <view class="footer-bar">
+    <view
+      class="btn btn-primary btn-block {{canSubmit ? '' : 'btn-disabled'}}"
+      bindtap="onSubmit"
+    >{{submitting ? '提交中…' : '确认出库'}}</view>
+  </view>
+</view>

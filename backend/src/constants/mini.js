@@ -172,7 +172,14 @@ const IDEM_SCOPE = {
   DISABLE_STATION: 'DISABLE_STATION',
   CREATE_MACHINE: 'CREATE_MACHINE',
   UPDATE_MACHINE: 'UPDATE_MACHINE',
-  DISABLE_MACHINE: 'DISABLE_MACHINE'
+  DISABLE_MACHINE: 'DISABLE_MACHINE',
+  // ── Phase 8b 第 8 域 库存（入库/出库/作废）——
+  //    ⚠️ 只有三个动作：库存没有「改一笔」的语义。入库单记错了要**作废重开**
+  //      （作废会回退库存 + 原路退回款项），不允许直接编辑历史入库单 ——
+  //      直接把数量改掉会让账实关系失去可追溯性（资金流水与库存变动都对不上单据）。
+  STOCK_IN: 'STOCK_IN',
+  STOCK_OUT: 'STOCK_OUT',
+  VOID_PURCHASE: 'VOID_PURCHASE'
 };
 /** 服务端保留幂等键至少 24h（覆盖「用户离线数小时后重试」，§23.1） */
 const IDEM_TTL_HOURS = 24;
@@ -213,6 +220,8 @@ const AUDIT_ACTION = {
   CREATE_PRODUCT: 'CREATE_PRODUCT',
   UPDATE_PRODUCT: 'UPDATE_PRODUCT',
   DISABLE_PRODUCT: 'DISABLE_PRODUCT',
+  // 注：改到最低价时**额外**记一条既有常量 SET_PRODUCT_MIN_PRICE（本对象上方，第一期已定义）——
+  //     价格体系的关键变更值得单独可追溯，不该淹没在 UPDATE_PRODUCT 的 detail 里。
   // ── Phase 8b 主数据四域（供应商/员工/水站/机台）——
   //    四个域由 `_masterFactory.js` 统一构造，动作名按域展开（不用拼接，
   //    这样 grep 一个动作名能立刻定位到域，审计表里也不会出现意料外的动作字符串）
@@ -227,9 +236,14 @@ const AUDIT_ACTION = {
   DISABLE_STATION: 'DISABLE_STATION',
   CREATE_MACHINE: 'CREATE_MACHINE',
   UPDATE_MACHINE: 'UPDATE_MACHINE',
-  DISABLE_MACHINE: 'DISABLE_MACHINE'
-  // 注：改到最低价时**额外**记一条既有常量 SET_PRODUCT_MIN_PRICE（本对象上方，第一期已定义）——
-  //     价格体系的关键变更值得单独可追溯，不该淹没在 UPDATE_PRODUCT 的 detail 里。
+  DISABLE_MACHINE: 'DISABLE_MACHINE',
+  // ── Phase 8b 第 8 域 库存（入库/出库/作废）——
+  //    ⚠️ 只有三个动作：库存没有「改一笔」的语义。入库单记错了要**作废重开**
+  //      （作废会回退库存 + 原路退回款项），不允许直接编辑历史入库单 ——
+  //      直接把数量改掉会让账实关系失去可追溯性（资金流水与库存变动都对不上单据）。
+  STOCK_IN: 'STOCK_IN',
+  STOCK_OUT: 'STOCK_OUT',
+  VOID_PURCHASE: 'VOID_PURCHASE'
 };
 
 // ── 分页（⚠️ mysql2 不支持 LIMIT ?，必须 parseInt 内联）────────────────────

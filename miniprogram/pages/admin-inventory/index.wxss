@@ -1,0 +1,57 @@
+/* 库存列表 · 页面样式（Phase 8b 第 8 域）
+   通用件（card / list-item / btn / tag / t-*）都在 app.wxss，这里只写本页专有的
+   筛选条与搜索行。类名统一带 iv- 前缀，避免与其它页面的局部样式撞名。 */
+
+.iv-filter {
+  display: flex;
+  gap: 12rpx;
+  padding: 20rpx 24rpx 0;
+}
+
+.iv-chip {
+  flex: 1;
+  text-align: center;
+  height: 64rpx;
+  line-height: 64rpx;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  color: #5a6371;
+  background: #ffffff;
+  border: 2rpx solid #eef0f3;
+}
+
+.iv-chip.is-active {
+  background: #fdecee;
+  color: #c8102e;
+  border-color: #fdecee;
+  font-weight: 600;
+}
+
+.iv-search {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 20rpx 24rpx 0;
+}
+
+.iv-search-input {
+  flex: 1;
+  height: 68rpx;
+  padding: 0 20rpx;
+  background: #ffffff;
+  border: 2rpx solid #eef0f3;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  color: #1f2329;
+}
+
+.iv-search-btn {
+  height: 68rpx;
+  line-height: 68rpx;
+  padding: 0 28rpx;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  color: #1f2329;
+  background: #ffffff;
+  border: 2rpx solid #dcdfe6;
+}

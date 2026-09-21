@@ -1,0 +1,23 @@
+/* 入库 / 出库 表单 · 页面样式（Phase 8b 第 8 域）
+   表单主体用 app.wxss 的通用件（card / form-row / form-label / form-input /
+   form-textarea / form-required / banner / btn / footer-bar），这里只补两处：
+   ① picker 的「只读值」展示（picker 本身不渲染文字，要自己放一个 view）
+   ② 未选择时的占位色
+   类名统一带 iv- 前缀，避免与其它页面的局部样式撞名。
+   ⚠️ 窄屏适配已由 app.wxss 的 @media (max-width: 360px) 兜住（表单标签转顶部）。 */
+
+/* picker 触发的行：值靠右，与 form-input 的排版保持一致 */
+.iv-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: #1f2329;
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.iv-value.is-placeholder {
+  color: #b6bbc4;
+}

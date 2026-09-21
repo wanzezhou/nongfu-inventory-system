@@ -14,6 +14,10 @@
  *     只会让「某个域少测了一条」变得不可见）。第 13 节专门验证删除语义：
  *     无引用→物理删（hard）、有引用→停用（soft），并断言
  *     **停用没有触发 machine_sales 的 ON DELETE CASCADE**（否则历史销量会被静默删掉）。
+ *   · 第 8 域 库存 —— 第 14 节。**资金类**域（入库=库存+进货记录+扣款+流水同事务；
+ *     作废=回退库存+原路退回）。核心事务体从 Web 端 `inventoryController` 抽出后
+ *     由两端共用（`applyStockIn/applyStockOut/applyPurchaseVoid`），Web 端的
+ *     既有守护冒烟（入库账户扣款 41、出库台账 15、body 归一 26）是重构的保险。
  *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
  *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
@@ -111,6 +115,54 @@ async function main() {
     ['smoke_%']
   );
   await pool.query('DELETE FROM mini_accounts WHERE openid LIKE ?', ['smoke_%']);
+
+  // ── 预清理（续）：跨轮残留的台账/商品/主数据 ────────────────────────────────
+  // ⚠️ 收尾清理按「本轮 TS 前缀」过滤 —— 若某轮被 SIGTERM（finally 不执行），
+  //    它的残留带着**那轮的 TS**，之后每一轮的清理都匹配不到它，永远留在库里。
+  //    实测后果：第 1 节「新建账户下台账为空」断言读到历史轮的 5 条「未走账」台账，
+  //    看起来像权限回归，其实是数据残留（排查方向极易被带偏）。
+  //    所以预清理必须按**不带 TS 的域前缀**（SMKEXP/SMKINC/SMKPRD/…）扫全量。
+  //    ⚠️ 顺序仍受外键约束：流水 → 台账；销量 → 商品；库存三表 → 商品。
+  {
+    const ids = async (sql, col) => (await pool.query(sql))[0].map(r => r[col]);
+    const exIds = await ids("SELECT expense_id FROM other_expenses WHERE expense_name LIKE 'SMKEXP%'", 'expense_id');
+    if (exIds.length) {
+      await pool.query(
+        "DELETE FROM finance_transactions WHERE related_module = 'other_expense' AND related_id IN (?)",
+        [exIds]
+      );
+      await pool.query("DELETE FROM other_expenses WHERE expense_name LIKE 'SMKEXP%'");
+    }
+    const inIds = await ids("SELECT income_id FROM other_incomes WHERE income_name LIKE 'SMKINC%'", 'income_id');
+    if (inIds.length) {
+      await pool.query("DELETE FROM finance_transactions WHERE related_module = 'other_income' AND related_id IN (?)", [
+        inIds
+      ]);
+      await pool.query("DELETE FROM other_incomes WHERE income_name LIKE 'SMKINC%'");
+    }
+    await pool.query('DELETE FROM machine_sales WHERE sale_id LIKE ?', ['SMKSALE%']);
+    const invPids = (await pool.query("SELECT product_id FROM products WHERE product_code LIKE 'SMKINV%'"))[0].map(
+      r => r.product_id
+    );
+    if (invPids.length) {
+      const ph = invPids.map(() => '?').join(',');
+      await pool.query(
+        `DELETE FROM finance_transactions WHERE related_module IN ('purchase', 'purchase_void')
+           AND related_id IN (SELECT purchase_id FROM purchase_records WHERE product_id IN (${ph}))`,
+        invPids
+      );
+      await pool.query(`DELETE FROM stock_out_records WHERE product_id IN (${ph})`, invPids);
+      await pool.query(`DELETE FROM purchase_records WHERE product_id IN (${ph})`, invPids);
+      await pool.query(`DELETE FROM inventory WHERE product_id IN (${ph})`, invPids);
+    }
+    for (const like of ['SMKINV%', 'SMKPRD%']) {
+      await pool.query('DELETE FROM products WHERE product_code LIKE ?', [like]);
+    }
+    await pool.query('DELETE FROM machine_stations WHERE station_name LIKE ?', ['SMKM%']);
+    await pool.query('DELETE FROM suppliers WHERE supplier_name LIKE ?', ['SMKSUP%']);
+    await pool.query('DELETE FROM workers WHERE worker_name LIKE ?', ['SMKWK%']);
+    await pool.query('DELETE FROM sub_stations WHERE station_name LIKE ?', ['SMKST%']);
+  }
 
   let conn = await pool.getConnection();
 
@@ -1221,7 +1273,281 @@ async function main() {
     assert(masterActions.includes(a), `审计含 ${a}`);
   }
 
-  return { accountId, adminAccountId, salesmanAccountId, uploadedImageName, refMachineId, saleInserted };
+  // ═════════════ 14. 库存域（Phase 8b 第 8 域）═══════════════════════════════
+  // ⚠️ 这是**资金类**域：入库 = 库存+ + 进货记录 + 账户扣款 + 流水（同事务）；
+  //    作废 = 回退库存 + 原路退回（方向不能抄反）。第 14.7 步把「入库→作废」整链
+  //    走一遍并断言余额回到基线，是本节最值钱的一条断言。
+  section('14. 库存域：入库三联事务 / 作废原路退回 / 出库不动资金 / 整数数量');
+
+  // ── 14.1 权限：业务员令牌一律 403（读与写都试）────────────────────────────
+  const invDenied = await call('GET', '/mini/admin/inventory', null, salesmanToken);
+  assert(
+    invDenied.code === 403 && /需要管理员角色/.test(String(invDenied.message)),
+    `14.1 业务员读库存被拒 403 且文案指向角色（实得 ${invDenied.code} ${invDenied.message || ''}）`
+  );
+  const invWriteDenied = await call('POST', '/mini/admin/inventory/in', { clientRequestId: 'x' }, salesmanToken);
+  assert(invWriteDenied.code === 403, `14.1 业务员写入库被拒 403（实得 ${invWriteDenied.code}）`);
+
+  // ── 14.2 自建测试商品（SMKINV 前缀，清理独立）──────────────────────────────
+  const invCode = 'SMKINV' + TS;
+  const invCreate = await call(
+    'POST',
+    '/mini/admin/products',
+    {
+      clientRequestId: invCode + '_create',
+      productCode: invCode,
+      productName: '冒烟库存测试商品',
+      category: '冒烟',
+      unit: '箱',
+      retailPrice: 10,
+      purchasePrice: 2.5
+    },
+    adminToken
+  );
+  assert(invCreate.code === 200, `14.2 测试商品创建成功（${invCreate.code} ${invCreate.message || ''}）`);
+  const invPid = invCreate.data && invCreate.data.productId;
+  assert(!!invPid, '14.2 返回 productId');
+
+  // ── 14.3 列表 / 详情 / 表单选项 ───────────────────────────────────────────
+  const invList = await call(
+    'GET',
+    '/mini/admin/inventory?keyword=' + encodeURIComponent('冒烟库存测试'),
+    null,
+    adminToken
+  );
+  assert(invList.code === 200, `14.3 库存列表 200（${invList.code}）`);
+  const invSelf = (invList.data.list || []).find(r => String(r.id) === String(invPid));
+  assert(!!invSelf, '14.3 列表能按关键词找到测试商品（formatInventory 的主键字段是 id）');
+  if (invSelf) {
+    assert(Number(invSelf.stock) === 0, `14.3 新商品库存为 0（实际 ${invSelf.stock}）`);
+  }
+  const invOptions = await call('GET', '/mini/admin/inventory/options', null, adminToken);
+  assert(invOptions.code === 200, `14.3 表单选项 200（${invOptions.code}）`);
+  if (invOptions.code === 200) {
+    assert(
+      (invOptions.data.products || []).some(p => String(p.productId) === String(invPid)),
+      '14.3 商品下拉含测试商品（分页拉下拉会静默缺项，故用全量接口）'
+    );
+    assert(
+      (invOptions.data.accounts || []).some(a => String(a.accountId) === String(accountId)),
+      '14.3 账户下拉含冒烟账户且只含启用账户'
+    );
+  }
+
+  // ── 14.4 入库校验（每条断言拒绝文案指向具体字段）────────────────────────────
+  const invNoIdem = await call('POST', '/mini/admin/inventory/in', { productId: invPid, quantity: 1 }, adminToken);
+  assert(
+    invNoIdem.code === 400 && /clientRequestId/.test(String(invNoIdem.message)),
+    `14.4 缺幂等键被拒且文案指向幂等键（${invNoIdem.code} ${invNoIdem.message || ''}）`
+  );
+  const invZero = await call(
+    'POST',
+    '/mini/admin/inventory/in',
+    { clientRequestId: invCode + '_z', productId: invPid, quantity: 0 },
+    adminToken
+  );
+  assert(invZero.code === 400 && /正数/.test(String(invZero.message)), `14.4 数量 0 被拒（${invZero.message}）`);
+  const invFrac = await call(
+    'POST',
+    '/mini/admin/inventory/in',
+    { clientRequestId: invCode + '_f', productId: invPid, quantity: 1.5 },
+    adminToken
+  );
+  assert(
+    invFrac.code === 400 && /整数/.test(String(invFrac.message)),
+    `14.4 非整数数量被拒（INT 列会静默四舍五入，必须显式拦）：${invFrac.message}`
+  );
+  const invNoProd = await call(
+    'POST',
+    '/mini/admin/inventory/in',
+    { clientRequestId: invCode + '_np', productId: 'SMKNOPE999', quantity: 1, accountId },
+    adminToken
+  );
+  assert(invNoProd.code === 404, `14.4 商品不存在 → 404（实得 ${invNoProd.code} ${invNoProd.message || ''}）`);
+
+  // ── 14.5 入库成功：三联事务（库存+ 进货记录+ 扣款+ 流水）──────────────────
+  const [bal0] = await pool.query('SELECT current_balance b FROM finance_accounts WHERE account_id = ?', [accountId]);
+  const B0 = Number(bal0[0].b);
+  const p1Key = invCode + '_in1';
+  const p1 = await call(
+    'POST',
+    '/mini/admin/inventory/in',
+    { clientRequestId: p1Key, productId: invPid, quantity: 10, unitPrice: 2.5, accountId, remark: '冒烟入库' },
+    adminToken
+  );
+  assert(p1.code === 200, `14.5 入库成功（${p1.code} ${p1.message || ''}）`);
+  assert(p1.data && near(p1.data.paidAmount, 25), `14.5 应付 10×2.5=25（实际 ${p1.data && p1.data.paidAmount}）`);
+  const [inv1] = await pool.query('SELECT quantity q FROM inventory WHERE product_id = ?', [invPid]);
+  assert(Number(inv1[0] && inv1[0].q) === 10, `14.5 库存 = 10（实际 ${inv1[0].q}）`);
+  const [bal1] = await pool.query('SELECT current_balance b FROM finance_accounts WHERE account_id = ?', [accountId]);
+  assert(near(bal1[0] && bal1[0].b, B0 - 25), `14.5 余额 = 基线−25（${B0} → ${bal1[0].b}）`);
+  const [pr1] = await pool.query(
+    'SELECT quantity, unit_price, paid_amount, status, account_id FROM purchase_records WHERE purchase_id = ?',
+    [p1.data.purchaseId]
+  );
+  assert(
+    pr1.length === 1 &&
+      Number(pr1[0].quantity) === 10 &&
+      near(Number(pr1[0].paid_amount), 25) &&
+      Number(pr1[0].status) === 1,
+    '14.5 进货记录落库（数量/实付/状态=1）'
+  );
+  const [txIn1] = await pool.query(
+    "SELECT tx_type, tx_category, amount FROM finance_transactions WHERE related_module = 'purchase' AND related_id = ?",
+    [p1.data.purchaseId]
+  );
+  assert(
+    txIn1.length === 1 &&
+      Number(txIn1[0].tx_type) === 2 &&
+      txIn1[0].tx_category === '采购入库' &&
+      near(Number(txIn1[0].amount), 25),
+    `14.5 资金流水 1 条（tx_type=2 支出、采购入库、金额 25）：实得 ${JSON.stringify(txIn1)}`
+  );
+  const invAudit1 = await auditActions();
+  assert(invAudit1.filter(a => a === 'STOCK_IN').length >= 1, '14.5 审计含 STOCK_IN');
+
+  // ── 14.6 入库幂等：同键重放合并 / 同键不同参数拒绝 ─────────────────────────
+  const p1Replay = await call(
+    'POST',
+    '/mini/admin/inventory/in',
+    { clientRequestId: p1Key, productId: invPid, quantity: 10, unitPrice: 2.5, accountId, remark: '冒烟入库' },
+    adminToken
+  );
+  assert(p1Replay.code === 200 && p1Replay.data.replayed === true, '14.6 同键重放标记 replayed=true');
+  assert(String(p1Replay.data.purchaseId) === String(p1.data.purchaseId), '14.6 重放返回同一入库单号');
+  const [inv2] = await pool.query('SELECT quantity q FROM inventory WHERE product_id = ?', [invPid]);
+  assert(Number(inv2[0] && inv2[0].q) === 10, '14.6 重放后库存仍为 10（没有重复入库）');
+  const p1Conflict = await call(
+    'POST',
+    '/mini/admin/inventory/in',
+    { clientRequestId: p1Key, productId: invPid, quantity: 11, unitPrice: 2.5, accountId },
+    adminToken
+  );
+  assert(p1Conflict.code === 400, `14.6 同键不同参数被拒 400（${p1Conflict.code}）`);
+
+  // ── 14.7 ★ 作废入库单：原路退回 + 回退库存（整链回到基线）──────────────────
+  const voidKey = invCode + '_void1';
+  const v1 = await call(
+    'POST',
+    '/mini/admin/purchases/' + p1.data.purchaseId + '/void',
+    { clientRequestId: voidKey, reason: '冒烟作废' },
+    adminToken
+  );
+  assert(v1.code === 200, `14.7 作废成功（${v1.code} ${v1.message || ''}）`);
+  assert(v1.data && near(v1.data.refundAmount, 25), `14.7 退回金额 = 25（实际 ${v1.data && v1.data.refundAmount}）`);
+  const [bal2] = await pool.query('SELECT current_balance b FROM finance_accounts WHERE account_id = ?', [accountId]);
+  assert(near(bal2[0] && bal2[0].b, B0), `14.7 余额回到基线 ${B0}（实际 ${bal2[0].b}）—— 入库扣的 25 原路退回`);
+  const [inv3] = await pool.query('SELECT quantity q FROM inventory WHERE product_id = ?', [invPid]);
+  assert(Number(inv3[0] && inv3[0].q) === 0, `14.7 库存回退到 0（实际 ${inv3[0].q}）`);
+  const [pr1b] = await pool.query('SELECT status, void_reason FROM purchase_records WHERE purchase_id = ?', [
+    p1.data.purchaseId
+  ]);
+  assert(Number(pr1b[0].status) === 2, '14.7 进货记录 status=2（作废标记）');
+  const [txVoid] = await pool.query(
+    "SELECT tx_type, tx_category, amount FROM finance_transactions WHERE related_module = 'purchase_void' AND related_id = ?",
+    [p1.data.purchaseId]
+  );
+  assert(
+    txVoid.length === 1 &&
+      Number(txVoid[0].tx_type) === 1 &&
+      txVoid[0].tx_category === '入库退回' &&
+      near(Number(txVoid[0].amount), 25),
+    '14.7 作废流水（tx_type=1 收入方向、入库退回）落库'
+  );
+  const v1Replay = await call(
+    'POST',
+    '/mini/admin/purchases/' + p1.data.purchaseId + '/void',
+    { clientRequestId: voidKey, reason: '冒烟作废' },
+    adminToken
+  );
+  assert(v1Replay.code === 200 && v1Replay.data.replayed === true, '14.7 作废重放 replayed=true（不重复退钱）');
+  const [bal2b] = await pool.query('SELECT current_balance b FROM finance_accounts WHERE account_id = ?', [accountId]);
+  assert(near(bal2b[0] && bal2b[0].b, B0), '14.7 作废重放后余额仍 = 基线（只退一次）');
+  const v1Dup = await call(
+    'POST',
+    '/mini/admin/purchases/' + p1.data.purchaseId + '/void',
+    { clientRequestId: invCode + '_void1b', reason: '再作废' },
+    adminToken
+  );
+  assert(v1Dup.code === 400 && /已作废/.test(String(v1Dup.message)), `14.7 换键重复作废被拒（${v1Dup.message}）`);
+
+  // ── 14.8 再入库 + 出库：出库**不动资金** ──────────────────────────────────
+  const p2Key = invCode + '_in2';
+  const p2 = await call(
+    'POST',
+    '/mini/admin/inventory/in',
+    { clientRequestId: p2Key, productId: invPid, quantity: 10, unitPrice: 2.5, accountId },
+    adminToken
+  );
+  assert(p2.code === 200, `14.8 第二次入库成功（${p2.code}）`);
+  const outKey = invCode + '_out1';
+  const o1 = await call(
+    'POST',
+    '/mini/admin/inventory/out',
+    { clientRequestId: outKey, productId: invPid, quantity: 3, outType: 1, remark: '冒烟出库' },
+    adminToken
+  );
+  assert(o1.code === 200, `14.8 出库成功（${o1.code} ${o1.message || ''}）`);
+  const [inv4] = await pool.query('SELECT quantity q FROM inventory WHERE product_id = ?', [invPid]);
+  assert(Number(inv4[0] && inv4[0].q) === 7, `14.8 库存 = 10−3 = 7（实际 ${inv4[0].q}）`);
+  const [bal3] = await pool.query('SELECT current_balance b FROM finance_accounts WHERE account_id = ?', [accountId]);
+  assert(near(bal3[0] && bal3[0].b, B0 - 25), '14.8 出库不动资金（余额仍 = 基线−25）');
+  const [so1] = await pool.query(
+    'SELECT quantity, out_type, stock_after FROM stock_out_records WHERE product_id = ? ORDER BY created_at DESC LIMIT 1',
+    [invPid]
+  );
+  assert(
+    so1.length === 1 && Number(so1[0].quantity) === 3 && Number(so1[0].stock_after) === 7,
+    '14.8 出库台账落库（数量 3、stock_after=7）'
+  );
+  const invAudit2 = await auditActions();
+  assert(invAudit2.filter(a => a === 'STOCK_OUT').length >= 1, '14.8 审计含 STOCK_OUT');
+
+  // ── 14.9 出库幂等：同键重放不再扣库存 ──────────────────────────────────────
+  const o1Replay = await call(
+    'POST',
+    '/mini/admin/inventory/out',
+    { clientRequestId: outKey, productId: invPid, quantity: 3, outType: 1 },
+    adminToken
+  );
+  assert(o1Replay.code === 200 && o1Replay.data.replayed === true, '14.9 出库重放 replayed=true');
+  const [inv5] = await pool.query('SELECT quantity q FROM inventory WHERE product_id = ?', [invPid]);
+  assert(Number(inv5[0] && inv5[0].q) === 7, `14.9 重放后库存仍为 7（实际 ${inv5[0].q}）`);
+
+  // ── 14.10 超量出库被拒 ────────────────────────────────────────────────────
+  const o2 = await call(
+    'POST',
+    '/mini/admin/inventory/out',
+    { clientRequestId: invCode + '_out9', productId: invPid, quantity: 100, outType: 1 },
+    adminToken
+  );
+  assert(o2.code === 400 && /库存不足/.test(String(o2.message)), `14.10 超量出库被拒（${o2.message}）`);
+
+  // ── 14.11 ⚠️ 有出库历史的入库单不能作废（回退会击穿库存）──────────────────
+  const v2 = await call(
+    'POST',
+    '/mini/admin/purchases/' + p2.data.purchaseId + '/void',
+    { clientRequestId: invCode + '_void2', reason: '冒烟作废2' },
+    adminToken
+  );
+  assert(
+    v2.code === 400 && /库存不足，无法回退/.test(String(v2.message)),
+    `14.11 库存 7 < 需回退 10 → 作废被拒（${v2.message}）：这条保护防止「作废把库存打成负数」`
+  );
+
+  // ── 14.12 资金恒等式复算（库存域动作之后）─────────────────────────────────
+  const [txAll] = await pool.query(
+    'SELECT tx_type, amount FROM finance_transactions WHERE account_id = ? AND related_module IN (?, ?)',
+    [accountId, 'purchase', 'purchase_void']
+  );
+  const net = txAll.reduce((a, t) => a + (Number(t.tx_type) === 1 ? Number(t.amount) : -Number(t.amount)), 0);
+  const [balEnd] = await pool.query('SELECT current_balance b FROM finance_accounts WHERE account_id = ?', [accountId]);
+  assert(
+    near(Number(balEnd[0].b), B0 + net),
+    `14.12 库存域资金恒等式：余额(${balEnd[0].b}) = 基线(${B0}) + 净额(${Number(net).toFixed(2)})`
+  );
+
+  return { accountId, adminAccountId, salesmanAccountId, uploadedImageName, refMachineId, saleInserted, invPid };
 }
 
 const ctx = { accountId: null, adminAccountId: null, salesmanAccountId: null, uploadedImageName: '' };
@@ -1263,6 +1589,23 @@ main()
       //    前面，结果整个清理中途抛错、残留一路留到下一轮（下一轮又因此失败）。
       //    教训：子表永远先删。宁可多看一眼外键，也别按"直觉顺序"写清理。
       await pool.query('DELETE FROM machine_sales WHERE sale_id LIKE ?', ['SMKSALE%']);
+      // 库存域：三张库存表都外键指向 products，必须**先删它们**再删商品
+      //（否则「删商品」撞 RESTRICT → 整个清理中断，残留留到下一轮）
+      const invPids = (await pool.query("SELECT product_id FROM products WHERE product_code LIKE 'SMKINV%'"))[0].map(
+        r => r.product_id
+      );
+      if (invPids.length) {
+        const ph = invPids.map(() => '?').join(',');
+        await pool.query(
+          `DELETE FROM finance_transactions WHERE related_module IN ('purchase', 'purchase_void')
+             AND related_id IN (SELECT purchase_id FROM purchase_records WHERE product_id IN (${ph}))`,
+          invPids
+        );
+        await pool.query(`DELETE FROM stock_out_records WHERE product_id IN (${ph})`, invPids);
+        await pool.query(`DELETE FROM purchase_records WHERE product_id IN (${ph})`, invPids);
+        await pool.query(`DELETE FROM inventory WHERE product_id IN (${ph})`, invPids);
+      }
+      await pool.query("DELETE FROM products WHERE product_code LIKE 'SMKINV%'");
       await pool.query('DELETE FROM products WHERE product_code LIKE ?', ['SMKPRD%']);
       // 主数据四域：按冒烟前缀清除（软删除是业务语义，冒烟必须把测试数据清干净）
       await pool.query('DELETE FROM machine_stations WHERE station_name LIKE ?', ['SMKM%']);
@@ -1298,6 +1641,17 @@ main()
         PREFIX_INC + '%'
       ]);
       const [leftPrd] = await pool.query('SELECT COUNT(*) n FROM products WHERE product_code LIKE ?', ['SMKPRD%']);
+      const [leftInvPrd] = await pool.query("SELECT COUNT(*) n FROM products WHERE product_code LIKE 'SMKINV%'");
+      const [leftInv] = await pool.query(
+        "SELECT COUNT(*) n FROM inventory i JOIN products p ON p.product_id = i.product_id WHERE p.product_code LIKE 'SMKINV%'"
+      );
+      const [leftPur] = await pool.query(
+        "SELECT COUNT(*) n FROM purchase_records pr JOIN products p ON p.product_id = pr.product_id WHERE p.product_code LIKE 'SMKINV%'"
+      );
+      const [leftOut] = await pool.query(
+        "SELECT COUNT(*) n FROM stock_out_records so JOIN products p ON p.product_id = so.product_id WHERE p.product_code LIKE 'SMKINV%'"
+      );
+      const invTotal = Number(leftInvPrd[0].n) + Number(leftInv[0].n) + Number(leftPur[0].n) + Number(leftOut[0].n);
       // 主数据五张表（含机台销量）的残留核对
       const masterLeft = {};
       for (const [t, col, like] of [
@@ -1313,10 +1667,14 @@ main()
       }
       const masterTotal = Object.values(masterLeft).reduce((a, b) => a + b, 0);
       const clean =
-        Number(left[0].n) === 0 && Number(leftInc[0].n) === 0 && Number(leftPrd[0].n) === 0 && masterTotal === 0;
+        Number(left[0].n) === 0 &&
+        Number(leftInc[0].n) === 0 &&
+        Number(leftPrd[0].n) === 0 &&
+        invTotal === 0 &&
+        masterTotal === 0;
       console.log(
-        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 主数据 ${masterTotal} 条` +
-          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify(masterLeft)}`
+        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条` +
+          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal })}`
       );
     } catch (e) {
       console.log('清理失败：' + e.message);

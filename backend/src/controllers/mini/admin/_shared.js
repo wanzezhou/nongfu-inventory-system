@@ -9,6 +9,11 @@
 //    也不做任何账务动作 —— 账务一律调 Web 端的原语（§41 头号禁止项）。
 // ===========================================================================
 const { MINI_PAGE, IDEM_KEY_MAX_LEN } = require('../../../constants/mini');
+// ⚠️ respondBusinessError 要用它发响应 —— 忘了 import 的后果是：任何一次业务校验失败
+//    都会在错误处理路径上抛 ReferenceError（未处理的 Promise rejection），响应**永不返回**，
+//    客户端挂起到 fetch 超时（实测 300s），而服务端日志只有一行不起眼的 rejection。
+//    这是「错误处理路径本身没被测过」的典型事故 —— 冒烟只盯成功路径时漏掉的正是它。
+const { error } = require('../../../utils/response');
 
 /** 分页（与 catalogController 同口径；mysql2 不支持 `LIMIT ?` → parseInt 后内联） */
 function parseMiniPage(query = {}) {
@@ -73,10 +78,36 @@ function businessMessage(e, fallback) {
   return /账户/.test(msg) ? msg : fallback;
 }
 
+/**
+ * 业务错误出口（**带标记**的错误：`err.business === true`）
+ * ---------------------------------------------------------------------------
+ * 两种约定并存，不要搞混：
+ *   ① 台账原语（`applyExpenseLedger` 等）抛**未标记**的 Error，文案需白名单过滤
+ *      → 用 `businessMessage()` 取文案。
+ *   ② 库存核心事务体（`applyStockIn` / `applyStockOut` / `applyPurchaseVoid`）
+ *      抛的是 `bizFail()` 构造的**已标记**错误，且自带 `status`（如「商品不存在」是 404）
+ *      → 用本函数。
+ *   若把 ② 交给 ① 处理，「商品不存在」会丢掉 404、变成 400（前端按状态码分支就会错），
+ *   且「库存不足，当前库存: 5」这类**有用**的文案会被白名单吞掉、退化成一句无用提示。
+ *
+ * @returns {boolean} true 表示已处理（调用方直接 return）
+ */
+function respondBusinessError(res, e, fallback) {
+  if (e && e.business) {
+    // hazard-allow: 仅透传 bizFail() 自建的业务文案（e.business 为真才进此分支），非业务错误走 fallback 固定文案 —— 本函数就是 R4 要求的白名单模式
+    error(res, e.message, e.status || 400);
+    return true;
+  }
+  console.error(`[mini/admin] ${fallback}:`, e);
+  error(res, fallback);
+  return true;
+}
+
 module.exports = {
   parseMiniPage,
   listActiveAccounts,
   listCategories,
   requireIdemKey,
-  businessMessage
+  businessMessage,
+  respondBusinessError
 };

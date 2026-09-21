@@ -1,0 +1,20 @@
+/* 出库表单 · 页面样式（Phase 8b 第 8 域）
+   与入库页同一套做法：表单件全用 app.wxss 通用件，这里只补 picker 的只读值展示。
+   ⚠️ 入库页也有一份同名类（.iv-value）。两页各自定义是有意的：WXSS 没有跨页面作用域，
+      若抽成公共文件再 @import，改动一处会影响另一页（而这两页的排版诉求未必一直相同）。
+      代价是类名要**保持一致**，别在某一页单独改名。 */
+
+.iv-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: #1f2329;
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.iv-value.is-placeholder {
+  color: #b6bbc4;
+}

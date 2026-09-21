@@ -1,0 +1,116 @@
+<!-- 出入库记录（管理员 · Phase 8b 第 8 域）
+     ⚠️ 入库记录与出库台账是**两个不同的表**（purchase_records / stock_out_records），
+        字段也不同，所以用 tab 切换两套列表，而不是硬拼成一张表。
+     ⚠️ 作废是**撤销类**操作（回退库存 + 原路退回款项 + 反向流水），
+        按钮只在 status=1 时出现，且必须填原因（原因要进审计与台账）。 -->
+<view class="page">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <!-- 两个页签 -->
+  <view class="pu-tabs">
+    <view
+      class="pu-tab {{tab === 'purchase' ? 'is-active' : ''}}"
+      data-tab="purchase"
+      bindtap="onTabTap"
+    >入库记录</view>
+    <view
+      class="pu-tab {{tab === 'stockout' ? 'is-active' : ''}}"
+      data-tab="stockout"
+      bindtap="onTabTap"
+    >出库台账</view>
+  </view>
+
+  <!-- 入库记录的状态筛选（后端 pr.status：1 有效 / 2 已作废） -->
+  <view wx:if="{{tab === 'purchase'}}" class="pu-filter">
+    <view
+      wx:for="{{statusFilters}}"
+      wx:key="key"
+      class="pu-chip {{statusFilter === item.key ? 'is-active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onStatusTap"
+    >{{item.label}}</view>
+  </view>
+
+  <view class="pu-search">
+    <input
+      class="pu-search-input"
+      value="{{keyword}}"
+      placeholder="{{tab === 'purchase' ? '按单号或商品名搜索' : '按商品/单号/备注搜索'}}"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onSearch"
+    />
+    <view class="pu-search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <view wx:elif="{{loading && !list.length}}" class="empty">正在加载…</view>
+
+  <block wx:elif="{{list.length}}">
+    <!-- 入库记录 -->
+    <block wx:if="{{tab === 'purchase'}}">
+      <view wx:for="{{list}}" wx:key="purchaseId" class="list-item">
+        <view class="row-between">
+          <text class="t-strong flex-1 t-ellipsis">{{item.productName}}</text>
+          <text class="amount-out">−¥{{item.totalAmountText}}</text>
+        </view>
+        <view class="row-between mt-8">
+          <text class="t-sub">{{item.purchaseId}}</text>
+          <text
+            wx:if="{{item.status === 2}}"
+            class="tag tag-plain"
+          >已作废</text>
+          <text wx:else class="tag tag-ok">有效</text>
+        </view>
+        <view class="row-between mt-8">
+          <text class="t-sub">{{item.quantity}}{{item.unit}} × ¥{{item.unitPriceText}}</text>
+          <text class="t-sub">{{item.accountName || '未记账'}}</text>
+        </view>
+        <view class="row-between mt-8">
+          <text class="t-sub">{{item.createdAtText}}{{item.supplierName ? ' · ' + item.supplierName : ''}}</text>
+        </view>
+        <view wx:if="{{item.status === 2 && item.voidReason}}" class="t-sub mt-8">
+          作废原因：{{item.voidReason}}
+        </view>
+        <view wx:if="{{item.status === 1}}" class="mt-16 row">
+          <view
+            class="btn btn-ghost btn-sm"
+            data-id="{{item.purchaseId}}"
+            bindtap="onVoidTap"
+          >作废</view>
+        </view>
+      </view>
+    </block>
+
+    <!-- 出库台账（只读） -->
+    <block wx:else>
+      <view wx:for="{{list}}" wx:key="recordId" class="list-item">
+        <view class="row-between">
+          <text class="t-strong flex-1 t-ellipsis">{{item.productName}}</text>
+          <text class="t-strong">{{item.quantity}}{{item.unit}}</text>
+        </view>
+        <view class="row-between mt-8">
+          <text class="t-sub">{{item.recordId}}</text>
+          <text class="tag tag-plain">{{item.outTypeLabel}}</text>
+        </view>
+        <view class="row-between mt-8">
+          <text class="t-sub">{{item.createdAtText}}</text>
+          <text class="t-sub">出库后库存 {{item.stockAfter}}</text>
+        </view>
+        <view wx:if="{{item.remark}}" class="t-sub mt-8">备注：{{item.remark}}</view>
+      </view>
+    </block>
+
+    <view wx:if="{{!hasMore}}" class="empty">— 没有更多了 —</view>
+  </block>
+
+  <view wx:else class="empty">
+    <view class="empty-icon">🗂</view>
+    <view>{{tab === 'purchase' ? '该条件下没有入库记录' : '该条件下没有出库记录'}}</view>
+  </view>
+</view>

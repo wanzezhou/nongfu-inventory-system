@@ -1,0 +1,82 @@
+/* 出入库记录 · 页面样式（Phase 8b 第 8 域）
+   页签 + 筛选条 + 搜索行。通用件（list-item / card / btn / tag / t-*）在 app.wxss。
+   类名统一带 pu- 前缀，避免与其它页面的局部样式撞名。 */
+
+.pu-tabs {
+  display: flex;
+  margin: 20rpx 24rpx 0;
+  background: #ffffff;
+  border-radius: 12rpx;
+  padding: 6rpx;
+  border: 2rpx solid #eef0f3;
+}
+
+.pu-tab {
+  flex: 1;
+  text-align: center;
+  height: 68rpx;
+  line-height: 68rpx;
+  border-radius: 10rpx;
+  font-size: 28rpx;
+  color: #5a6371;
+}
+
+.pu-tab.is-active {
+  background: #fdecee;
+  color: #c8102e;
+  font-weight: 600;
+}
+
+.pu-filter {
+  display: flex;
+  gap: 12rpx;
+  padding: 20rpx 24rpx 0;
+}
+
+.pu-chip {
+  flex: 1;
+  text-align: center;
+  height: 64rpx;
+  line-height: 64rpx;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  color: #5a6371;
+  background: #ffffff;
+  border: 2rpx solid #eef0f3;
+}
+
+.pu-chip.is-active {
+  background: #fdecee;
+  color: #c8102e;
+  border-color: #fdecee;
+  font-weight: 600;
+}
+
+.pu-search {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 20rpx 24rpx 0;
+}
+
+.pu-search-input {
+  flex: 1;
+  height: 68rpx;
+  padding: 0 20rpx;
+  background: #ffffff;
+  border: 2rpx solid #eef0f3;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  color: #1f2329;
+}
+
+.pu-search-btn {
+  height: 68rpx;
+  line-height: 68rpx;
+  padding: 0 28rpx;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  color: #1f2329;
+  background: #ffffff;
+  border: 2rpx solid #dcdfe6;
+}

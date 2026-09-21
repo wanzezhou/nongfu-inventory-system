@@ -214,6 +214,16 @@
           <text class="t-sub">主数据</text>
           <text class="t-strong">供应商 / 员工 / 水站 / 机台 ›</text>
         </view>
+        <view class="divider"></view>
+        <view class="kv-row" bindtap="goAdminInventory">
+          <text class="t-sub">库存</text>
+          <text class="t-strong">入库 / 出库 / 作废 ›</text>
+        </view>
+        <view class="divider"></view>
+        <view class="kv-row" bindtap="goAdminPurchases">
+          <text class="t-sub">出入库记录</text>
+          <text class="t-strong">入库记录 / 出库台账 ›</text>
+        </view>
         <view class="t-sub mt-16">
           其余业务域仍使用 Web 管理端（移动端按 §43 逐域开通、逐域验收）。
         </view>
