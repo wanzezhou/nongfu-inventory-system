@@ -1,0 +1,75 @@
+<!-- 支出台账（管理员 · Phase 8b 第 1 域「支出/费用」）
+     ⚠️ 页面上的金额只**展示**后端返回值，不做任何「按类型加减」的前端推算；
+        真正的余额与流水一律由服务端在事务内处理（§41 / §42.3）。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <!-- 区间筛选：直接用后端 resolveRange 的预设键，不自定义区间语义 -->
+  <view class="ex-filter">
+    <view
+      wx:for="{{ranges}}"
+      wx:key="key"
+      class="ex-chip {{range === item.key ? 'is-active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onRangeTap"
+    >{{item.label}}</view>
+  </view>
+
+  <!-- 关键词（名称或备注） -->
+  <view class="ex-search">
+    <input
+      class="ex-search-input"
+      value="{{keyword}}"
+      placeholder="按名称或备注搜索"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onSearch"
+    />
+    <view class="ex-search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <!-- 合计（与列表同筛选条件，由服务端 SUM 得出） -->
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">筛选结果合计</text>
+      <text class="t-primary t-strong">¥{{sumAmountText}}</text>
+    </view>
+    <view class="t-sub mt-8">共 {{total}} 条</view>
+  </view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:elif="{{list.length}}">
+    <view
+      wx:for="{{list}}"
+      wx:key="expenseId"
+      class="list-item"
+      data-id="{{item.expenseId}}"
+      bindtap="onItemTap"
+    >
+      <view class="row-between">
+        <text class="t-strong flex-1 t-ellipsis">{{item.expenseName}}</text>
+        <text class="amount-out">¥{{item.amountText}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">{{item.expenseDate}} · {{item.category}}</text>
+        <text class="t-sub">{{item.accountName || '未记账'}}</text>
+      </view>
+    </view>
+    <view wx:if="{{!hasMore}}" class="empty">— 没有更多了 —</view>
+  </block>
+
+  <view wx:else class="empty">
+    <view class="empty-icon">🧾</view>
+    <view>该条件下没有支出记录</view>
+  </view>
+
+  <view class="footer-bar">
+    <text class="t-sub">点记录可编辑或删除</text>
+    <view class="btn btn-primary btn-sm" bindtap="onCreate">＋ 记一笔</view>
+  </view>
+</view>

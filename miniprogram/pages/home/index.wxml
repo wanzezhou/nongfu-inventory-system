@@ -190,6 +190,20 @@
         <view class="t-sub mt-16">点击进入钱包后台，可查看流水与手工调增/扣减积分 ›</view>
       </view>
 
+      <!-- Phase 8b 业务域入口（逐域验收）
+           ⚠️ 只列**已开通**的域，未做的域不占位、不放灰按钮 ——
+              文档 §41 禁止把不存在的能力做成看起来可用的入口。 -->
+      <view class="card">
+        <view class="section-title">管理功能</view>
+        <view class="kv-row" bindtap="goAdminExpenses">
+          <text class="t-sub">支出台账</text>
+          <text class="t-strong">记一笔 / 编辑 / 删除 ›</text>
+        </view>
+        <view class="t-sub mt-16">
+          其余业务域仍使用 Web 管理端（移动端按 §43 逐域开通、逐域验收）。
+        </view>
+      </view>
+
       <view class="banner banner-info">
         {{dashboard.writeNotice}}
       </view>

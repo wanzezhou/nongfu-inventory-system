@@ -7,6 +7,7 @@ const { pool } = require('../../config/db');
 const { success, error, pagination } = require('../../utils/response');
 const walletService = require('../../services/walletService');
 const walletSummary = require('../../services/walletSummary');
+const { hashRequest } = require('../../utils/requestHash');
 const {
   ROLE_TO_OWNER_TYPE,
   WALLET_OWNER_TYPE,
@@ -228,7 +229,9 @@ async function adminAdjust(req, res) {
     const claim = await walletService.claimIdempotency(conn, {
       scope: idemScope,
       key: String(clientRequestId),
-      requestHash: `${direction}:${amount}:${reason}`,
+      // ⚠️ 用共享指纹函数，不要拼明文串：request_hash 是 varchar(64)，
+      //    管理员把「操作原因」写长一点就会超长 → 接口 500（2026-09-21 修）
+      requestHash: hashRequest({ direction, amount, reason }),
       miniAccountId: req.mini.accountId
     });
 

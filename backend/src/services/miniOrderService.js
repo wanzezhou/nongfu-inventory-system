@@ -53,6 +53,7 @@ const {
 const { postOrderRevenue, revertOrderRevenue } = require('./orderRevenuePosting');
 const walletService = require('./walletService');
 const { generateOrderId } = require('../utils/orderIdGen');
+const { hashRequest } = require('../utils/requestHash');
 const { restoreWrittenOffTickets } = require('./orderPricingService');
 const {
   MINI_ROLES,
@@ -99,11 +100,9 @@ const REFUND_LABEL = {
   [REFUND_STATUS.REFUNDED]: '已退款'
 };
 
-/** 请求指纹：同幂等键但业务参数不同 → 视为客户端异常（§23.1） */
-function hashRequest(payload) {
-  const crypto = require('crypto');
-  return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
-}
+/** 请求指纹：同幂等键但业务参数不同 → 视为客户端异常（§23.1）
+ *  ⚠️ 已抽到 utils/requestHash.js 单源（2026-09-21）：管理端写操作也需要同一个指纹，
+ *      各写一版会让「hash 怎么来的」分散在两处；且明文拼接串会超 varchar(64) 列宽。 */
 
 /** 事务内二次校验主体状态（§4.5.1 第 4 条：防止「校验通过 → 扣款前被禁用」的竞态） */
 async function assertSubjectActiveInTx(conn, role, targetId) {

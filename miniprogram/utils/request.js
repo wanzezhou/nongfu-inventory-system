@@ -153,11 +153,17 @@ const get = (url, params, opts) => {
   return request(Object.assign({ url: url + qs, method: 'GET' }, opts || {}));
 };
 const post = (url, data, opts) => request(Object.assign({ url, method: 'POST', data }, opts || {}));
+// Phase 8b 管理员写操作（支出等）需要 PUT / DELETE —— 补上语义化封装，
+// 避免各页面直接手写 method 字符串（拼错时表现为「接口 404」这种难查的现象）
+const put = (url, data, opts) => request(Object.assign({ url, method: 'PUT', data }, opts || {}));
+const del = (url, data, opts) => request(Object.assign({ url, method: 'DELETE', data }, opts || {}));
 
 module.exports = {
   request,
   get,
   post,
+  put,
+  del,
   getToken,
   setToken,
   clearToken,

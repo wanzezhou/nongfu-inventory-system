@@ -8,15 +8,33 @@ const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/d
 const PRESET_CATEGORIES = ['运输', '仓储', '房租水电', '办公', '维修', '招待', '营销', '其他'];
 
 function genId() {
-  return 'EXP' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 1000).toString(36).toUpperCase();
+  return (
+    'EXP' +
+    Date.now().toString(36).toUpperCase() +
+    Math.floor(Math.random() * 1000)
+      .toString(36)
+      .toUpperCase()
+  );
 }
 function genTxNo() {
   const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return 'TX' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+  const p = n => String(n).padStart(2, '0');
+  return (
+    'TX' +
+    d.getFullYear() +
+    p(d.getMonth() + 1) +
+    p(d.getDate()) +
+    String(Math.floor(Math.random() * 100000)).padStart(5, '0')
+  );
 }
 function genTxId() {
-  return 'TX' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 10000).toString(36).toUpperCase();
+  return (
+    'TX' +
+    Date.now().toString(36).toUpperCase() +
+    Math.floor(Math.random() * 10000)
+      .toString(36)
+      .toUpperCase()
+  );
 }
 
 // 记账：扣减账户余额并写入流水（须在事务内调用，conn 为事务连接）
@@ -30,16 +48,31 @@ async function applyExpenseLedger(conn, expense, user) {
   const a = acc[0];
   const before = Number(a.current_balance);
   const amount = Number(expense.amount);
-  await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [before - amount, expense.account_id]);
+  await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [
+    before - amount,
+    expense.account_id
+  ]);
   await conn.query(
     `INSERT INTO finance_transactions
        (tx_id, tx_no, account_id, account_name, tx_type, tx_category, amount, balance_before, balance_after,
         related_module, related_id, tx_date, handler, counterparty, remark, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
-      genTxId(), genTxNo(), a.account_id, a.account_name, 2, '其他支出', amount,
-      before, before - amount, 'other_expense', expense.expense_id, expense.expense_date,
-      user || null, expense.expense_name || null, expense.remark || null
+      genTxId(),
+      genTxNo(),
+      a.account_id,
+      a.account_name,
+      2,
+      '其他支出',
+      amount,
+      before,
+      before - amount,
+      'other_expense',
+      expense.expense_id,
+      expense.expense_date,
+      user || null,
+      expense.expense_name || null,
+      expense.remark || null
     ]
   );
 }
@@ -51,7 +84,10 @@ async function revertExpenseLedger(conn, expenseId) {
     ['other_expense', expenseId]
   );
   for (const tx of txs) {
-    await conn.query('UPDATE finance_accounts SET current_balance = current_balance + ?, updated_at = NOW() WHERE account_id = ?', [tx.amount, tx.account_id]);
+    await conn.query(
+      'UPDATE finance_accounts SET current_balance = current_balance + ?, updated_at = NOW() WHERE account_id = ?',
+      [tx.amount, tx.account_id]
+    );
     await conn.query('DELETE FROM finance_transactions WHERE tx_id = ?', [tx.tx_id]);
   }
 }
@@ -60,41 +96,67 @@ function validateBody(body) {
   const { expenseName, amount, expenseDate, category } = body;
   if (!expenseName || !String(expenseName).trim()) return '支出名称不能为空';
   const amt = Number(amount);
-  if (amount === undefined || amount === null || amount === '' || isNaN(amt) || amt <= 0) return '金额必须为大于 0 的数字';
+  if (amount === undefined || amount === null || amount === '' || isNaN(amt) || amt <= 0)
+    return '金额必须为大于 0 的数字';
   if (!expenseDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(expenseDate))) return '支出日期格式应为 YYYY-MM-DD';
   if (!category || !String(category).trim()) return '支出类别不能为空';
   return null;
 }
 
+/**
+ * 支出列表的筛选条件 —— Web 与**小程序管理端（Phase 8b）共用同一段**，避免两处分叉
+ *
+ * ⚠️ 区间语义必须单源：这里走 `buildRangeWhere`（start **含** / end **不含**）。
+ *    本仓库存在**两套**区间约定（另一套 `financialController.resolveDateRange` 是 end **含**），
+ *    两者混用会静默漏掉当天数据 —— 历史事故见 docs/项目概览.md 的「其他收入」一节。
+ *    小程序端若自行再写一遍筛选，极可能挑错那一套，故这里显式抽出。
+ *
+ * @returns {{clause:string, params:Array}|{error:string}} 区间非法时返回 { error }（用户文案）
+ */
+function buildExpenseListWhere(query = {}) {
+  const { month, range, startDate, endDate, category, keyword } = query;
+  const parts = [];
+  const params = [];
+  // 时间条件：range / month 走统一区间解析（month 为旧参数，等价整月）
+  //           直接传 startDate/endDate（无 range/month）时沿用原闭区间语义
+  if (range || month) {
+    const r = resolveRange({ range, month, startDate, endDate });
+    if (!r) return { error: RANGE_INVALID_MSG };
+    const rw = buildRangeWhere('expense_date', r);
+    if (rw.clause) {
+      parts.push(rw.clause);
+      params.push(...rw.params);
+    }
+  } else {
+    if (startDate) {
+      parts.push('expense_date >= ?');
+      params.push(startDate);
+    }
+    if (endDate) {
+      parts.push('expense_date <= ?');
+      params.push(endDate);
+    }
+  }
+  if (category) {
+    parts.push('category = ?');
+    params.push(category);
+  }
+  if (keyword) {
+    parts.push('(expense_name LIKE ? OR remark LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  return { clause: parts.length ? 'WHERE ' + parts.join(' AND ') : '', params };
+}
+
 // 列表（筛选：预设区间 / 月份 / 日期范围 / 类别 / 关键词，分页）
 async function getExpenses(req, res) {
   try {
-    const { month, range, startDate, endDate, category, keyword, page = 1, pageSize = 10 } = req.query;
+    const { page = 1, pageSize = 10 } = req.query;
     const { page: p, size, offset } = parsePage({ page, pageSize });
-    const parts = [];
-    const params = [];
-    // 时间条件：range / month 走统一区间解析（month 为旧参数，等价整月）
-    //           直接传 startDate/endDate（无 range/month）时沿用原闭区间语义
-    if (range || month) {
-      const r = resolveRange({ range, month, startDate, endDate });
-      if (!r) {
-        return error(res, RANGE_INVALID_MSG, 400);
-      }
-      const rw = buildRangeWhere('expense_date', r);
-      if (rw.clause) {
-        parts.push(rw.clause);
-        params.push(...rw.params);
-      }
-    } else {
-      if (startDate) { parts.push('expense_date >= ?'); params.push(startDate); }
-      if (endDate) { parts.push('expense_date <= ?'); params.push(endDate); }
-    }
-    if (category) { parts.push('category = ?'); params.push(category); }
-    if (keyword) {
-      parts.push('(expense_name LIKE ? OR remark LIKE ?)');
-      params.push(`%${keyword}%`, `%${keyword}%`);
-    }
-    const where = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
+    const filters = buildExpenseListWhere(req.query);
+    if (filters.error) return error(res, filters.error, 400);
+    const where = filters.clause;
+    const params = filters.params;
     const [rows] = await pool.execute(
       `SELECT expense_id, expense_name, category, amount, DATE_FORMAT(expense_date, '%Y-%m-%d') AS expense_date,
               account_id, account_name, remark, created_by, created_at
@@ -106,12 +168,15 @@ async function getExpenses(req, res) {
     const [cnt] = await pool.execute(`SELECT COUNT(*) AS n FROM other_expenses ${where}`, params);
     const [sumRow] = await pool.execute(`SELECT ROUND(SUM(amount), 2) AS total FROM other_expenses ${where}`, params);
     return success(res, {
-      list: rows.map((r) => ({
-        ...r, amount: Number(r.amount) || 0, total: undefined
+      list: rows.map(r => ({
+        ...r,
+        amount: Number(r.amount) || 0,
+        total: undefined
       })),
       total: cnt[0].n,
       sumAmount: Number(sumRow[0].total) || 0,
-      page: p, pageSize: size
+      page: p,
+      pageSize: size
     });
   } catch (e) {
     console.error('getExpenses error:', e);
@@ -123,7 +188,7 @@ async function getExpenses(req, res) {
 async function getCategories(req, res) {
   try {
     const [rows] = await pool.query('SELECT DISTINCT category FROM other_expenses ORDER BY category');
-    const custom = rows.map((r) => r.category).filter((c) => !PRESET_CATEGORIES.includes(c));
+    const custom = rows.map(r => r.category).filter(c => !PRESET_CATEGORIES.includes(c));
     return success(res, { preset: PRESET_CATEGORIES, custom });
   } catch (e) {
     console.error('getCategories error:', e);
@@ -143,16 +208,43 @@ async function createExpense(req, res) {
     const expenseId = genId();
     let accountName = null;
     if (accountId) {
-      const [acc] = await conn.query('SELECT account_id, account_name FROM finance_accounts WHERE account_id = ? AND status = 1', [accountId]);
-      if (!acc.length) { await conn.rollback(); return error(res, '支出账户不存在或已停用', 400); }
+      const [acc] = await conn.query(
+        'SELECT account_id, account_name FROM finance_accounts WHERE account_id = ? AND status = 1',
+        [accountId]
+      );
+      if (!acc.length) {
+        await conn.rollback();
+        return error(res, '支出账户不存在或已停用', 400);
+      }
       accountName = acc[0].account_name;
     }
     await conn.query(
       `INSERT INTO other_expenses (expense_id, expense_name, category, amount, expense_date, account_id, account_name, remark, created_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      [expenseId, String(expenseName).trim(), String(category).trim(), Number(amount), expenseDate, accountId || null, accountName, remark || null, user]
+      [
+        expenseId,
+        String(expenseName).trim(),
+        String(category).trim(),
+        Number(amount),
+        expenseDate,
+        accountId || null,
+        accountName,
+        remark || null,
+        user
+      ]
     );
-    await applyExpenseLedger(conn, { expense_id: expenseId, account_id: accountId || null, amount: Number(amount), expense_date: expenseDate, expense_name: String(expenseName).trim(), remark: remark || null }, user);
+    await applyExpenseLedger(
+      conn,
+      {
+        expense_id: expenseId,
+        account_id: accountId || null,
+        amount: Number(amount),
+        expense_date: expenseDate,
+        expense_name: String(expenseName).trim(),
+        remark: remark || null
+      },
+      user
+    );
     await conn.commit();
     return success(res, { expenseId }, '新增成功');
   } catch (e) {
@@ -175,19 +267,48 @@ async function updateExpense(req, res) {
   try {
     await conn.beginTransaction();
     const [exist] = await conn.query('SELECT expense_id FROM other_expenses WHERE expense_id = ?', [id]);
-    if (!exist.length) { await conn.rollback(); return error(res, '记录不存在', 404); }
+    if (!exist.length) {
+      await conn.rollback();
+      return error(res, '记录不存在', 404);
+    }
     await revertExpenseLedger(conn, id);
     let accountName = null;
     if (accountId) {
-      const [acc] = await conn.query('SELECT account_id, account_name FROM finance_accounts WHERE account_id = ? AND status = 1', [accountId]);
-      if (!acc.length) { await conn.rollback(); return error(res, '支出账户不存在或已停用', 400); }
+      const [acc] = await conn.query(
+        'SELECT account_id, account_name FROM finance_accounts WHERE account_id = ? AND status = 1',
+        [accountId]
+      );
+      if (!acc.length) {
+        await conn.rollback();
+        return error(res, '支出账户不存在或已停用', 400);
+      }
       accountName = acc[0].account_name;
     }
     await conn.query(
       `UPDATE other_expenses SET expense_name = ?, category = ?, amount = ?, expense_date = ?, account_id = ?, account_name = ?, remark = ?, updated_at = NOW() WHERE expense_id = ?`,
-      [String(expenseName).trim(), String(category).trim(), Number(amount), expenseDate, accountId || null, accountName, remark || null, id]
+      [
+        String(expenseName).trim(),
+        String(category).trim(),
+        Number(amount),
+        expenseDate,
+        accountId || null,
+        accountName,
+        remark || null,
+        id
+      ]
     );
-    await applyExpenseLedger(conn, { expense_id: id, account_id: accountId || null, amount: Number(amount), expense_date: expenseDate, expense_name: String(expenseName).trim(), remark: remark || null }, user);
+    await applyExpenseLedger(
+      conn,
+      {
+        expense_id: id,
+        account_id: accountId || null,
+        amount: Number(amount),
+        expense_date: expenseDate,
+        expense_name: String(expenseName).trim(),
+        remark: remark || null
+      },
+      user
+    );
     await conn.commit();
     return success(res, { expenseId: id }, '修改成功');
   } catch (e) {
@@ -206,7 +327,10 @@ async function deleteExpense(req, res) {
   try {
     await conn.beginTransaction();
     const [exist] = await conn.query('SELECT expense_id FROM other_expenses WHERE expense_id = ?', [id]);
-    if (!exist.length) { await conn.rollback(); return error(res, '记录不存在', 404); }
+    if (!exist.length) {
+      await conn.rollback();
+      return error(res, '记录不存在', 404);
+    }
     await revertExpenseLedger(conn, id);
     await conn.query('DELETE FROM other_expenses WHERE expense_id = ?', [id]);
     await conn.commit();
@@ -221,6 +345,16 @@ async function deleteExpense(req, res) {
 }
 
 module.exports = {
-  getExpenses, getCategories, createExpense, updateExpense, deleteExpense,
-  applyExpenseLedger, revertExpenseLedger, PRESET_CATEGORIES, validateBody, genId
+  getExpenses,
+  getCategories,
+  createExpense,
+  updateExpense,
+  deleteExpense,
+  applyExpenseLedger,
+  revertExpenseLedger,
+  PRESET_CATEGORIES,
+  validateBody,
+  genId,
+  // 小程序管理端（Phase 8b）复用的筛选语义单源
+  buildExpenseListWhere
 };

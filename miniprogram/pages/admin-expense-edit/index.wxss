@@ -1,0 +1,12 @@
+/* 支出新增 / 编辑 · 页面样式（Phase 8b）
+   本页几乎全用 app.wxss 的通用件（card / form-row / form-input / btn…），
+   只有底部「删除 + 保存」两枚按钮之间的间距需要局部处理。 */
+
+.footer-bar .btn + .btn {
+  margin-left: 20rpx;
+}
+
+/* 表单说明文字贴着输入行，与下一行拉开一点距离 */
+.form-row + .t-sub {
+  margin-top: 12rpx;
+}

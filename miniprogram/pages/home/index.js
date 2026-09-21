@@ -114,6 +114,10 @@ Page({
   goAdminWallet() {
     ui.navTo('/pages/admin-wallet/index');
   },
+  /** Phase 8b 业务域：支出台账（逐域追加，入口与页面同时上线） */
+  goAdminExpenses() {
+    ui.navTo('/pages/admin-expenses/index');
+  },
   goOrderDetail(e) {
     ui.navTo(`/pages/order-detail/index?id=${e.currentTarget.dataset.id}`);
   },

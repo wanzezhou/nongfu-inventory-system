@@ -14,7 +14,9 @@
     "pages/wallet-recharge/index",
     "pages/station-tickets/index",
     "pages/station-profile/index",
-    "pages/admin-wallet/index"
+    "pages/admin-wallet/index",
+    "pages/admin-expenses/index",
+    "pages/admin-expense-edit/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

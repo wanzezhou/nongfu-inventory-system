@@ -13,6 +13,7 @@
 //      /water-tickets/summary 在（无冲突，但同族前置）
 //      /orders/:id/cancel    在 /orders/:id        之前
 //      /wallet/admin/overview、/wallet/admin/adjust 在 /wallet/admin/:walletId/... 之前
+//      /admin/expenses/options 在 /admin/expenses/:id 之前（Phase 8b 各域同理）
 //
 // ⚠️ 鉴权分层：
 //    public    ：登录/绑定/公开配置（无需令牌）
@@ -35,6 +36,8 @@ const walletCtrl = require('../controllers/mini/walletController');
 const ticketCtrl = require('../controllers/mini/waterTicketController');
 const homeCtrl = require('../controllers/mini/homeController');
 const adminCtrl = require('../controllers/mini/adminController');
+// Phase 8b 管理员写操作：按业务域分文件（controllers/mini/admin/*），逐域追加
+const adminExpenseCtrl = require('../controllers/mini/admin/expenseController');
 
 const router = express.Router();
 
@@ -114,6 +117,26 @@ router.get('/water-tickets', requireMiniRole(MINI_ROLES.STATION), ticketCtrl.lis
 
 // ── 管理员只读仪表盘（§21.8 / §28 / Phase 8a）────────────────────────────────
 router.get('/admin/dashboard', requireMiniAdmin, adminCtrl.getDashboard);
+
+// ── 管理员写操作（§5.3 / §43 Phase 8b，逐域验收）──────────────────────────────
+//
+// ⚠️ 8b 的**分层口径**（每个域都必须一致，别逐域换写法）：
+//     读接口：requireMiniAdmin
+//     写接口：requireMiniAdmin + requireMiniActive
+//             （前者校验「是不是管理员」，后者校验「账号/主体是否被禁用」——
+//               两者缺一不可：管理员账号同样可以被禁用，§22.5 禁用只拦写）
+//     写接口还必须在**事务内**落审计（§40），见各域 controller。
+//
+// ── 域 1/17：支出/费用 ────────────────────────────────────────────────────────
+// ⚠️ `/admin/expenses/options` 必须早于 `/admin/expenses/:id`
+//    （当前只有 PUT/DELETE 带 :id，尚无 GET /:id；仍按仓库惯例静态段前置，
+//      否则将来补 GET /:id 时 options 会被静默吞掉 —— 这类 bug 只在运行时暴露）
+router.get('/admin/expenses/options', requireMiniAdmin, adminExpenseCtrl.getFormOptions);
+router.get('/admin/expenses', requireMiniAdmin, adminExpenseCtrl.listExpenses);
+router.get('/admin/expenses/:id', requireMiniAdmin, adminExpenseCtrl.getExpenseById);
+router.post('/admin/expenses', requireMiniAdmin, requireMiniActive, adminExpenseCtrl.createExpense);
+router.put('/admin/expenses/:id', requireMiniAdmin, requireMiniActive, adminExpenseCtrl.updateExpense);
+router.delete('/admin/expenses/:id', requireMiniAdmin, requireMiniActive, adminExpenseCtrl.deleteExpense);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，
