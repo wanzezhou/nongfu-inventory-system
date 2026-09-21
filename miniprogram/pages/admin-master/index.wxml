@@ -1,0 +1,82 @@
+<!-- 主数据列表（管理员 · Phase 8b 第 4~7 域：供应商 / 员工 / 水站 / 机台）
+     一套页面覆盖四个域，差异全部来自 config/masterData.js 的字段配置 ——
+     所以这里看不到任何「供应商特有」或「员工特有」的分支。
+     ⚠️ 渲染文本里禁止 markdown 粗体（**xxx** 会原样显示星号）。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <!-- 域切换（四个域共用本页，切换即换数据源与字段） -->
+  <view class="md-tabs">
+    <view
+      wx:for="{{domains}}"
+      wx:key="key"
+      class="md-tab {{domainKey === item.key ? 'is-active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onDomainTap"
+    >{{item.label}}</view>
+  </view>
+
+  <view class="md-search">
+    <input
+      class="md-search-input"
+      value="{{keyword}}"
+      placeholder="按名称 / 联系人 / 电话搜索"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onSearch"
+    />
+    <view class="md-search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <view class="md-filter">
+    <view
+      wx:for="{{statusOptions}}"
+      wx:key="key"
+      class="md-chip {{status === item.key ? 'is-active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onStatusTap"
+    >{{item.label}}</view>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">{{domain.label}}数量</text>
+      <text class="t-strong">{{total}} 个</text>
+    </view>
+    <view wx:if="{{domain.note}}" class="t-sub mt-8">{{domain.note}}</view>
+  </view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:elif="{{list.length}}">
+    <view
+      wx:for="{{list}}"
+      wx:key="id"
+      class="list-item"
+      data-id="{{item.id}}"
+      bindtap="onItemTap"
+    >
+      <view class="row-between">
+        <text class="t-strong flex-1 t-ellipsis">{{item.name}}</text>
+        <text class="md-tag {{item.status ? 'md-tag-ok' : 'md-tag-off'}}">{{item.status ? '启用' : '停用'}}</text>
+      </view>
+      <view class="t-sub mt-8">{{item.summary}}</view>
+      <view class="t-sub mt-8">{{item.id}}</view>
+    </view>
+    <view wx:if="{{!hasMore}}" class="empty">— 没有更多了 —</view>
+  </block>
+
+  <view wx:else class="empty">
+    <view class="empty-icon">📋</view>
+    <view>该条件下没有{{domain.label}}</view>
+  </view>
+
+  <view class="footer-bar">
+    <text class="t-sub">点条目可编辑或停用</text>
+    <view class="btn btn-primary btn-sm" bindtap="onCreate">＋ 新建{{domain.label}}</view>
+  </view>
+</view>

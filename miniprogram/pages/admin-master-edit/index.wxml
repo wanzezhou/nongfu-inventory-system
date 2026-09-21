@@ -1,0 +1,91 @@
+<!-- 主数据 新增 / 编辑（管理员 · Phase 8b 第 4~7 域）
+     四个域共用：字段与分组全部来自 config/masterData.js，本模板只按「字段类型」分支渲染
+     （picker / textarea / 普通输入），所以这里没有任何域特有的代码。
+     ⚠️ 渲染文本里禁止 markdown 粗体（**xxx** 会原样显示星号）。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:else>
+    <view wx:for="{{groups}}" wx:key="title" class="card">
+      <view class="section-title">{{item.title}}</view>
+
+      <block wx:for="{{item.fields}}" wx:for-item="f" wx:key="key">
+        <!-- 枚举（picker）：显示文案由 display 承载，避免在 WXML 里做查找 -->
+        <view wx:if="{{f.type === 'picker'}}" class="form-row">
+          <text class="form-label">{{f.label}}<text wx:if="{{f.required}}" class="form-required">*</text></text>
+          <picker
+            range="{{f.optionLabels}}"
+            value="{{f.index}}"
+            data-field="{{f.key}}"
+            bindchange="onPickerChange"
+          >
+            <view class="form-input">{{f.display || '请选择'}}</view>
+          </picker>
+        </view>
+
+        <!-- 多行文本 -->
+        <view wx:elif="{{f.type === 'textarea'}}" class="form-row form-row-stack">
+          <text class="form-label">{{f.label}}</text>
+          <textarea
+            class="form-textarea"
+            value="{{form[f.key]}}"
+            placeholder="{{f.placeholder || ''}}"
+            maxlength="200"
+            data-field="{{f.key}}"
+            bindinput="onInput"
+          />
+        </view>
+
+        <!-- 普通输入（数字键盘由 type=digit 保证，服务端仍会二次校验） -->
+        <view wx:else class="form-row">
+          <text class="form-label">{{f.label}}<text wx:if="{{f.required}}" class="form-required">*</text></text>
+          <input
+            class="form-input"
+            type="{{f.type === 'digit' ? 'digit' : 'text'}}"
+            value="{{form[f.key]}}"
+            placeholder="{{f.placeholder || ''}}"
+            data-field="{{f.key}}"
+            bindinput="onInput"
+          />
+        </view>
+
+        <view wx:if="{{f.hint}}" class="t-sub">{{f.hint}}</view>
+      </block>
+    </view>
+
+    <!-- 状态 -->
+    <view class="card">
+      <view class="section-title">状态</view>
+      <view class="form-row">
+        <text class="form-label">启用</text>
+        <switch checked="{{statusOn}}" color="#c8102e" bindchange="onStatusChange" />
+      </view>
+      <view class="t-sub">
+        停用后该{{domain.label}}不再出现在相关下拉里（如开单选水站），但历史数据完整保留。
+      </view>
+      <view wx:if="{{domain.note}}" class="t-sub mt-8">{{domain.note}}</view>
+    </view>
+
+    <view wx:if="{{isEdit}}" class="card card-flat">
+      <view class="t-sub">
+        保存后立即生效。删除时的语义是：没有任何关联数据才会真删除，
+        存在关联（历史单据等）时自动转为「停用」保留 —— 所以点了删除不一定会消失，
+        返回的提示会说明实际做了什么。
+      </view>
+    </view>
+  </block>
+
+  <view class="footer-bar">
+    <view wx:if="{{isEdit && statusOn}}" class="btn btn-ghost" bindtap="onDisable">停用</view>
+    <view
+      class="btn btn-primary flex-1 {{submitting ? 'btn-disabled' : ''}}"
+      bindtap="onSubmit"
+    >{{submitting ? '提交中…' : (isEdit ? '保存修改' : '保存')}}</view>
+  </view>
+</view>

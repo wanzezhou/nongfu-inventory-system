@@ -20,7 +20,9 @@
     "pages/admin-incomes/index",
     "pages/admin-income-edit/index",
     "pages/admin-products/index",
-    "pages/admin-product-edit/index"
+    "pages/admin-product-edit/index",
+    "pages/admin-master/index",
+    "pages/admin-master-edit/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

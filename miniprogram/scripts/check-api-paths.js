@@ -40,8 +40,15 @@ for (const f of jsFiles) {
   const rel = path.relative(MP_ROOT, f);
   // request.get('/x') / request.post('/x', ...) / req.get(
   const patterns = [
-    /\b(?:request|req|ui\.request)\.(?:get|post)\(\s*['"`]([^'"`]+)['"`]/g,
-    /\burl:\s*['"`]([^'"`]+)['"`]/g
+    // ⚠️ 方法名必须列全：早期只认 get/post，于是 put/del/upload 的调用**完全不被检查**。
+    //    实测：主数据四域全部用 put/del，若只认 get/post 会一条都看不到。
+    /\b(?:request|req|ui\.request)\.(?:get|post|put|del|delete|upload)\(\s*['"`]([^'"`]+)['"`]/g,
+    /\burl:\s*['"`]([^'"`]+)['"`]/g,
+    // 配置驱动的接口路径（如主数据四域共用一套页面，路径写在 config/masterData.js 的 routes 里）。
+    // ⚠️ 不认这类写法会让**整个域**的接口在门禁里静默消失 —— 实测发生过，且因为后端侧
+    //    同时用了模板字符串挂载（同样抽不到），交叉校验会显示「0 条未调用」的**假通过**。
+    //    修法两侧一起：路径写成字面量 + 这里能读配置里的字面量。
+    /\b(?:list|detail|create|update|remove|endpoint|apiPath)\s*:\s*['"`](\/[^'"`]+)['"`]/g
   ];
   for (const re of patterns) {
     let m;

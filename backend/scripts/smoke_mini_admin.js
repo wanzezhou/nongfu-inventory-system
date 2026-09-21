@@ -9,6 +9,11 @@
  *   · 第 1 域 支出/费用 —— 第 3~8 节
  *   · 第 2 域 收入     —— 第 9 节
  *   · 第 3 域 商品     —— 第 11 节（第 10 节是资金恒等式）
+ *   · 第 4~7 域 主数据（供应商/员工/水站/机台）—— 第 12~13 节
+ *     四域由同一工厂构造，故用**一份数据驱动的用例**覆盖四处（逐域手写四遍
+ *     只会让「某个域少测了一条」变得不可见）。第 13 节专门验证删除语义：
+ *     无引用→物理删（hard）、有引用→停用（soft），并断言
+ *     **停用没有触发 machine_sales 的 ON DELETE CASCADE**（否则历史销量会被静默删掉）。
  *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
  *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
@@ -92,6 +97,21 @@ const today = () => {
 };
 
 async function main() {
+  // ── 启动前预清理：上一次若在清理阶段中断（外键、网络、断言抛错…），残留会让本轮以
+  //    「Duplicate entry 'admin-1' for key 'mini_accounts.uk_role_active'」这种**看起来
+  //    毫不相关**的错误开头，排查方向还容易被带偏到唯一键设计上去。
+  //    ⚠️ 冒烟必须能自愈 —— 一次中断不该污染后续所有运行（实测踩到）。
+  //    ⚠️ 顺序同样受外键约束：mini_audit_logs / mini_idempotency 引用 mini_accounts。
+  await pool.query(
+    "DELETE FROM mini_audit_logs WHERE actor_id IN (SELECT CONCAT('mini:', id) FROM mini_accounts WHERE openid LIKE ?)",
+    ['smoke_%']
+  );
+  await pool.query(
+    'DELETE FROM mini_idempotency WHERE mini_account_id IN (SELECT id FROM mini_accounts WHERE openid LIKE ?)',
+    ['smoke_%']
+  );
+  await pool.query('DELETE FROM mini_accounts WHERE openid LIKE ?', ['smoke_%']);
+
   let conn = await pool.getConnection();
 
   // ── 0. 自建测试数据：mini 账号（管理员 + 业务员）+ 一个专用资金账户 ──────────
@@ -978,7 +998,230 @@ async function main() {
     assert(prActions.includes(a), `审计含 ${a}`)
   );
 
-  return { accountId, adminAccountId, salesmanAccountId, uploadedImageName };
+  // ═════════════ 12. 主数据四域（Phase 8b 第 4~7 域）═════════════════════════
+  // 四域由同一个工厂（`_masterFactory.js`）构造，故用一份数据驱动的用例覆盖四处 ——
+  // 逐域手写四遍只会让「某个域少测了一条」变得不可见。
+  section('12. 主数据四域：供应商 / 员工 / 水站 / 机台');
+
+  const MASTER_CASES = [
+    {
+      key: 'suppliers',
+      label: '供应商',
+      nameField: 'supplierName',
+      prefix: 'SMKSUP',
+      extra: { contactName: '冒烟联系人', phone: '13900001111' }
+    },
+    {
+      key: 'workers',
+      label: '员工',
+      nameField: 'workerName',
+      prefix: 'SMKWK',
+      extra: { employeeType: 3, phone: '13900002222' }
+    },
+    {
+      key: 'stations',
+      label: '水站',
+      nameField: 'stationName',
+      prefix: 'SMKST',
+      extra: { contactName: '冒烟联系人', phone: '13900003333', area: '冒烟区' }
+    },
+    {
+      key: 'machines',
+      label: '机台',
+      nameField: 'stationName',
+      prefix: 'SMKM',
+      extra: { machineType: 1, manager: '冒烟负责人' }
+    }
+  ];
+  const masterCases = [];
+
+  for (const c of MASTER_CASES) {
+    const NAME = c.prefix + TS;
+    const base = `/mini/admin/${c.key}`;
+
+    // 列表 / 详情 404
+    const lst = await call('GET', base, null, adminToken);
+    assert(lst.code === 200 && Array.isArray(lst.data.list), `${c.label}：列表 200 且返回 list`);
+    const miss = await call('GET', `${base}/SMOKE_NOT_EXIST`, null, adminToken);
+    assert(miss.code === 404, `${c.label}：不存在返回 404（${miss.code}）`);
+
+    // 必填校验（断言文案指向具体字段，防"因别的原因 400 也算过"）
+    const noName = await call('POST', base, { clientRequestId: NAME + '_nn' }, adminToken);
+    assert(noName.code === 400, `${c.label}：缺名称被拒（400）`);
+    assert(/不能为空/.test(noName.message || ''), `${c.label}：拒绝文案说明是必填问题（${noName.message}）`);
+
+    // 幂等键必填
+    const noIdem = await call('POST', base, Object.assign({ [c.nameField]: NAME }, c.extra), adminToken);
+    assert(noIdem.code === 400, `${c.label}：缺幂等键被拒（400）`);
+    assert(
+      String(noIdem.message || '').includes('clientRequestId'),
+      `${c.label}：拒绝文案指向 clientRequestId（${noIdem.message}）`
+    );
+
+    // 新增
+    const body = Object.assign({ clientRequestId: NAME + '_create', [c.nameField]: NAME }, c.extra);
+    const created = await call('POST', base, body, adminToken);
+    assert(created.code === 200, `${c.label}：新增成功（${created.code} ${created.message || ''}）`);
+    const id = created.data && created.data.id;
+    assert(!!id, `${c.label}：返回 id（${id}）`);
+
+    // 详情回读
+    const detail = await call('GET', `${base}/${id}`, null, adminToken);
+    assert(detail.code === 200 && detail.data[c.nameField] === NAME, `${c.label}：详情回读名称一致`);
+
+    // 幂等：重放 / 同键不同参数
+    const replay = await call('POST', base, body, adminToken);
+    assert(
+      replay.code === 200 && replay.data && replay.data.replayed === true,
+      `${c.label}：新增重放标记 replayed=true`
+    );
+    const conflict = await call('POST', base, Object.assign({}, body, { [c.nameField]: NAME + 'X' }), adminToken);
+    assert(conflict.code === 400, `${c.label}：同键不同参数被拒（400）`);
+
+    // 部分更新：只改名称，其余字段保持
+    const upd = await call(
+      'PUT',
+      `${base}/${id}`,
+      { clientRequestId: NAME + '_upd', [c.nameField]: NAME + '改' },
+      adminToken
+    );
+    assert(upd.code === 200, `${c.label}：编辑成功（${upd.code}）`);
+    const after = await call('GET', `${base}/${id}`, null, adminToken);
+    assert(after.data[c.nameField] === NAME + '改', `${c.label}：名称已改为新值`);
+    if (c.extra.phone) {
+      assert(
+        after.data.phone === c.extra.phone,
+        `${c.label}：未提交的 phone 保持原值（部分更新语义）→ ${after.data.phone}`
+      );
+    }
+    assert(Number(after.data.status) === 1, `${c.label}：未提交 status 时保持启用`);
+
+    // 枚举校验（一域一条，验证 enum 白名单不是摆设）
+    if (c.key === 'workers') {
+      const badEnum = await call(
+        'PUT',
+        `${base}/${id}`,
+        { clientRequestId: NAME + '_enum', employeeType: 9 },
+        adminToken
+      );
+      assert(badEnum.code === 400, `员工：非法员工类型被拒（400，实际 ${badEnum.code}）`);
+      assert(/取值不合法|员工类型/.test(badEnum.message || ''), `员工：拒绝文案指向类型取值（${badEnum.message}）`);
+    }
+    if (c.key === 'machines') {
+      const badEnum = await call(
+        'POST',
+        base,
+        { clientRequestId: NAME + '_enum2', [c.nameField]: NAME + 'E', machineType: 7 },
+        adminToken
+      );
+      assert(badEnum.code === 400, `机台：非法机台类型被拒（400，实际 ${badEnum.code}）`);
+    }
+
+    masterCases.push({ ...c, id, name: NAME + '改' });
+  }
+
+  // ═════════════ 13. 删除语义：无引用物理删 / 有引用转停用 ════════════════════
+  section('13. 删除语义：无引用→物理删（hard），有引用→停用（soft）+ CASCADE 保护');
+
+  for (const c of masterCases) {
+    const base = `/mini/admin/${c.key}`;
+    const delKey = c.prefix + TS + '_del';
+    const del = await call('DELETE', `${base}/${c.id}?clientRequestId=${encodeURIComponent(delKey)}`, null, adminToken);
+    assert(del.code === 200, `${c.label}：删除成功（${del.code} ${del.message || ''}）`);
+    assert(
+      del.data && del.data.mode === 'hard',
+      `${c.label}：本冒烟新建的实体无引用 → 应物理删除（mode=hard，实际 ${del.data && del.data.mode}）`
+    );
+    const gone = await call('GET', `${base}/${c.id}`, null, adminToken);
+    assert(gone.code === 404, `${c.label}：物理删除后详情 404（真的没了）`);
+    // 删除重放（弱网重试不该报错，也不该二次动作）
+    const delReplay = await call(
+      'DELETE',
+      `${base}/${c.id}?clientRequestId=${encodeURIComponent(delKey)}`,
+      null,
+      adminToken
+    );
+    assert(
+      delReplay.code === 200 && delReplay.data && delReplay.data.replayed === true,
+      `${c.label}：删除重放标记 replayed=true`
+    );
+  }
+
+  // ── 机台：造一条销量记录，验证「有引用 → 停用」且**销量不被级联删除**──────────
+  const machineCase = MASTER_CASES.find(c => c.key === 'machines');
+  const MNAME = machineCase.prefix + TS + 'REF';
+  const mCreated = await call(
+    'POST',
+    '/mini/admin/machines',
+    Object.assign({ clientRequestId: MNAME + '_create', [machineCase.nameField]: MNAME }, machineCase.extra),
+    adminToken
+  );
+  assert(mCreated.code === 200, `机台（有引用用例）：新增成功（${mCreated.code}）`);
+  const refMachineId = mCreated.data && mCreated.data.id;
+
+  // 直接插一条销量记录制造引用（走接口的话要跑完整的销量入账链路，过重）
+  const [anyProduct] = await pool.query('SELECT product_id FROM products LIMIT 1');
+  const saleId = 'SMKSALE' + TS;
+  let saleInserted = false;
+  if (anyProduct.length) {
+    await pool.query(
+      `INSERT INTO machine_sales (sale_id, machine_id, machine_type, product_id, quantity, sale_price, sale_date, remark, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, 1, ?, '冒烟销量', 'smoke', NOW(), NOW())`,
+      [saleId, refMachineId, 1, anyProduct[0].product_id, today()]
+    );
+    saleInserted = true;
+  }
+  assert(saleInserted, '机台（有引用用例）：已插入一条销量记录作为引用');
+
+  const delSoft = await call(
+    'DELETE',
+    `/mini/admin/machines/${refMachineId}?clientRequestId=${encodeURIComponent(MNAME + '_del')}`,
+    null,
+    adminToken
+  );
+  assert(delSoft.code === 200, `机台（有引用用例）：删除请求返回 200（${delSoft.code}）`);
+  assert(
+    delSoft.data && delSoft.data.mode === 'soft',
+    `⚠️ 有引用 → 必须转停用而不是真删（mode=soft，实际 ${delSoft.data && delSoft.data.mode}）`
+  );
+  assert(
+    Array.isArray(delSoft.data.references) && delSoft.data.references.length > 0,
+    `返回里带上引用清单（便于管理员知道为什么没删掉）：${JSON.stringify(delSoft.data.references)}`
+  );
+  assert(
+    Array.isArray(delSoft.data.references) && delSoft.data.references.some(r => /销量/.test(r.label || '')),
+    '引用清单里含「销量记录」（与 Web 端同一判据）'
+  );
+
+  // ★ 关键：转停用**没有**触发 machine_sales 的 ON DELETE CASCADE
+  const [saleStill] = await pool.query('SELECT COUNT(*) n FROM machine_sales WHERE sale_id = ?', [saleId]);
+  assert(
+    Number(saleStill[0].n) === 1,
+    '★ 停用机台后，销量记录**仍在**（若误走物理删除，CASCADE 会把历史销量一起删掉）'
+  );
+  const [machineAfter] = await pool.query('SELECT status FROM machine_stations WHERE machine_id = ?', [refMachineId]);
+  assert(machineAfter.length === 1 && Number(machineAfter[0].status) === 0, '机台记录保留且 status 已置 0（停用）');
+
+  // 审计：四域的增/改/删动作都要落库
+  const masterActions = await auditActions();
+  for (const a of [
+    'CREATE_SUPPLIER',
+    'UPDATE_SUPPLIER',
+    'DISABLE_SUPPLIER',
+    'CREATE_WORKER',
+    'UPDATE_WORKER',
+    'DISABLE_WORKER',
+    'CREATE_STATION',
+    'UPDATE_STATION',
+    'DISABLE_STATION',
+    'CREATE_MACHINE',
+    'UPDATE_MACHINE',
+    'DISABLE_MACHINE'
+  ]) {
+    assert(masterActions.includes(a), `审计含 ${a}`);
+  }
+
+  return { accountId, adminAccountId, salesmanAccountId, uploadedImageName, refMachineId, saleInserted };
 }
 
 const ctx = { accountId: null, adminAccountId: null, salesmanAccountId: null, uploadedImageName: '' };
@@ -1013,7 +1256,19 @@ main()
       await pool.query('DELETE FROM other_incomes WHERE income_name LIKE ?', [PREFIX_INC + '%']);
       // 商品域：**物理**删除冒烟商品（软删除是业务语义，冒烟必须把测试数据清干净），
       // 并删掉上传的测试图片（否则每跑一次就往商品图片目录里留一个孤儿文件）
+      // ⚠️⚠️ 清理顺序是被外键**硬约束**的，不能随意调换：
+      //    `machine_sales.product_id → products.product_id` 是 **ON DELETE RESTRICT**，
+      //    所以只要还有销量记录指着某个商品，那个商品就删不掉 —— 而销量记录正好是
+      //    本冒烟第 12 节插的（它取的是库里第一条商品）。第一版把「删商品」写在「删销量」
+      //    前面，结果整个清理中途抛错、残留一路留到下一轮（下一轮又因此失败）。
+      //    教训：子表永远先删。宁可多看一眼外键，也别按"直觉顺序"写清理。
+      await pool.query('DELETE FROM machine_sales WHERE sale_id LIKE ?', ['SMKSALE%']);
       await pool.query('DELETE FROM products WHERE product_code LIKE ?', ['SMKPRD%']);
+      // 主数据四域：按冒烟前缀清除（软删除是业务语义，冒烟必须把测试数据清干净）
+      await pool.query('DELETE FROM machine_stations WHERE station_name LIKE ?', ['SMKM%']);
+      await pool.query('DELETE FROM suppliers WHERE supplier_name LIKE ?', ['SMKSUP%']);
+      await pool.query('DELETE FROM workers WHERE worker_name LIKE ?', ['SMKWK%']);
+      await pool.query('DELETE FROM sub_stations WHERE station_name LIKE ?', ['SMKST%']);
       if (ctx.uploadedImageName) {
         try {
           const imgAbs = path.join(__dirname, '../../商品档案/商品图片', ctx.uploadedImageName);
@@ -1043,10 +1298,25 @@ main()
         PREFIX_INC + '%'
       ]);
       const [leftPrd] = await pool.query('SELECT COUNT(*) n FROM products WHERE product_code LIKE ?', ['SMKPRD%']);
-      const clean = Number(left[0].n) === 0 && Number(leftInc[0].n) === 0 && Number(leftPrd[0].n) === 0;
+      // 主数据五张表（含机台销量）的残留核对
+      const masterLeft = {};
+      for (const [t, col, like] of [
+        ['suppliers', 'supplier_name', 'SMKSUP%'],
+        ['workers', 'worker_name', 'SMKWK%'],
+        ['sub_stations', 'station_name', 'SMKST%'],
+        ['machine_stations', 'station_name', 'SMKM%'],
+        ['machine_sales', 'sale_id', 'SMKSALE%']
+      ]) {
+        // hazard-allow: 表名/列名来自本脚本内的字面量清单（非外部输入）
+        const [r] = await pool.query(`SELECT COUNT(*) n FROM \`${t}\` WHERE \`${col}\` LIKE ?`, [like]);
+        masterLeft[t] = Number(r[0].n);
+      }
+      const masterTotal = Object.values(masterLeft).reduce((a, b) => a + b, 0);
+      const clean =
+        Number(left[0].n) === 0 && Number(leftInc[0].n) === 0 && Number(leftPrd[0].n) === 0 && masterTotal === 0;
       console.log(
-        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条` +
-          `${clean ? ' ✓' : ' ✗'}`
+        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 主数据 ${masterTotal} 条` +
+          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify(masterLeft)}`
       );
     } catch (e) {
       console.log('清理失败：' + e.message);

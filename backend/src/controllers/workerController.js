@@ -8,7 +8,7 @@ const generateWorkerId = () => generateId('W');
 // 员工类型：1=店长 2=配送员工 3=业务员 4=管理员（2026-09-16 新增管理员）
 // 固定月薪适用类型：店长(1)/业务员(3)/管理员(4)；配送员工(2)工资按订单配送费结算
 const MONTHLY_SALARY_TYPES = [1, 3, 4];
-const hasMonthlySalary = (t) => MONTHLY_SALARY_TYPES.includes(Number(t));
+const hasMonthlySalary = t => MONTHLY_SALARY_TYPES.includes(Number(t));
 
 function formatWorker(worker) {
   if (!worker) return null;
@@ -71,7 +71,8 @@ async function getWorkerList(req, res) {
 
 async function getAllWorkers(req, res) {
   try {
-    const sql = 'SELECT worker_id, worker_name, phone, employee_type, monthly_salary FROM workers WHERE status = 1 ORDER BY employee_type ASC, worker_name ASC';
+    const sql =
+      'SELECT worker_id, worker_name, phone, employee_type, monthly_salary FROM workers WHERE status = 1 ORDER BY employee_type ASC, worker_name ASC';
     const [rows] = await pool.execute(sql);
 
     const formattedList = rows.map(item => formatWorker(item));
@@ -119,7 +120,7 @@ async function createWorker(req, res) {
     } = req.body;
 
     const name = workerName || worker_name;
-    const eType = employeeType !== undefined ? employeeType : (employee_type !== undefined ? employee_type : 2);
+    const eType = employeeType !== undefined ? employeeType : employee_type !== undefined ? employee_type : 2;
     const bName = bankName !== undefined ? bankName : bank_name;
     const bAccount = bankAccount !== undefined ? bankAccount : bank_account;
 
@@ -141,10 +142,16 @@ async function createWorker(req, res) {
       phone || null,
       Number(eType) || 2,
       // 提成比例仅业务员（类型3）使用，其他类型存 NULL
-      Number(eType) === 3 ? (commissionRate !== undefined && commissionRate !== null ? Number(commissionRate) : 0) : null,
+      Number(eType) === 3
+        ? commissionRate !== undefined && commissionRate !== null
+          ? Number(commissionRate)
+          : 0
+        : null,
       // 固定月薪仅店长(1)/业务员(3)/管理员(4)使用，配送员工(2)存 NULL
       hasMonthlySalary(eType)
-        ? (monthlySalary !== undefined && monthlySalary !== null && monthlySalary !== '' ? Number(monthlySalary) : null)
+        ? monthlySalary !== undefined && monthlySalary !== null && monthlySalary !== ''
+          ? Number(monthlySalary)
+          : null
         : null,
       bName || null,
       bAccount || null,
@@ -213,9 +220,9 @@ async function updateWorker(req, res) {
     if (monthlySalary !== undefined) {
       const t = Number(eType !== undefined ? eType : existing[0].employee_type);
       updateFields.push('monthly_salary = ?');
-      values.push(hasMonthlySalary(t)
-        ? (monthlySalary !== null && monthlySalary !== '' ? Number(monthlySalary) : null)
-        : null);
+      values.push(
+        hasMonthlySalary(t) ? (monthlySalary !== null && monthlySalary !== '' ? Number(monthlySalary) : null) : null
+      );
     }
     const bName = bankName !== undefined ? bankName : bank_name;
     if (bName !== undefined) {
@@ -275,10 +282,9 @@ async function findWorkerReferences(conn, workerId) {
   const refs = [];
   for (const r of WORKER_REF_TABLES) {
     try {
-      const [rows] = await conn.execute(
-        `SELECT COUNT(*) AS n FROM \`${r.table}\` WHERE \`${r.column}\` = ?`,
-        [workerId]
-      );
+      const [rows] = await conn.execute(`SELECT COUNT(*) AS n FROM \`${r.table}\` WHERE \`${r.column}\` = ?`, [
+        workerId
+      ]);
       const n = Number(rows[0].n) || 0;
       if (n > 0) refs.push({ label: r.label, count: n });
     } catch (e) {
@@ -325,11 +331,11 @@ async function deleteWorker(req, res) {
     }
 
     // —— 有历史单据：只能软删（离职），保留可追溯性 ——
-    await connection.execute(
-      'UPDATE workers SET status = 0, updated_at = ? WHERE worker_id = ?',
-      [new Date(), workerId]
-    );
-    const detail = references.map((r) => `${r.label} ${r.count} 条`).join('、');
+    await connection.execute('UPDATE workers SET status = 0, updated_at = ? WHERE worker_id = ?', [
+      new Date(),
+      workerId
+    ]);
+    const detail = references.map(r => `${r.label} ${r.count} 条`).join('、');
     return success(
       res,
       { mode: 'soft', workerId, workerName, references },
@@ -345,6 +351,9 @@ async function deleteWorker(req, res) {
 
 module.exports = {
   getWorkerList,
+  // 引用检查是「无引用→物理删除；有引用→转停用」这条统一语义的**判据**，
+  // 小程序管理端（Phase 8b）复用同一个函数 —— 两处各写一份必然在「查哪几张表」上分叉
+  findWorkerReferences,
   getAllWorkers,
   getWorkerById,
   createWorker,

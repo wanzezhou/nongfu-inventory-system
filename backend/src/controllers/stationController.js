@@ -68,10 +68,7 @@ async function getAllStations(req, res) {
       params.push(Number(status));
     }
 
-    const [countResult] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM sub_stations ${whereClause}`,
-      params
-    );
+    const [countResult] = await pool.execute(`SELECT COUNT(*) AS total FROM sub_stations ${whereClause}`, params);
     const total = Number(countResult[0].total) || 0;
     if (total > STATION_OPTIONS_MAX) {
       return error(res, `水站数量 ${total} 超过下拉上限 ${STATION_OPTIONS_MAX}`, 400);
@@ -315,8 +312,12 @@ async function updateStation(req, res) {
 async function findStationReferences(conn, stationId) {
   const [orders] = await conn.execute('SELECT COUNT(*) AS n FROM orders WHERE station_id = ?', [stationId]);
   const [tickets] = await conn.execute('SELECT COUNT(*) AS n FROM water_tickets WHERE station_id = ?', [stationId]);
-  const [issuance] = await conn.execute('SELECT COUNT(*) AS n FROM water_ticket_issuance WHERE station_id = ?', [stationId]);
-  const [settlements] = await conn.execute('SELECT COUNT(*) AS n FROM financial_settlement WHERE station_id = ?', [stationId]);
+  const [issuance] = await conn.execute('SELECT COUNT(*) AS n FROM water_ticket_issuance WHERE station_id = ?', [
+    stationId
+  ]);
+  const [settlements] = await conn.execute('SELECT COUNT(*) AS n FROM financial_settlement WHERE station_id = ?', [
+    stationId
+  ]);
   const [deposits] = await conn.execute('SELECT COUNT(*) AS n FROM barrel_deposits WHERE station_id = ?', [stationId]);
   const [returns] = await conn.execute('SELECT COUNT(*) AS n FROM station_returns WHERE station_id = ?', [stationId]);
   const [debtRows] = await conn.execute('SELECT current_debt FROM sub_stations WHERE station_id = ?', [stationId]);
@@ -344,7 +345,8 @@ async function deleteStation(req, res) {
 
     // 检查水站是否存在
     const [existing] = await connection.execute(
-      'SELECT station_id, station_name, status, current_debt FROM sub_stations WHERE station_id = ?', [id]
+      'SELECT station_id, station_name, status, current_debt FROM sub_stations WHERE station_id = ?',
+      [id]
     );
     if (existing.length === 0) {
       return error(res, '水站不存在', 404);
@@ -362,18 +364,20 @@ async function deleteStation(req, res) {
         await connection.rollback();
         throw e;
       }
-      return success(res, { mode: 'hard', stationId, stationName, references },
-        `水站「${stationName}」已删除`);
+      return success(res, { mode: 'hard', stationId, stationName, references }, `水站「${stationName}」已删除`);
     }
 
     // 软删除：将 status 设为 0（保留历史可追溯）
-    await connection.execute(
-      'UPDATE sub_stations SET status = 0, updated_at = ? WHERE station_id = ?',
-      [new Date(), stationId]
-    );
+    await connection.execute('UPDATE sub_stations SET status = 0, updated_at = ? WHERE station_id = ?', [
+      new Date(),
+      stationId
+    ]);
     const detail = describeReferences(references);
-    return success(res, { mode: 'soft', stationId, stationName, references },
-      `水站「${stationName}」存在关联数据（${detail}），已转为「停用」保留而非删除`);
+    return success(
+      res,
+      { mode: 'soft', stationId, stationName, references },
+      `水站「${stationName}」存在关联数据（${detail}），已转为「停用」保留而非删除`
+    );
   } catch (err) {
     console.error('删除水站失败:', err);
     return error(res, '删除水站失败');
@@ -384,6 +388,9 @@ async function deleteStation(req, res) {
 
 module.exports = {
   getStationList,
+  // 引用检查是「无引用→物理删除；有引用→转停用」这条统一语义的**判据**，
+  // 小程序管理端（Phase 8b）复用同一个函数 —— 两处各写一份必然在「查哪几张表」上分叉
+  findStationReferences,
   getAllStations,
   getStationById,
   createStation,

@@ -41,7 +41,8 @@ async function getSupplierList(req, res) {
 
 async function getAllSuppliers(req, res) {
   try {
-    const sql = 'SELECT supplier_id, supplier_name, contact_name, phone FROM suppliers WHERE status = 1 ORDER BY supplier_name ASC';
+    const sql =
+      'SELECT supplier_id, supplier_name, contact_name, phone FROM suppliers WHERE status = 1 ORDER BY supplier_name ASC';
     const [rows] = await pool.execute(sql);
 
     return success(res, rows);
@@ -220,9 +221,9 @@ async function updateSupplier(req, res) {
 //   ⚠️ purchase_records.supplier_id 是 ON DELETE SET NULL —— 物理删供应商不会报错，
 //      但会让历史采购记录**静默失去供应商归属**，故有采购记录即不物理删
 async function findSupplierReferences(conn, supplierId) {
-  const [purchases] = await conn.execute(
-    'SELECT COUNT(*) AS n FROM purchase_records WHERE supplier_id = ?', [supplierId]
-  );
+  const [purchases] = await conn.execute('SELECT COUNT(*) AS n FROM purchase_records WHERE supplier_id = ?', [
+    supplierId
+  ]);
   return [countRef('采购入库记录', purchases[0].n)].filter(Boolean);
 }
 
@@ -236,7 +237,8 @@ async function deleteSupplier(req, res) {
     const { id } = req.params;
 
     const [existing] = await connection.execute(
-      'SELECT supplier_id, supplier_name, status FROM suppliers WHERE supplier_id = ?', [id]
+      'SELECT supplier_id, supplier_name, status FROM suppliers WHERE supplier_id = ?',
+      [id]
     );
     if (existing.length === 0) {
       return error(res, '供应商不存在', 404);
@@ -254,17 +256,19 @@ async function deleteSupplier(req, res) {
         await connection.rollback();
         throw e;
       }
-      return success(res, { mode: 'hard', supplierId, supplierName, references },
-        `供应商「${supplierName}」已删除`);
+      return success(res, { mode: 'hard', supplierId, supplierName, references }, `供应商「${supplierName}」已删除`);
     }
 
-    await connection.execute(
-      'UPDATE suppliers SET status = 0, updated_at = ? WHERE supplier_id = ?',
-      [new Date(), supplierId]
-    );
+    await connection.execute('UPDATE suppliers SET status = 0, updated_at = ? WHERE supplier_id = ?', [
+      new Date(),
+      supplierId
+    ]);
     const detail = describeReferences(references);
-    return success(res, { mode: 'soft', supplierId, supplierName, references },
-      `供应商「${supplierName}」存在关联数据（${detail}），已转为「停用」保留而非删除`);
+    return success(
+      res,
+      { mode: 'soft', supplierId, supplierName, references },
+      `供应商「${supplierName}」存在关联数据（${detail}），已转为「停用」保留而非删除`
+    );
   } catch (err) {
     console.error('删除供应商失败:', err);
     return error(res, '删除供应商失败');
@@ -275,6 +279,9 @@ async function deleteSupplier(req, res) {
 
 module.exports = {
   getSupplierList,
+  // 引用检查是「无引用→物理删除；有引用→转停用」这条统一语义的**判据**，
+  // 小程序管理端（Phase 8b）复用同一个函数 —— 两处各写一份必然在「查哪几张表」上分叉
+  findSupplierReferences,
   getAllSuppliers,
   getSupplierById,
   createSupplier,

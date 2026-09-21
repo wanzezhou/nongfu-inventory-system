@@ -40,6 +40,8 @@ const adminCtrl = require('../controllers/mini/adminController');
 const adminExpenseCtrl = require('../controllers/mini/admin/expenseController');
 const adminIncomeCtrl = require('../controllers/mini/admin/incomeController');
 const adminProductCtrl = require('../controllers/mini/admin/productController');
+// 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
+const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
 // 本域只负责补上小程序侧的鉴权 —— 不另写一套存储配置。
 const webProductCtrl = require('../controllers/productController');
@@ -172,6 +174,48 @@ router.post('/admin/products', requireMiniAdmin, requireMiniActive, adminProduct
 router.put('/admin/products/:id', requireMiniAdmin, requireMiniActive, adminProductCtrl.updateProduct);
 // 停用（软删除）：路径用 DELETE，但语义是「停用」——商品被 order_items 引用，不能真删
 router.delete('/admin/products/:id', requireMiniAdmin, requireMiniActive, adminProductCtrl.disableProduct);
+
+// ── 域 4~7/17：主数据四域（供应商 / 员工 / 水站 / 机台）────────────────────────
+// 四域的**编排**是同构的（全在 `_masterFactory.js`：幂等、审计、部分更新、
+// 「无引用→物理删除；有引用→转停用」），差异只在表与字段。
+//
+// ⚠️ 路由这里**刻意逐条显式写**，而不是 `for (const d of DOMAINS) router.get(...)`：
+//    `scripts/check-api-paths.js` 用正则抽取路径字面量，**模板字符串挂载它看不见** ——
+//    曾实测循环挂载导致「后端 20 条新路由 + 小程序端 20 条调用」双边静默漏检，
+//    交叉校验显示"0 条未调用"的**假通过**。可静态校验性优先于少写 20 行。
+//    代价是新增域时要记得补 5 条 —— 由「每域恰好 5 条、四个域结构对齐」的可见性兜住。
+//
+// ⚠️ 删除语义与 Web 端**同一判据**：引用检查函数从各 Web 控制器导入，不重写。
+
+const { supplier: sup, worker: wk, station: st, machine: mc } = masterDomains;
+
+// 供应商
+router.get('/admin/suppliers', requireMiniAdmin, sup.list);
+router.get('/admin/suppliers/:id', requireMiniAdmin, sup.getById);
+router.post('/admin/suppliers', requireMiniAdmin, requireMiniActive, sup.create);
+router.put('/admin/suppliers/:id', requireMiniAdmin, requireMiniActive, sup.update);
+router.delete('/admin/suppliers/:id', requireMiniAdmin, requireMiniActive, sup.remove);
+
+// 员工 / 业务员
+router.get('/admin/workers', requireMiniAdmin, wk.list);
+router.get('/admin/workers/:id', requireMiniAdmin, wk.getById);
+router.post('/admin/workers', requireMiniAdmin, requireMiniActive, wk.create);
+router.put('/admin/workers/:id', requireMiniAdmin, requireMiniActive, wk.update);
+router.delete('/admin/workers/:id', requireMiniAdmin, requireMiniActive, wk.remove);
+
+// 水站
+router.get('/admin/stations', requireMiniAdmin, st.list);
+router.get('/admin/stations/:id', requireMiniAdmin, st.getById);
+router.post('/admin/stations', requireMiniAdmin, requireMiniActive, st.create);
+router.put('/admin/stations/:id', requireMiniAdmin, requireMiniActive, st.update);
+router.delete('/admin/stations/:id', requireMiniAdmin, requireMiniActive, st.remove);
+
+// 机台（零售机 / 量贩机）
+router.get('/admin/machines', requireMiniAdmin, mc.list);
+router.get('/admin/machines/:id', requireMiniAdmin, mc.getById);
+router.post('/admin/machines', requireMiniAdmin, requireMiniActive, mc.create);
+router.put('/admin/machines/:id', requireMiniAdmin, requireMiniActive, mc.update);
+router.delete('/admin/machines/:id', requireMiniAdmin, requireMiniActive, mc.remove);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，

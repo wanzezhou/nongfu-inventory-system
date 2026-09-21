@@ -66,10 +66,7 @@ async function getAllMachineStations(req, res) {
       params.push(Number(status));
     }
 
-    const [countResult] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM machine_stations ${whereClause}`,
-      params
-    );
+    const [countResult] = await pool.execute(`SELECT COUNT(*) AS total FROM machine_stations ${whereClause}`, params);
     const total = Number(countResult[0].total) || 0;
     if (total > MACHINE_OPTIONS_MAX) {
       return error(res, `机台数量 ${total} 超过下拉上限 ${MACHINE_OPTIONS_MAX}`, 400);
@@ -225,16 +222,9 @@ async function updateMachineStation(req, res) {
 //   ⚠️ machine_sales 的外键是 ON DELETE CASCADE —— 物理删机台会**连带删掉销量记录**，
 //      所以「有销量」必须算作引用（否则删一台机器就静默毁掉它的历史销量）
 async function findMachineReferences(conn, machineId) {
-  const [orders] = await conn.execute(
-    'SELECT COUNT(*) AS n FROM orders WHERE machine_station_id = ?', [machineId]
-  );
-  const [sales] = await conn.execute(
-    'SELECT COUNT(*) AS n FROM machine_sales WHERE machine_id = ?', [machineId]
-  );
-  return [
-    countRef('供货订单', orders[0].n),
-    countRef('销量记录', sales[0].n)
-  ].filter(Boolean);
+  const [orders] = await conn.execute('SELECT COUNT(*) AS n FROM orders WHERE machine_station_id = ?', [machineId]);
+  const [sales] = await conn.execute('SELECT COUNT(*) AS n FROM machine_sales WHERE machine_id = ?', [machineId]);
+  return [countRef('供货订单', orders[0].n), countRef('销量记录', sales[0].n)].filter(Boolean);
 }
 
 /**
@@ -248,7 +238,8 @@ async function deleteMachineStation(req, res) {
     const { id } = req.params;
 
     const [existing] = await connection.execute(
-      'SELECT machine_id, station_name, status FROM machine_stations WHERE machine_id = ?', [id]
+      'SELECT machine_id, station_name, status FROM machine_stations WHERE machine_id = ?',
+      [id]
     );
     if (existing.length === 0) {
       return error(res, '机台不存在', 404);
@@ -266,17 +257,19 @@ async function deleteMachineStation(req, res) {
         await connection.rollback();
         throw e;
       }
-      return success(res, { mode: 'hard', machineId, machineName, references },
-        `机台「${machineName}」已删除`);
+      return success(res, { mode: 'hard', machineId, machineName, references }, `机台「${machineName}」已删除`);
     }
 
-    await connection.execute(
-      'UPDATE machine_stations SET status = 0, updated_at = ? WHERE machine_id = ?',
-      [new Date(), machineId]
-    );
+    await connection.execute('UPDATE machine_stations SET status = 0, updated_at = ? WHERE machine_id = ?', [
+      new Date(),
+      machineId
+    ]);
     const detail = describeReferences(references);
-    return success(res, { mode: 'soft', machineId, machineName, references },
-      `机台「${machineName}」存在关联数据（${detail}），已转为「停用」保留而非删除`);
+    return success(
+      res,
+      { mode: 'soft', machineId, machineName, references },
+      `机台「${machineName}」存在关联数据（${detail}），已转为「停用」保留而非删除`
+    );
   } catch (err) {
     console.error('删除机台失败:', err);
     return error(res, '删除机台失败');
@@ -287,6 +280,9 @@ async function deleteMachineStation(req, res) {
 
 module.exports = {
   getMachineStationList,
+  // 引用检查是「无引用→物理删除；有引用→转停用」这条统一语义的**判据**，
+  // 小程序管理端（Phase 8b）复用同一个函数 —— 两处各写一份必然在「查哪几张表」上分叉
+  findMachineReferences,
   getAllMachineStations,
   getMachineStationById,
   createMachineStation,

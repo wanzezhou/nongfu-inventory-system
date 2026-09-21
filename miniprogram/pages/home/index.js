@@ -126,6 +126,10 @@ Page({
   goAdminProducts() {
     ui.navTo('/pages/admin-products/index');
   },
+  /** Phase 8b 业务域：主数据（供应商 / 员工 / 水站 / 机台，四个域共用一个页面，页内可切换） */
+  goAdminMaster() {
+    ui.navTo('/pages/admin-master/index');
+  },
   goOrderDetail(e) {
     ui.navTo(`/pages/order-detail/index?id=${e.currentTarget.dataset.id}`);
   },

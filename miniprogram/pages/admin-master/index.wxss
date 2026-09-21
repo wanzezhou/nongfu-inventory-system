@@ -1,0 +1,90 @@
+/* 主数据列表（Phase 8b 第 4~7 域）
+   类名前缀 md-；表单类走 app.wxss 全局样式 */
+
+.md-tabs {
+  display: flex;
+  padding: 16rpx 24rpx 0;
+  gap: 12rpx;
+}
+
+.md-tab {
+  flex: 1;
+  height: 68rpx;
+  line-height: 68rpx;
+  text-align: center;
+  border-radius: 34rpx;
+  background: #f2f3f5;
+  color: #5a6371;
+  font-size: 27rpx;
+}
+
+.md-tab.is-active {
+  background: #fdecef;
+  color: #c8102e;
+  font-weight: 600;
+}
+
+.md-search {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 24rpx;
+  gap: 16rpx;
+}
+
+.md-search-input {
+  flex: 1;
+  height: 72rpx;
+  padding: 0 24rpx;
+  border-radius: 36rpx;
+  background: #f2f3f5;
+  font-size: 28rpx;
+  color: #1f2329;
+}
+
+.md-search-btn {
+  flex-shrink: 0;
+  height: 72rpx;
+  padding: 0 32rpx;
+  line-height: 72rpx;
+  border-radius: 36rpx;
+  background: #c8102e;
+  color: #fff;
+  font-size: 28rpx;
+}
+
+.md-filter {
+  display: flex;
+  padding: 0 24rpx 16rpx;
+  gap: 16rpx;
+}
+
+.md-chip {
+  padding: 10rpx 28rpx;
+  border-radius: 28rpx;
+  background: #f2f3f5;
+  color: #5a6371;
+  font-size: 26rpx;
+}
+
+.md-chip.is-active {
+  background: #fdecef;
+  color: #c8102e;
+  font-weight: 600;
+}
+
+.md-tag {
+  flex-shrink: 0;
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+}
+
+.md-tag-ok {
+  background: #fdecef;
+  color: #c8102e;
+}
+
+.md-tag-off {
+  background: #f2f3f5;
+  color: #8a9099;
+}
