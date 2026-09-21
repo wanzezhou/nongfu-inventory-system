@@ -39,6 +39,10 @@ const adminCtrl = require('../controllers/mini/adminController');
 // Phase 8b 管理员写操作：按业务域分文件（controllers/mini/admin/*），逐域追加
 const adminExpenseCtrl = require('../controllers/mini/admin/expenseController');
 const adminIncomeCtrl = require('../controllers/mini/admin/incomeController');
+const adminProductCtrl = require('../controllers/mini/admin/productController');
+// 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
+// 本域只负责补上小程序侧的鉴权 —— 不另写一套存储配置。
+const webProductCtrl = require('../controllers/productController');
 
 const router = express.Router();
 
@@ -148,6 +152,26 @@ router.get('/admin/incomes/:id', requireMiniAdmin, adminIncomeCtrl.getIncomeById
 router.post('/admin/incomes', requireMiniAdmin, requireMiniActive, adminIncomeCtrl.createIncome);
 router.put('/admin/incomes/:id', requireMiniAdmin, requireMiniActive, adminIncomeCtrl.updateIncome);
 router.delete('/admin/incomes/:id', requireMiniAdmin, requireMiniActive, adminIncomeCtrl.deleteIncome);
+
+// ── 域 3/17：商品 ────────────────────────────────────────────────────────────
+// ⚠️ 两条静态段（`/options`、`/upload-image`）必须早于 `/products/:id`（仓库陷阱）。
+// ⚠️ 本域是「业务员可售」两列（salesman_mini_enabled / salesman_min_price）的**唯一写入路径** ——
+//    Web 端的 create/updateProduct 根本不处理这两列（迁移新增列、Web 表单没接）。
+//    在此之前它们只能手工改库，也就是说**不做本域，业务员端一件商品都卖不出去**。
+router.get('/admin/products/options', requireMiniAdmin, adminProductCtrl.getFormOptions);
+router.post(
+  '/admin/products/upload-image',
+  requireMiniAdmin,
+  requireMiniActive,
+  webProductCtrl.uploadProductImage,
+  webProductCtrl.handleUploadImage
+);
+router.get('/admin/products', requireMiniAdmin, adminProductCtrl.listProducts);
+router.get('/admin/products/:id', requireMiniAdmin, adminProductCtrl.getProductById);
+router.post('/admin/products', requireMiniAdmin, requireMiniActive, adminProductCtrl.createProduct);
+router.put('/admin/products/:id', requireMiniAdmin, requireMiniActive, adminProductCtrl.updateProduct);
+// 停用（软删除）：路径用 DELETE，但语义是「停用」——商品被 order_items 引用，不能真删
+router.delete('/admin/products/:id', requireMiniAdmin, requireMiniActive, adminProductCtrl.disableProduct);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，
