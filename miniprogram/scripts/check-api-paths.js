@@ -114,14 +114,33 @@ for (const f of jsFiles) {
     // ⚠️ 不认这类写法会让**整个域**的接口在门禁里静默消失 —— 实测发生过，且因为后端侧
     //    同时用了模板字符串挂载（同样抽不到），交叉校验会显示「0 条未调用」的**假通过**。
     //    修法两侧一起：路径写成字面量 + 这里能读配置里的字面量。
-    /\b(?:list|detail|create|update|remove|endpoint|apiPath)\s*:\s*['"`](\/[^'"`]+)['"`]/g
+    /\b(?:list|detail|create|update|remove|endpoint|apiPath)\s*:\s*['"`](\/[^'"`]+)['"`]/g,
+    // 字符串拼接出动态段：`'/admin/orders/' + id + '/fulfillment'`。
+    // ⚠️ 这是拼接写法里**可静态复原**的一种（字面量 + 表达式 + 字面量）：中段必然是
+    //    一个动态 id，重构为 `/:id` 后即可与后端模板比对。实测订单域三条动态路由
+    //    因这种写法被当成「未调用」。更复杂的表达式（三元/函数调用）仍走盲区清单。
+    /\b(?:request|req|ui\.request)\.(?:get|post|put|del|delete)\(\s*['"`](\/[^'"`]+?)['"`]\s*\+\s*[^+]+?\+\s*['"`](\/[^'"`]+)['"`]/g,
+    // 两段拼接（动态段在末尾）：`'/admin/orders/' + id` → `/admin/orders/:id`。
+    // ⚠️ `+` 后面必须不是引号 —— 否则 `'​/x/' + '/y'` 这种纯字面量拼接会被误加 :id。
+    /\b(?:request|req|ui\.request)\.(?:get|post|put|del|delete)\(\s*['"`](\/[^'"`]+?)['"`]\s*\+\s*[^'"`\s)][^)]*?[,)]/g
   ];
   for (const re of patterns) {
     let m;
     while ((m = re.exec(src)) !== null) {
-      const raw = m[1];
+      // 拼接模式的重构：三段（前段 + expr + 尾段）→ 前段/:id/尾段；
+      // 两段（前段以 / 结尾 + expr）→ 前段:id（动态段在末尾）。
+      // ⚠️ 判断依据是匹配文本里含 `+`（纯字面量模式不会带 +），避免误伤普通路径。
+      let raw;
+      if (m[2] !== undefined) {
+        raw = m[1].endsWith('/') ? `${m[1]}:id${m[2]}` : `${m[1]}/:id${m[2]}`;
+      } else if (m[0].includes('+') && m[1].endsWith('/')) {
+        raw = `${m[1]}:id`;
+      } else {
+        raw = m[1];
+      }
       // 只保留相对 API_PREFIX 的路径（以 / 开头）；绝对地址或外部链接跳过
       if (!raw.startsWith('/')) continue;
+      raw = raw.replace(/\/+$/, ''); // 去尾斜杠：拼接前段常带尾 / ，与注册表比对的段数才一致
       // ⚠️ 排除页面路由：`wx.navigateTo({ url: '/pages/xxx' })` 里的 url 不是接口路径。
       //    不排除会产生纯误报，而门禁的误报会训练人忽略告警。
       if (raw.startsWith('/pages/') || raw.startsWith('/custom-tab-bar/')) continue;

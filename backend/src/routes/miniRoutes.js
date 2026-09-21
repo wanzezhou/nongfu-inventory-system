@@ -41,6 +41,7 @@ const adminExpenseCtrl = require('../controllers/mini/admin/expenseController');
 const adminIncomeCtrl = require('../controllers/mini/admin/incomeController');
 const adminProductCtrl = require('../controllers/mini/admin/productController');
 const adminInventoryCtrl = require('../controllers/mini/admin/inventoryController');
+const adminOrderCtrl = require('../controllers/mini/admin/orderController');
 // 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
 const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
@@ -236,6 +237,13 @@ router.get('/admin/inventory/:productId', requireMiniAdmin, adminInventoryCtrl.g
 router.get('/admin/purchases', requireMiniAdmin, adminInventoryCtrl.listPurchases);
 router.post('/admin/purchases/:purchaseId/void', requireMiniAdmin, requireMiniActive, adminInventoryCtrl.voidPurchase);
 router.get('/admin/stock-out-records', requireMiniAdmin, adminInventoryCtrl.listStockOutRecords);
+
+// ── 域 9/17：订单（全来源列表 / 详情 / 履约推进 / 管理员取消）────────────────
+// ⚠️ 静态路径在前：`/admin/orders/:id` 会吞掉一切更深路径，若有静态子段必须先注册。
+router.get('/admin/orders', requireMiniAdmin, adminOrderCtrl.listOrders);
+router.put('/admin/orders/:id/fulfillment', requireMiniAdmin, requireMiniActive, adminOrderCtrl.advance);
+router.post('/admin/orders/:id/cancel', requireMiniAdmin, requireMiniActive, adminOrderCtrl.cancel);
+router.get('/admin/orders/:id', requireMiniAdmin, adminOrderCtrl.getOrderById);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 

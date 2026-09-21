@@ -18,6 +18,9 @@
  *     作废=回退库存+原路退回）。核心事务体从 Web 端 `inventoryController` 抽出后
  *     由两端共用（`applyStockIn/applyStockOut/applyPurchaseVoid`），Web 端的
  *     既有守护冒烟（入库账户扣款 41、出库台账 15、body 归一 26）是重构的保险。
+ *   · 第 9 域 订单 —— 第 15 节。履约状态机（**全系统唯一推进入口**，此前下单后
+ *     永远停在 PAID）+ 管理员取消（钱包单完整退款 / Web 现金单账务回冲，两条链都验）。
+ *     测试订单用业务员令牌走真实下单链路产生（复用第 0 节的 mini 账号 + 新建 worker/钱包）。
  *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
  *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
@@ -58,6 +61,7 @@ const fs = require('fs');
 const path = require('path');
 const { pool } = require('../src/config/db');
 const { signMiniToken } = require('../src/services/miniAccountService');
+const walletService = require('../src/services/walletService');
 const { cleanupSmokeResidue } = require('./lib/smokeCleanup');
 
 async function call(method, path, body, token) {
@@ -100,6 +104,44 @@ const today = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
+/**
+ * 订单域冒烟数据的清理（预清理与 finally 共用）。
+ * 识别键：buyer_id 前缀（SMKWKORD%）+ Web 测试单号（SMKWEB%）。
+ * ⚠️ 刻意**不通过 worker 表反查**：worker 先被删时（历史轮的清理顺序）订单会变成
+ *    孤儿单（buyer_id 指向不存在的 worker），按 worker 反查永远找不到它们 ——
+ *    而 buyer_id 本身就带着前缀，直接 LIKE 才是可靠的。
+ * 顺序受外键/账务约束：营收流水与明细先删，再删订单；钱包按 owner 删。
+ */
+async function cleanupOrderSmokeData() {
+  const webIds = (await pool.query("SELECT order_id FROM orders WHERE order_id LIKE 'SMKWEB%'"))[0].map(
+    r => r.order_id
+  );
+  const miniIds = (await pool.query("SELECT order_id FROM orders WHERE buyer_id LIKE 'SMKWKORD%'"))[0].map(
+    r => r.order_id
+  );
+  const orderIds = webIds.concat(miniIds);
+  if (orderIds.length) {
+    const ph = orderIds.map(() => '?').join(',');
+    await pool.query(
+      `DELETE FROM finance_transactions WHERE related_module = 'order' AND related_id IN (${ph})`,
+      orderIds
+    );
+    await pool.query(`DELETE FROM order_items WHERE order_id IN (${ph})`, orderIds);
+    await pool.query(`DELETE FROM orders WHERE order_id IN (${ph})`, orderIds);
+  }
+  // 业务员钱包（下单支付/取消退款都在这个钱包上）；同样按 owner_id 前缀找，不依赖 worker 存活
+  const wallets = (
+    await pool.query(
+      "SELECT wallet_id FROM wallet_accounts WHERE owner_type = 'SALESMAN' AND owner_id LIKE 'SMKWKORD%'"
+    )
+  )[0].map(r => r.wallet_id);
+  if (wallets.length) {
+    const wph = wallets.map(() => '?').join(',');
+    await pool.query(`DELETE FROM wallet_transactions WHERE wallet_id IN (${wph})`, wallets);
+    await pool.query(`DELETE FROM wallet_accounts WHERE wallet_id IN (${wph})`, wallets);
+  }
+}
+
 async function main() {
   // ── 启动前预清理：上一次若在清理阶段中断（外键、网络、断言抛错…），残留会让本轮以
   //    「Duplicate entry 'admin-1' for key 'mini_accounts.uk_role_active'」这种**看起来
@@ -140,6 +182,9 @@ async function main() {
       ]);
       await pool.query("DELETE FROM other_incomes WHERE income_name LIKE 'SMKINC%'");
     }
+    // ⚠️ 订单清理必须排在「库存三表 + SMKINV 商品」之前：order_items.product_id →
+    //    products 是 ON DELETE RESTRICT，残留订单不先删，商品就删不掉（实测中断整轮清理）。
+    await cleanupOrderSmokeData();
     await pool.query('DELETE FROM machine_sales WHERE sale_id LIKE ?', ['SMKSALE%']);
     const invPids = (await pool.query("SELECT product_id FROM products WHERE product_code LIKE 'SMKINV%'"))[0].map(
       r => r.product_id
@@ -162,6 +207,8 @@ async function main() {
     await pool.query('DELETE FROM suppliers WHERE supplier_name LIKE ?', ['SMKSUP%']);
     await pool.query('DELETE FROM workers WHERE worker_name LIKE ?', ['SMKWK%']);
     await pool.query('DELETE FROM sub_stations WHERE station_name LIKE ?', ['SMKST%']);
+    // 订单域（第 9 域）的跨轮残留：明细/营收流水 → 订单 → 业务员钱包
+    await cleanupOrderSmokeData();
   }
 
   let conn = await pool.getConnection();
@@ -1547,7 +1594,308 @@ async function main() {
     `14.12 库存域资金恒等式：余额(${balEnd[0].b}) = 基线(${B0}) + 净额(${Number(net).toFixed(2)})`
   );
 
-  return { accountId, adminAccountId, salesmanAccountId, uploadedImageName, refMachineId, saleInserted, invPid };
+  // ═════════════ 15. 订单域（Phase 8b 第 9 域）═══════════════════════════════
+  // ⚠️ 在此之前全系统没有任何推进 fulfillment_status 的路径 —— 本域是「备货/配送/
+  //    完成」状态机的唯一入口。取消分两条链：钱包单走完整退款（settleOrderReversal），
+  //    Web 现金单走账务回冲（restoreSalesEffects 等）—— 两条都要验。
+  section('15. 订单域：全来源列表 / 履约状态机 / 管理员取消（钱包单退款 + 现金单回冲）');
+
+  // ── 15.0 准备：给业务员补 worker 主体 + 钱包 + 测试商品，然后用业务员身份下两单 ──
+  const ordWorkerId = 'SMKWKORD' + TS; // SMKWK% 前缀 → 被既有主数据清理覆盖
+  const ordCode = 'SMKINVORD' + TS; // SMKINV% 前缀 → 被库存域清理覆盖（下单会写 inventory）
+  await pool.query(
+    `INSERT INTO workers (worker_id, worker_name, phone, employee_type, commission_rate, status, created_at, updated_at)
+     VALUES (?, '冒烟订单业务员', '13800000001', 3, 0.00, 1, NOW(), NOW())`,
+    [ordWorkerId]
+  );
+  await pool.query('UPDATE mini_accounts SET target_id = ? WHERE id = ?', [ordWorkerId, salesmanAccountId]);
+  // ⚠️ target_id 变更后**必须重签令牌**：miniAuth 每请求比对令牌里的 target_id 与库中值，
+  //    不一致直接 401「绑定关系已变更」—— 不重签的话 15.0 之后所有业务员请求都会 401，
+  //    表现像「下单接口坏了」，实为测试自身的令牌失效（实测踩到）。
+  const ordSalesmanToken = signMiniToken({ id: salesmanAccountId, role: 'salesman', target_id: ordWorkerId });
+  const ordWalletConn = await pool.getConnection();
+  let ordWalletId;
+  try {
+    await ordWalletConn.beginTransaction();
+    const w = await walletService.ensureWallet(ordWalletConn, {
+      ownerType: 'SALESMAN',
+      ownerId: ordWorkerId,
+      ownerName: '冒烟订单业务员'
+    });
+    ordWalletId = w.wallet_id;
+    const wRow = await walletService.loadWalletForUpdate(ordWalletConn, ordWalletId);
+    await walletService.creditWallet(ordWalletConn, wRow, {
+      txType: 'ADJUST_IN',
+      amount: 500,
+      relatedType: 'MANUAL_ADJUST',
+      operatorId: 'smoke',
+      remark: '订单域冒烟注入'
+    });
+    await ordWalletConn.commit();
+  } catch (e) {
+    await ordWalletConn.rollback();
+    throw e;
+  } finally {
+    ordWalletConn.release();
+  }
+  await pool.query(
+    `INSERT INTO products (product_id, product_code, product_name, specification, unit,
+       purchase_price, wholesale_price, retail_price, machine_price, total_delivery_fee,
+       distribution_delivery_fee, worker_retail_delivery_fee, worker_wholesale_delivery_fee,
+       worker_machine_delivery_fee, category, status,
+       salesman_mini_enabled, salesman_min_price, created_at, updated_at)
+     SELECT CONCAT('PROORD', ?), ?, '冒烟订单商品', '箱', '箱', 2, 5, 5, 0, 1, 1, 1, 0.5, 0, '冒烟', 1, 1, 4, NOW(), NOW()`,
+    [TS, ordCode]
+  );
+  const [ordProd] = await pool.query('SELECT product_id FROM products WHERE product_code = ?', [ordCode]);
+  const ordPid = ordProd[0].product_id;
+  // ⚠️ 下单扣库存（deductInventoryForSale）要求 inventory 行**必须存在**（FOR UPDATE 校验），
+  //    没有库存记录的商品连 1 件都下不了单 —— 必须先插一条库存（实测踩到）。
+  await pool.query(
+    `INSERT INTO inventory (product_id, quantity, last_in_time, updated_at) VALUES (?, 100, NOW(), NOW())`,
+    [ordPid]
+  );
+
+  const placeOrder = async key =>
+    call(
+      'POST',
+      '/mini/orders',
+      {
+        clientRequestId: key,
+        fulfillmentType: 'DELIVERY',
+        orderScene: 'CUSTOMER_ORDER',
+        customerName: '冒烟订单客户',
+        customerPhone: '13700000000',
+        customerAddress: '南京市冒烟订单路1号',
+        items: [{ productId: ordPid, quantity: 2, unitPrice: 5 }]
+      },
+      ordSalesmanToken
+    );
+  const ord1 = await placeOrder('smkord_' + TS + '_o1');
+  const ord2 = await placeOrder('smkord_' + TS + '_o2');
+  assert(
+    ord1.code === 200 && ord2.code === 200,
+    `15.0 两笔测试订单下单成功（${ord1.code} ${ord1.message || ''} / ${ord2.code} ${ord2.message || ''}）`
+  );
+  const ord1Id = ord1.data && ord1.data.orderId;
+  const ord2Id = ord2.data && ord2.data.orderId;
+
+  // ── 15.1 权限：业务员令牌一律 403 ─────────────────────────────────────────
+  const ordDenied = await call('GET', '/mini/admin/orders', null, ordSalesmanToken);
+  assert(
+    ordDenied.code === 403 && /需要管理员角色/.test(String(ordDenied.message)),
+    `15.1 业务员读管理端订单被拒 403（实得 ${ordDenied.code} ${ordDenied.message || ''}）`
+  );
+  const ordAdvDenied = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord1Id + '/fulfillment',
+    { clientRequestId: 'x', to: 'PROCESSING' },
+    ordSalesmanToken
+  );
+  assert(ordAdvDenied.code === 403, `15.1 业务员推进被拒 403（实得 ${ordAdvDenied.code}）`);
+
+  // ── 15.2 全来源列表 + 关键词筛选 ──────────────────────────────────────────
+  const ordList = await call(
+    'GET',
+    '/mini/admin/orders?keyword=' + encodeURIComponent('冒烟订单客户'),
+    null,
+    adminToken
+  );
+  assert(ordList.code === 200, `15.2 管理员列表 200（${ordList.code}）`);
+  const found1 = (ordList.data.list || []).filter(r => r.orderId === ord1Id || r.orderId === ord2Id);
+  assert(found1.length === 2, `15.2 关键词能找到两笔测试订单（找到 ${found1.length}）`);
+  assert(
+    found1.every(r => r.source === 'MINI_PROGRAM'),
+    '15.2 列表含来源标记'
+  );
+
+  // ── 15.3 履约推进：逐级 PAID→PROCESSING→DELIVERING→COMPLETED ──────────────
+  const adv1 = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord1Id + '/fulfillment',
+    { clientRequestId: 'smkord_' + TS + '_a1', to: 'PROCESSING' },
+    adminToken
+  );
+  assert(
+    adv1.code === 200 && adv1.data.from === 'PAID' && adv1.data.to === 'PROCESSING',
+    `15.3 PAID → PROCESSING（${adv1.code} ${adv1.message || ''}）`
+  );
+  const adv2 = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord1Id + '/fulfillment',
+    { clientRequestId: 'smkord_' + TS + '_a2', to: 'DELIVERING' },
+    adminToken
+  );
+  assert(adv2.code === 200, `15.3 PROCESSING → DELIVERING（${adv2.code}）`);
+  const adv3 = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord1Id + '/fulfillment',
+    { clientRequestId: 'smkord_' + TS + '_a3', to: 'COMPLETED' },
+    adminToken
+  );
+  assert(adv3.code === 200, `15.3 DELIVERING → COMPLETED（${adv3.code}）`);
+  const [st1] = await pool.query('SELECT fulfillment_status FROM orders WHERE order_id = ?', [ord1Id]);
+  assert(st1[0].fulfillment_status === 'COMPLETED', '15.3 落库状态 = COMPLETED');
+
+  // ── 15.4 状态机守卫：回退 / 同值 / 终态 / 已取消 ──────────────────────────
+  const advBack = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord1Id + '/fulfillment',
+    { clientRequestId: 'smkord_' + TS + '_b1', to: 'PAID' },
+    adminToken
+  );
+  assert(advBack.code === 400 && /回退/.test(String(advBack.message)), `15.4 回退被拒（${advBack.message}）`);
+  const advSame = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord1Id + '/fulfillment',
+    { clientRequestId: 'smkord_' + TS + '_b2', to: 'COMPLETED' },
+    adminToken
+  );
+  assert(advSame.code === 400 && /无需重复/.test(String(advSame.message)), `15.4 同值被拒（${advSame.message}）`);
+  const advBad = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord1Id + '/fulfillment',
+    { clientRequestId: 'smkord_' + TS + '_b3', to: 'NOT_A_STATE' },
+    adminToken
+  );
+  assert(advBad.code === 400, `15.4 非法状态被拒（${advBad.code}）`);
+  const advMiss = await call(
+    'PUT',
+    '/mini/admin/orders/SMKNOORDER/fulfillment',
+    { clientRequestId: 'smkord_' + TS + '_b4', to: 'PROCESSING' },
+    adminToken
+  );
+  assert(advMiss.code === 404, `15.4 订单不存在 → 404（实得 ${advMiss.code}）`);
+
+  // ── 15.5 推进幂等：同键重放合并 / 同键不同参数拒绝 ─────────────────────────
+  const advKey = 'smkord_' + TS + '_adv2';
+  const advR1 = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord2Id + '/fulfillment',
+    { clientRequestId: advKey, to: 'PROCESSING' },
+    adminToken
+  );
+  assert(advR1.code === 200, `15.5 第二单推进成功（${advR1.code}）`);
+  const advR2 = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord2Id + '/fulfillment',
+    { clientRequestId: advKey, to: 'PROCESSING' },
+    adminToken
+  );
+  assert(advR2.code === 200 && advR2.data.replayed === true, '15.5 同键重放 replayed=true');
+  const advR3 = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord2Id + '/fulfillment',
+    { clientRequestId: advKey, to: 'COMPLETED' },
+    adminToken
+  );
+  assert(advR3.code === 400, `15.5 同键不同参数被拒（${advR3.code}）`);
+
+  // ── 15.6 ★ 管理员取消（钱包单）：积分原路退回 + 库存恢复 + 状态落库 ────────
+  const [wBefore] = await pool.query('SELECT balance FROM wallet_accounts WHERE wallet_id = ?', [ordWalletId]);
+  const wB = Number(wBefore[0].balance);
+  // 第二单当前 PROCESSING：先取消（未完成 → 库存应恢复）
+  const [invBefore] = await pool.query('SELECT quantity q FROM inventory WHERE product_id = ?', [ordPid]);
+  const invB = invBefore.length ? Number(invBefore[0].q) : 0;
+  const cKey = 'smkord_' + TS + '_cancel2';
+  const c1 = await call(
+    'POST',
+    '/mini/admin/orders/' + ord2Id + '/cancel',
+    { clientRequestId: cKey, reason: '冒烟取消' },
+    adminToken
+  );
+  assert(c1.code === 200 && c1.data.walletRefunded === true, `15.6 钱包单取消成功（${c1.code} ${c1.message || ''}）`);
+  const [wAfter] = await pool.query('SELECT balance FROM wallet_accounts WHERE wallet_id = ?', [ordWalletId]);
+  assert(near(Number(wAfter[0].balance), wB + 10), `15.6 钱包退回 10 积分（${wB} → ${wAfter[0].balance}）`);
+  const [invAfter] = await pool.query('SELECT quantity q FROM inventory WHERE product_id = ?', [ordPid]);
+  assert(Number(invAfter[0].q) === invB + 2, `15.6 库存恢复 +2（${invB} → ${invAfter[0].q}）`);
+  const [ord2After] = await pool.query(
+    'SELECT canceled_at, fulfillment_status, refund_status FROM orders WHERE order_id = ?',
+    [ord2Id]
+  );
+  assert(
+    !!ord2After[0].canceled_at &&
+      ord2After[0].fulfillment_status === 'CANCELED' &&
+      ord2After[0].refund_status === 'REFUNDED',
+    '15.6 订单落库：canceled_at + CANCELED + REFUNDED'
+  );
+  const c1Replay = await call(
+    'POST',
+    '/mini/admin/orders/' + ord2Id + '/cancel',
+    { clientRequestId: cKey, reason: '冒烟取消' },
+    adminToken
+  );
+  assert(c1Replay.code === 200 && c1Replay.data.replayed === true, '15.6 取消重放 replayed=true');
+  const [wAfter2] = await pool.query('SELECT balance FROM wallet_accounts WHERE wallet_id = ?', [ordWalletId]);
+  assert(near(Number(wAfter2[0].balance), wB + 10), '15.6 取消重放后钱包不变（只退一次）');
+  const c1Dup = await call(
+    'POST',
+    '/mini/admin/orders/' + ord2Id + '/cancel',
+    { clientRequestId: 'smkord_' + TS + '_c2' },
+    adminToken
+  );
+  assert(c1Dup.code === 400, `15.6 换键重复取消被拒（${c1Dup.code}）`);
+
+  // ── 15.7 Web 现金单取消：只回冲账务，不涉及钱包 ────────────────────────────
+  const webOrderId = 'SMKWEB' + TS;
+  await pool.query(
+    `INSERT INTO orders (order_id, order_type, order_source, customer_name, customer_phone, customer_address,
+        order_amount, paid_amount, payment_method, payment_status, fulfillment_status, refund_status, created_at, updated_at)
+     VALUES (?, 1, 'WEB', '冒烟Web客户', '13600000000', '南京市冒烟Web路1号', 20, 20, 'CASH', 1, 'PAID', 'NONE', NOW(), NOW())`,
+    [webOrderId]
+  );
+  await pool.query(
+    `INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal) VALUES (?, ?, 4, 5, 20)`,
+    [webOrderId, ordPid]
+  );
+  const c2 = await call(
+    'POST',
+    '/mini/admin/orders/' + webOrderId + '/cancel',
+    { clientRequestId: 'smkord_' + TS + '_wc', reason: '冒烟取消Web单' },
+    adminToken
+  );
+  assert(
+    c2.code === 200 && c2.data.walletRefunded === false,
+    `15.7 Web 现金单取消成功（${c2.code} walletRefunded=false）`
+  );
+  const [webAfter] = await pool.query('SELECT canceled_at, fulfillment_status FROM orders WHERE order_id = ?', [
+    webOrderId
+  ]);
+  assert(!!webAfter[0].canceled_at && webAfter[0].fulfillment_status === 'CANCELED', '15.7 Web 单落库取消');
+  const [invWeb] = await pool.query('SELECT quantity q FROM inventory WHERE product_id = ?', [ordPid]);
+  assert(Number(invWeb[0].q) === invB + 2 + 4, `15.7 Web 单库存也恢复 +4（当前 ${invWeb[0].q}）`);
+
+  // ── 15.8 已取消的单不能再推进 ─────────────────────────────────────────────
+  const advCanceled = await call(
+    'PUT',
+    '/mini/admin/orders/' + ord2Id + '/fulfillment',
+    { clientRequestId: 'smkord_' + TS + '_b5', to: 'DELIVERING' },
+    adminToken
+  );
+  assert(
+    advCanceled.code === 400 && /已取消/.test(String(advCanceled.message)),
+    `15.8 已取消单推进被拒（${advCanceled.message}）`
+  );
+
+  // ── 15.9 审计 ─────────────────────────────────────────────────────────────
+  const ordAudit = await auditActions();
+  assert(ordAudit.includes('ADVANCE_ORDER'), '15.9 审计含 ADVANCE_ORDER');
+  assert(ordAudit.includes('CANCEL_ORDER_ADMIN'), '15.9 审计含 CANCEL_ORDER_ADMIN');
+
+  return {
+    accountId,
+    adminAccountId,
+    salesmanAccountId,
+    uploadedImageName,
+    refMachineId,
+    saleInserted,
+    invPid,
+    ordWalletId,
+    ordWorkerId,
+    ordPid,
+    ord1Id,
+    webOrderId
+  };
 }
 
 const ctx = { accountId: null, adminAccountId: null, salesmanAccountId: null, uploadedImageName: '' };
@@ -1589,6 +1937,9 @@ main()
       //    前面，结果整个清理中途抛错、残留一路留到下一轮（下一轮又因此失败）。
       //    教训：子表永远先删。宁可多看一眼外键，也别按"直觉顺序"写清理。
       await pool.query('DELETE FROM machine_sales WHERE sale_id LIKE ?', ['SMKSALE%']);
+      // 订单域：先删订单明细/流水/订单（order_items.product_id 引用商品），
+      // 再走下面的 SMKINV 库存与商品清理，否则外键 RESTRICT 会中断整个清理。
+      await cleanupOrderSmokeData();
       // 库存域：三张库存表都外键指向 products，必须**先删它们**再删商品
       //（否则「删商品」撞 RESTRICT → 整个清理中断，残留留到下一轮）
       const invPids = (await pool.query("SELECT product_id FROM products WHERE product_code LIKE 'SMKINV%'"))[0].map(
@@ -1666,15 +2017,28 @@ main()
         masterLeft[t] = Number(r[0].n);
       }
       const masterTotal = Object.values(masterLeft).reduce((a, b) => a + b, 0);
+      // 订单域残留：订单（含 Web 测试单）与业务员钱包
+      const ordLeft = (
+        await pool.query(
+          "SELECT COUNT(*) n FROM orders WHERE order_id LIKE 'SMKWEB%' OR buyer_id IN (SELECT worker_id FROM workers WHERE worker_name LIKE 'SMKWKORD%')"
+        )
+      )[0];
+      const walLeft = (
+        await pool.query(
+          "SELECT COUNT(*) n FROM wallet_accounts WHERE owner_id IN (SELECT worker_id FROM workers WHERE worker_name LIKE 'SMKWKORD%')"
+        )
+      )[0];
+      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n);
       const clean =
         Number(left[0].n) === 0 &&
         Number(leftInc[0].n) === 0 &&
         Number(leftPrd[0].n) === 0 &&
         invTotal === 0 &&
-        masterTotal === 0;
+        masterTotal === 0 &&
+        ordTotal === 0;
       console.log(
-        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条` +
-          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal })}`
+        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条 / 订单域 ${ordTotal} 条` +
+          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal, ordTotal })}`
       );
     } catch (e) {
       console.log('清理失败：' + e.message);

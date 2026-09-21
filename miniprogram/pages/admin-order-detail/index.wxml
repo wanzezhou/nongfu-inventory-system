@@ -1,0 +1,62 @@
+<!-- 订单详情（管理员 · Phase 8b 第 9 域）
+     操作区：履约推进（只能前进到后续状态）+ 取消（二次确认，钱包单会原路退款）。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <block wx:if="{{order}}">
+    <view class="card">
+      <view class="row-between">
+        <text class="t-strong">{{order.customerName || '—'}}</text>
+        <text class="status-tag s-{{order.fulfillmentStatus}}">{{order.fulfillmentStatusLabel}}</text>
+      </view>
+      <view class="kv mt-16"><text class="kv-k">订单号</text><text class="kv-v">{{order.orderId}}</text></view>
+      <view class="kv"><text class="kv-k">来源</text><text class="kv-v">{{order.sourceText}}</text></view>
+      <view class="kv"><text class="kv-k">下单时间</text><text class="kv-v">{{order.createdAtText}}</text></view>
+      <view class="kv"><text class="kv-k">联系电话</text><text class="kv-v">{{order.customerPhone || '—'}}</text></view>
+      <view class="kv"><text class="kv-k">配送地址</text><text class="kv-v">{{order.customerAddress || '—'}}</text></view>
+      <view wx:if="{{order.canceledAtText}}" class="kv">
+        <text class="kv-k">取消时间</text><text class="kv-v">{{order.canceledAtText}}</text>
+      </view>
+      <view wx:if="{{order.refundStatusLabel && order.refundStatus !== 'NONE'}}" class="kv">
+        <text class="kv-k">退款状态</text><text class="kv-v">{{order.refundStatusLabel}}</text>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">商品明细</view>
+      <view wx:for="{{items}}" wx:key="productId" class="item-row">
+        <text class="item-name">{{item.name}}</text>
+        <text class="t-sub">×{{item.quantity}}</text>
+        <text class="t-strong">¥{{item.subtotalText}}</text>
+      </view>
+      <view class="kv mt-16"><text class="kv-k">商品合计</text><text class="kv-v">¥{{order.itemAmountText}}</text></view>
+      <view class="kv"><text class="kv-k">订单金额</text><text class="kv-v t-strong">¥{{order.orderAmountText}}</text></view>
+    </view>
+
+    <!-- 操作区：只在可推进时显示 -->
+    <view wx:if="{{nextActions.length}}" class="card">
+      <view class="section-title">履约操作</view>
+      <view class="t-sub">
+        推进只能前进、不能回退；已完成 / 已取消是终态。
+      </view>
+      <view class="action-row">
+        <view
+          wx:for="{{nextActions}}"
+          wx:key="to"
+          class="btn action-btn"
+          data-to="{{item.to}}"
+          bindtap="onAdvance"
+        >{{item.label}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{order.canCancel}}" class="card">
+      <view class="section-title">取消订单</view>
+      <view class="t-sub">
+        {{order.walletRefundHint}}
+      </view>
+      <view class="btn btn-danger action-btn" bindtap="onCancel">取消该订单</view>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,98 @@
+.tabs {
+  display: flex;
+  gap: 12rpx;
+  padding-bottom: 16rpx;
+}
+
+.tab {
+  flex-shrink: 0;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  color: #5f6672;
+  background: #f2f3f7;
+}
+
+.tab.is-active {
+  color: #ffffff;
+  background: var(--primary, #c8102e);
+  font-weight: 600;
+}
+
+.search-row {
+  display: flex;
+  gap: 12rpx;
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  height: 64rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid #e6e8ec;
+  border-radius: 10rpx;
+  background: #fafafb;
+  font-size: 26rpx;
+}
+
+.btn-sm {
+  padding: 0 24rpx;
+  height: 64rpx;
+  line-height: 64rpx;
+  font-size: 26rpx;
+}
+
+.order-list {
+  margin-top: 16rpx;
+}
+
+.order-item {
+  margin-bottom: 16rpx;
+}
+
+.status-tag {
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  background: #f2f3f7;
+  color: #5f6672;
+}
+
+.s-PAID {
+  background: #fff4e6;
+  color: #b26a00;
+}
+
+.s-PROCESSING {
+  background: #e8f1ff;
+  color: #1d6fd4;
+}
+
+.s-DELIVERING {
+  background: #e6f7ef;
+  color: #0f8a4d;
+}
+
+.s-COMPLETED {
+  background: #eef0f4;
+  color: #4a5060;
+}
+
+.s-CANCELED {
+  background: #fdecec;
+  color: #c0392b;
+}
+
+.s-refund {
+  background: #fdecec;
+  color: #c0392b;
+}
+
+.load-more {
+  text-align: center;
+  padding: 24rpx 0;
+}
+
+.bottom-space {
+  height: 60rpx;
+}

@@ -55,6 +55,7 @@ const walletService = require('./walletService');
 const { generateOrderId } = require('../utils/orderIdGen');
 const { hashRequest } = require('../utils/requestHash');
 const { restoreWrittenOffTickets } = require('./orderPricingService');
+const { restoreSalesEffects } = require('./orderPricingService');
 const {
   MINI_ROLES,
   ROLE_TO_OWNER_TYPE,
@@ -741,10 +742,146 @@ function assertOrderOwnership(order, mini) {
   if (!isMine) throw businessError('无权操作该订单');
 }
 
+// ── Phase 8b 第 9 域：履约推进与管理员取消（§16 / §27）────────────────────────
+// ⚠️ 在此之前全系统没有任何推进 `fulfillment_status` 的路径 —— 下单后永远停在 PAID，
+//    「备货中 / 配送中 / 已完成」三个状态从未可达。本函数是这条状态机的**唯一入口**，
+//    Web 端将来要做发货管理也应复用它（不要在别处再写一份 UPDATE）。
+
+/** 履约状态机的合法前进顺序（§16；自提下线后没有 READY_FOR_PICKUP） */
+const FULFILLMENT_FLOW = [
+  FULFILLMENT_STATUS.PAID,
+  FULFILLMENT_STATUS.PROCESSING,
+  FULFILLMENT_STATUS.DELIVERING,
+  FULFILLMENT_STATUS.COMPLETED
+];
+
+/**
+ * 履约状态推进（管理员，§16 / §27）
+ * 规则：
+ *   · 只允许**前进**（目标在当前状态之后），不允许回退 —— 「已完成 → 配送中」会让
+ *     「货已履约完成」这一事实被覆盖，与 §16.1「状态是事实记录」的设计相悖；
+ *   · 允许跳级前进（PAID → COMPLETED）：内部订货里「货直接给客户」是真实场景，
+ *     强制逐级会把管理动作变成三连点；
+ *   · CANCELED 是终态（取消的单不允许再推进）；COMPLETED 也是终态（不可再推进）。
+ * ⚠️ 接受外部连接（调用方的统一事务内：幂等占用 → 推进 → 审计 → complete → commit），
+ *    审计也在这里写 —— 状态变更与审计必须同事务，否则会出现「状态变了但审计没落」。
+ */
+async function advanceFulfillment(conn, orderId, to, { operatorId } = {}) {
+  if (!FULFILLMENT_FLOW.includes(to)) {
+    throw businessError(`非法的履约状态「${to}」`);
+  }
+
+  const [rows] = await conn.execute(
+    `SELECT order_id, order_source, fulfillment_status, refund_status, canceled_at
+       FROM orders WHERE order_id = ? FOR UPDATE`,
+    [orderId]
+  );
+  if (!rows.length) {
+    throw Object.assign(businessError('订单不存在'), { status: 404 });
+  }
+  const order = rows[0];
+  if (order.canceled_at || order.fulfillment_status === FULFILLMENT_STATUS.CANCELED) {
+    throw businessError('订单已取消，无法推进履约状态');
+  }
+  const current = order.fulfillment_status || FULFILLMENT_STATUS.PAID; // 迁移加列前的历史单视为 PAID
+  const fromIdx = FULFILLMENT_FLOW.indexOf(current);
+  const toIdx = FULFILLMENT_FLOW.indexOf(to);
+  if (fromIdx < 0) {
+    throw businessError(`订单当前状态「${FULFILLMENT_LABEL[current] || current}」不在履约流程内，无法推进`);
+  }
+  if (toIdx <= fromIdx) {
+    throw businessError(
+      toIdx === fromIdx
+        ? `订单已是「${FULFILLMENT_LABEL[to]}」，无需重复操作`
+        : `不能从「${FULFILLMENT_LABEL[current]}」回退到「${FULFILLMENT_LABEL[to]}」`
+    );
+  }
+
+  await conn.execute('UPDATE orders SET fulfillment_status = ?, updated_at = NOW() WHERE order_id = ?', [to, orderId]);
+
+  await writeAuditLog(conn, {
+    action: AUDIT_ACTION.ADVANCE_ORDER,
+    actorType: 'MINI',
+    actorId: operatorId,
+    targetType: 'ORDER',
+    targetId: orderId,
+    detail: { from: current, to }
+  });
+
+  return { orderId, from: current, to };
+}
+
+/**
+ * 管理员取消订单（§16.1：取消与退款是两条路径；已支付要退钱走退款）
+ * 与业务员取消（cancelMiniOrder）的区别：
+ *   · 不做归属校验（管理员可取消**任意**订单）；
+ *   · 能处理**全来源**订单 —— Web 端建的现金单也要能取消，而业务员取消只认钱包支付的小程序单。
+ * 两条链（都走已验证的既有路径，不重写）：
+ *   · 钱包支付（有 ORDER_PAYMENT 流水）→ settleOrderReversal：库存 + 水票 + 钱包退回 + 营收回冲 + 状态；
+ *   · 其余（现金/挂账单）→ restoreSalesEffects + 水票 + 营收回冲 + canceled_at（Web deleteOrder 等价链，
+ *     补写 fulfillment_status = CANCELED —— 迁移加列后 Web 的取消不写这个字段）。
+ * ⚠️ 接受外部连接（调用方统一事务），与 advanceFulfillment 同理。
+ */
+async function cancelOrderByAdmin(conn, orderId, { reason, operatorId } = {}) {
+  const [rows] = await conn.execute(
+    `SELECT order_id, order_source, order_type, station_id, wallet_id, order_amount, paid_amount,
+            fulfillment_status, refund_status, canceled_at
+       FROM orders WHERE order_id = ? FOR UPDATE`,
+    [orderId]
+  );
+  if (!rows.length) throw Object.assign(businessError('订单不存在'), { status: 404 });
+  const order = rows[0];
+  if (order.canceled_at) throw businessError('订单已取消，请刷新后查看');
+
+  // 钱包支付的小程序单：完整退款取消链（幂等：已有 REFUND 流水时 alreadySettled=true）
+  let result = null;
+  const payTxs = await findTransactionsByRelated(conn, {
+    relatedType: WALLET_RELATED_TYPE.ORDER,
+    relatedId: order.order_id,
+    txType: WALLET_TX_TYPE.ORDER_PAYMENT
+  });
+  if (payTxs.length) {
+    result = await settleOrderReversal(conn, order, {
+      reason: reason || `管理员取消订单 ${orderId} 并退款`,
+      operatorId,
+      operatorRole: 'admin',
+      markCanceled: true
+    });
+  } else {
+    // 现金/挂账单：没有钱包可退。库存/水票/营收回冲与 Web 端取消语义一致。
+    const [items] = await conn.execute('SELECT product_id, quantity FROM order_items WHERE order_id = ?', [orderId]);
+    await restoreSalesEffects(conn, order, items);
+    await restoreWrittenOffTickets(conn, orderId);
+    await revertOrderRevenue(conn, orderId);
+    await conn.execute(
+      'UPDATE orders SET canceled_at = NOW(), fulfillment_status = ?, updated_at = NOW() WHERE order_id = ?',
+      [FULFILLMENT_STATUS.CANCELED, orderId]
+    );
+  }
+
+  await writeAuditLog(conn, {
+    action: AUDIT_ACTION.CANCEL_ORDER_ADMIN,
+    actorType: 'MINI',
+    actorId: operatorId,
+    targetType: 'ORDER',
+    targetId: orderId,
+    detail: {
+      source: order.order_source,
+      walletRefunded: !!result,
+      alreadySettled: result ? result.alreadySettled : null,
+      reason: reason || null
+    }
+  });
+
+  return { orderId, walletRefunded: !!result, alreadySettled: result ? result.alreadySettled : null };
+}
+
 module.exports = {
   createMiniOrder,
   cancelMiniOrder,
   refundMiniOrder,
+  advanceFulfillment,
+  cancelOrderByAdmin,
   assertOrderOwnership,
   FULFILLMENT_LABEL,
   REFUND_LABEL

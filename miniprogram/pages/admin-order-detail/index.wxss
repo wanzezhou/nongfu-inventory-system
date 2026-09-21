@@ -1,0 +1,79 @@
+.kv {
+  display: flex;
+  justify-content: space-between;
+  padding: 10rpx 0;
+}
+
+.kv-k {
+  color: #8a919e;
+  font-size: 26rpx;
+}
+
+.kv-v {
+  font-size: 26rpx;
+  text-align: right;
+  max-width: 60%;
+}
+
+.item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12rpx 0;
+  border-bottom: 2rpx solid #f2f3f7;
+}
+
+.item-name {
+  flex: 1;
+  font-size: 26rpx;
+}
+
+.action-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 16rpx;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  flex: 1;
+  min-width: 200rpx;
+}
+
+.btn-danger {
+  background: #c0392b;
+  color: #ffffff;
+}
+
+.status-tag {
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  background: #f2f3f7;
+  color: #5f6672;
+}
+
+.s-PAID {
+  background: #fff4e6;
+  color: #b26a00;
+}
+
+.s-PROCESSING {
+  background: #e8f1ff;
+  color: #1d6fd4;
+}
+
+.s-DELIVERING {
+  background: #e6f7ef;
+  color: #0f8a4d;
+}
+
+.s-COMPLETED {
+  background: #eef0f4;
+  color: #4a5060;
+}
+
+.s-CANCELED {
+  background: #fdecec;
+  color: #c0392b;
+}

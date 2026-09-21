@@ -179,7 +179,12 @@ const IDEM_SCOPE = {
   //      直接把数量改掉会让账实关系失去可追溯性（资金流水与库存变动都对不上单据）。
   STOCK_IN: 'STOCK_IN',
   STOCK_OUT: 'STOCK_OUT',
-  VOID_PURCHASE: 'VOID_PURCHASE'
+  VOID_PURCHASE: 'VOID_PURCHASE',
+  // ── Phase 8b 第 9 域 订单（履约推进 / 管理员取消）──
+  //    ⚠️ 管理员取消与业务员取消（既有 CANCEL_ORDER）分开记：二者可取消范围不同
+  //      （任意订单 vs 自己的未发货订单），审计里要能区分是谁在什么范围内操作。
+  ADVANCE_ORDER: 'ADVANCE_ORDER',
+  CANCEL_ORDER_ADMIN: 'CANCEL_ORDER_ADMIN'
 };
 /** 服务端保留幂等键至少 24h（覆盖「用户离线数小时后重试」，§23.1） */
 const IDEM_TTL_HOURS = 24;
@@ -243,7 +248,12 @@ const AUDIT_ACTION = {
   //      直接把数量改掉会让账实关系失去可追溯性（资金流水与库存变动都对不上单据）。
   STOCK_IN: 'STOCK_IN',
   STOCK_OUT: 'STOCK_OUT',
-  VOID_PURCHASE: 'VOID_PURCHASE'
+  VOID_PURCHASE: 'VOID_PURCHASE',
+  // ── Phase 8b 第 9 域 订单（履约推进 / 管理员取消）——
+  //    推进用幂等键：同一「目标状态」重放 = 无变化（弱网点两下「开始配送」不该出两条审计）；
+  //    管理员取消与业务员取消（CANCEL_ORDER）分开记：二者的可取消范围不同（任意单 vs 自己的未发货单）。
+  ADVANCE_ORDER: 'ADVANCE_ORDER',
+  CANCEL_ORDER_ADMIN: 'CANCEL_ORDER_ADMIN'
 };
 
 // ── 分页（⚠️ mysql2 不支持 LIMIT ?，必须 parseInt 内联）────────────────────

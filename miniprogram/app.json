@@ -26,7 +26,9 @@
     "pages/admin-inventory/index",
     "pages/admin-inventory-in/index",
     "pages/admin-inventory-out/index",
-    "pages/admin-purchases/index"
+    "pages/admin-purchases/index",
+    "pages/admin-orders/index",
+    "pages/admin-order-detail/index"
   ],
   "window": {
     "backgroundTextStyle": "light",
@@ -43,11 +45,26 @@
     "backgroundColor": "#ffffff",
     "borderStyle": "black",
     "list": [
-      { "pagePath": "pages/home/index", "text": "首页" },
-      { "pagePath": "pages/mall/index", "text": "商城" },
-      { "pagePath": "pages/cart/index", "text": "购物车" },
-      { "pagePath": "pages/wallet/index", "text": "积分" },
-      { "pagePath": "pages/mine/index", "text": "我的" }
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/mall/index",
+        "text": "商城"
+      },
+      {
+        "pagePath": "pages/cart/index",
+        "text": "购物车"
+      },
+      {
+        "pagePath": "pages/wallet/index",
+        "text": "积分"
+      },
+      {
+        "pagePath": "pages/mine/index",
+        "text": "我的"
+      }
     ]
   },
   "style": "v2",

@@ -126,6 +126,10 @@ Page({
   goAdminProducts() {
     ui.navTo('/pages/admin-products/index');
   },
+  /** Phase 8b 业务域：订单管理（全来源，履约状态推进是全系统唯一入口） */
+  goAdminOrders() {
+    ui.navTo('/pages/admin-orders/index');
+  },
   /** Phase 8b 业务域：主数据（供应商 / 员工 / 水站 / 机台，四个域共用一个页面，页内可切换） */
   goAdminMaster() {
     ui.navTo('/pages/admin-master/index');
