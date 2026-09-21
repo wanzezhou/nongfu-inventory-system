@@ -1,25 +1,36 @@
 /**
- * 冒烟：小程序管理端写操作 · 支出/费用域（文档 §5.3 / §43 Phase 8b 第 1 域）
+ * 冒烟：小程序管理端写操作（文档 §5.3 / §43 Phase 8b，逐域追加）
  * ---------------------------------------------------------------------------
+ * ⚠️ **本文件按业务域分节**，不按域拆成多个脚本：17 个域各起一个进程，
+ *    `run_smokes.js` 的清单会失控，且每个域都要重复一遍登录/建账号/清理。
+ *    分节保留「逐域验收」的能力（跑通即该域验收通过），又不会让脚本数量爆炸。
+ *
+ * 已覆盖的域：
+ *   · 第 1 域 支出/费用 —— 第 3~8 节
+ *   · 第 2 域 收入     —— 第 9 节
+ *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
- *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔支出，两笔都合法、账面看不出异常；
+ *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
  *   ② 编辑时若先记账再撤销（顺序反了）→ 余额多出「旧值 + 新值」的差额且不报错；
- *   ③ 删除支出必须**回补**余额（钱没花出去）→ 方向抄反会变成「删一条支出反而再扣一笔」；
+ *   ③ 删除的方向**按域相反**：删支出是**回补**余额（钱没花出去），
+ *      删收入是**扣回**余额（钱没进来）。抄反会变成「删一条收入反而多一笔钱」；
  *   ④ 权限若复用了 Web 的 requireAdmin → 小程序非管理员令牌能改公司账本。
  * 本冒烟把这四类逐条钉死，并顺带验证「审计落库」与「复用账务原语」两件事。
  *
  * 覆盖：
  *   1) 权限：无令牌 401 / 业务员令牌 403 / 管理员 200（读与写各自校验）
  *   2) 列表与表单选项：字段齐备、账户仅列启用、预置类别存在
- *   3) 新增：入参校验 4 条 + 幂等键必填 + 记账方向（余额 −amount、流水 tx_type=2、
- *      tx_category='其他支出'、related_module='other_expense'）+ 审计 CREATE_EXPENSE
- *   4) 幂等：同键重放 → 同一 expenseId、余额只减一次、流水只 1 条；同键不同参数 → 400
+ *   3) 支出新增：入参校验 4 条 + 幂等键必填 + 记账方向（余额 −amount、流水 tx_type=2）
+ *      + 审计 CREATE_EXPENSE
+ *   4) 幂等：同键重放 → 同一 ID、余额只动一次、流水只 1 条；同键不同参数 → 400
  *   5) 不选账户 → 只登记台账，**不动任何账户余额**、不产生流水
- *   6) 编辑：余额净变化 = 新值 − 旧值（不是叠加），流水仍 1 条且金额为新值 + 审计 UPDATE_EXPENSE
- *   7) 删除：余额回补到基线、流水被清除、记录消失 + 审计 DELETE_EXPENSE
+ *   6) 编辑：余额净变化 = 新值 − 旧值（不是叠加）+ 审计 UPDATE_EXPENSE
+ *   7) 删除：余额回补到基线、流水被清除 + 审计 DELETE_EXPENSE
  *   8) 资金恒等式（本冒烟自建账户）：余额 = 期初 + 流水净额
+ *   9) 收入域：**方向与支出相反**（新增余额 +amount、删除余额 −amount），
+ *      其余同构验收（校验/幂等/审计/不选账户）
  *
- * ⚠️ 测试对象**全部自建**（冒烟账户 / SMKEXP 前缀支出），不碰任何真实账户与台账：
+ * ⚠️ 测试对象**全部自建**（冒烟账户 / SMKEXP·SMKINC 前缀台账），不碰任何真实账户与台账：
  *    资金类冒烟最忌讳拿真实账户试，余额一旦被改就会污染对账。
  *
  * 运行：node scripts/smoke_mini_admin.js（需后端已启动）
@@ -62,6 +73,8 @@ function section(t) {
 
 const TS = Date.now().toString().slice(-8);
 const PREFIX = 'SMKEXP' + TS;
+// 收入域用独立前缀：两个域的清理互不影响，也不会因为一个域的前缀匹配到另一个域的数据
+const PREFIX_INC = 'SMKINC' + TS;
 const ACCOUNT_NAME = '冒烟账户' + TS;
 const near = (a, b) => Math.abs(Number(a) - Number(b)) < 0.01;
 const today = () => {
@@ -126,6 +139,14 @@ async function main() {
         [`mini:${adminAccountId}`]
       )
     )[0].map(r => r.action);
+  // 收入流水（related_module = 'other_income'，与支出的 'other_expense' 是两个值，别混）
+  const txRowsIncome = async () =>
+    (
+      await pool.query(
+        "SELECT tx_id, tx_type, tx_category, amount, balance_before, balance_after, related_module, related_id, handler FROM finance_transactions WHERE related_module = 'other_income' AND account_id = ?",
+        [accountId]
+      )
+    )[0];
 
   // ── 1. 权限（§22.4：小程序侧必须另设 requireMiniAdmin）──────────────────────
   section('1. 权限与令牌隔离');
@@ -419,8 +440,212 @@ async function main() {
   );
   assert(near(await balanceOf(), balanceBefore), `删除重放**没有**二次回补：实得 ${await balanceOf()}`);
 
-  // ── 8. 资金恒等式（针对本冒烟自建账户）────────────────────────────────────
-  section('8. 资金恒等式（余额 = 期初 + 流水净额）');
+  // ═════════════════ 9. 收入域（Phase 8b 第 2 域）═════════════════════════════
+  section('9. 收入域：方向与支出相反（入账 + / 删除扣回 −）');
+
+  // 9.1 列表字段齐备
+  const incList = await call('GET', '/mini/admin/incomes', null, adminToken);
+  assert(incList.code === 200, `收入台账列表 200：${incList.code}`);
+  assert(
+    incList.data && Array.isArray(incList.data.list) && typeof incList.data.sumAmount === 'number',
+    '收入列表返回 { list, total, sumAmount, page, pageSize }',
+    JSON.stringify(incList.data).slice(0, 200)
+  );
+
+  // 9.2 表单选项：预置类别非空 + 账户下拉含自建账户（仅启用账户）
+  const incOpts = await call('GET', '/mini/admin/incomes/options', null, adminToken);
+  assert(incOpts.code === 200, `收入表单选项 200：${incOpts.code}`);
+  assert(
+    incOpts.data && Array.isArray(incOpts.data.presetCategories) && incOpts.data.presetCategories.length > 0,
+    '收入预置类别非空（与 Web 端 PRESET_CATEGORIES 同源）'
+  );
+  assert(
+    (incOpts.data.accounts || []).some(a => a.accountId === accountId),
+    '收入表单账户下拉包含本冒烟自建账户'
+  );
+
+  // 9.3 明细不存在 → 404（编辑页直接输 id 进来时要有明确反馈）
+  const incMiss = await call('GET', '/mini/admin/incomes/SMOKE_NOT_EXIST', null, adminToken);
+  assert(incMiss.code === 404, `不存在的收入记录返回 404：${incMiss.code}`);
+
+  // 9.4 ⚠️ 幂等键必填 —— 同时断言**拒绝文案指向 clientRequestId**。
+  //     本仓库有真实教训：一条「缺幂等键被拒」的断言曾因构造请求用了非法前置参数，
+  //     实际是被前一道校验拦下的（长期假通过）。只看 code=400 是不够的。
+  const incNoIdem = await call(
+    'POST',
+    '/mini/admin/incomes',
+    { incomeName: PREFIX_INC + '缺键', amount: 10, incomeDate: today(), category: '废品回收' },
+    adminToken
+  );
+  assert(incNoIdem.code === 400, `缺幂等键被拒（400）：${incNoIdem.code}`);
+  assert(
+    String(incNoIdem.message || '').includes('clientRequestId'),
+    `缺幂等键的拒绝文案指向 clientRequestId：${incNoIdem.message}`
+  );
+
+  // 9.5 金额必须 > 0
+  const incZero = await call(
+    'POST',
+    '/mini/admin/incomes',
+    {
+      clientRequestId: `${PREFIX_INC}_zero`,
+      incomeName: PREFIX_INC + '零元',
+      amount: 0,
+      incomeDate: today(),
+      category: '废品回收'
+    },
+    adminToken
+  );
+  assert(incZero.code === 400, `金额 0 被拒（400）：${incZero.code}`);
+
+  // 9.6 账户不存在 → 400（文案含「账户」，证明是账务校验拦下的，而非别的字段）
+  const incBadAcc = await call(
+    'POST',
+    '/mini/admin/incomes',
+    {
+      clientRequestId: `${PREFIX_INC}_badacc`,
+      incomeName: PREFIX_INC + '坏账户',
+      amount: 10,
+      incomeDate: today(),
+      category: '废品回收',
+      accountId: 'SMOKE_NO_ACCOUNT'
+    },
+    adminToken
+  );
+  assert(incBadAcc.code === 400, `不存在的账户被拒（400）：${incBadAcc.code}`);
+  assert(String(incBadAcc.message || '').includes('账户'), `拒绝文案说明是账户问题：${incBadAcc.message}`);
+
+  // ── 9.7 新增：**余额 +amount**（与支出相反 —— 本域最关键的一条）──────────────
+  const incAmount = 60;
+  const balBeforeInc = await balanceOf();
+  const incKey = `${PREFIX_INC}_create`;
+  const incBody = {
+    clientRequestId: incKey,
+    incomeName: PREFIX_INC + '回收款',
+    amount: incAmount,
+    incomeDate: today(),
+    category: '废品回收',
+    accountId,
+    remark: '冒烟收入'
+  };
+  const incCreate = await call('POST', '/mini/admin/incomes', incBody, adminToken);
+  assert(incCreate.code === 200, `新增收入成功：${incCreate.code} ${incCreate.message || ''}`);
+  const incomeId = incCreate.data && incCreate.data.incomeId;
+  assert(!!incomeId, `返回 incomeId：${incomeId}`);
+  assert(
+    near(await balanceOf(), balBeforeInc + incAmount),
+    `⚠️ 新增收入 → 账户余额【增加】${incAmount}（与支出相反）：${balBeforeInc} → ${await balanceOf()}`
+  );
+
+  const incTx = await txRowsIncome();
+  assert(incTx.length === 1, `收入流水只 1 条：${incTx.length}`);
+  if (incTx.length === 1) {
+    assert(Number(incTx[0].tx_type) === 1, `收入流水 tx_type = 1（收入方向）：${incTx[0].tx_type}`);
+    assert(near(incTx[0].amount, incAmount), `流水金额 = ${incAmount}：${incTx[0].amount}`);
+    assert(
+      near(incTx[0].balance_before, balBeforeInc) && near(incTx[0].balance_after, balBeforeInc + incAmount),
+      `流水前后余额连续：${incTx[0].balance_before} → ${incTx[0].balance_after}`
+    );
+  }
+
+  // 9.8 幂等重放：同键 → 同一 ID、余额不再变、流水不增
+  const incReplay = await call('POST', '/mini/admin/incomes', incBody, adminToken);
+  assert(
+    incReplay.code === 200 && incReplay.data && incReplay.data.replayed === true,
+    `同键重放被识别（replayed=true）：${incReplay.code} ${JSON.stringify(incReplay.data || {})}`
+  );
+  assert(near(await balanceOf(), balBeforeInc + incAmount), '重放**没有**二次入账');
+  assert((await txRowsIncome()).length === 1, '重放没有多出流水');
+
+  // 9.9 同键不同参数 → 400（客户端异常，不能被当成重放吞掉）
+  const incConflict = await call(
+    'POST',
+    '/mini/admin/incomes',
+    Object.assign({}, incBody, { amount: incAmount + 1 }),
+    adminToken
+  );
+  assert(incConflict.code === 400, `同键不同参数被拒（400）：${incConflict.code}`);
+
+  // 9.10 编辑：余额净变化 = 新值 − 旧值（不是叠加）
+  const incNewAmount = 45;
+  const incUpdate = await call(
+    'PUT',
+    `/mini/admin/incomes/${incomeId}`,
+    {
+      clientRequestId: `${PREFIX_INC}_update`,
+      incomeName: PREFIX_INC + '回收款改',
+      amount: incNewAmount,
+      incomeDate: today(),
+      category: '废品回收',
+      accountId,
+      remark: '冒烟收入改'
+    },
+    adminToken
+  );
+  assert(incUpdate.code === 200, `编辑收入成功：${incUpdate.code} ${incUpdate.message || ''}`);
+  assert(
+    near(await balanceOf(), balBeforeInc + incNewAmount),
+    `⚠️ 编辑后余额 = 基线 + 新值 ${incNewAmount}（净变化，非叠加）：实得 ${await balanceOf()}`
+  );
+  const incTx2 = await txRowsIncome();
+  assert(incTx2.length === 1, `编辑后收入流水仍 1 条（旧流水已撤销）：${incTx2.length}`);
+  if (incTx2.length === 1) {
+    assert(near(incTx2[0].amount, incNewAmount), `流水金额已更新为新值：${incTx2[0].amount}`);
+  }
+
+  // 9.11 删除：**余额 −amount**（扣回；与「删除支出回补」正好相反）
+  const incDelKey = `${PREFIX_INC}_del`;
+  const incDelete = await call(
+    'DELETE',
+    `/mini/admin/incomes/${incomeId}?clientRequestId=${encodeURIComponent(incDelKey)}`,
+    null,
+    adminToken
+  );
+  assert(incDelete.code === 200, `删除收入成功：${incDelete.code} ${incDelete.message || ''}`);
+  assert(
+    near(await balanceOf(), balBeforeInc),
+    `⚠️ 删除收入 → 余额【扣回】到基线 ${balBeforeInc}（与删除支出相反）：实得 ${await balanceOf()}`
+  );
+  assert((await txRowsIncome()).length === 0, '删除收入后关联流水被清除');
+  const [incGone] = await pool.query('SELECT COUNT(*) n FROM other_incomes WHERE income_id = ?', [incomeId]);
+  assert(Number(incGone[0].n) === 0, '收入记录已删除');
+
+  // 9.12 删除重放：不二次扣回（否则重试会让账户余额越删越少）
+  const incDelReplay = await call(
+    'DELETE',
+    `/mini/admin/incomes/${incomeId}?clientRequestId=${encodeURIComponent(incDelKey)}`,
+    null,
+    adminToken
+  );
+  assert(
+    incDelReplay.code === 200 && incDelReplay.data && incDelReplay.data.replayed === true,
+    `删除同键重放返回成功且标记 replayed：${incDelReplay.code}`
+  );
+  assert(near(await balanceOf(), balBeforeInc), `删除重放**没有**二次扣回：实得 ${await balanceOf()}`);
+
+  // 9.13 不选账户：只登记台账，不动余额、不产生流水
+  const balBeforeIncNoAcc = await balanceOf();
+  const incNoAcc = await call(
+    'POST',
+    '/mini/admin/incomes',
+    {
+      clientRequestId: `${PREFIX_INC}_noacc`,
+      incomeName: PREFIX_INC + '不进账',
+      amount: 33,
+      incomeDate: today(),
+      category: '废品回收'
+    },
+    adminToken
+  );
+  assert(incNoAcc.code === 200, `不选账户也能登记收入台账：${incNoAcc.code}`);
+  assert(near(await balanceOf(), balBeforeIncNoAcc), '不选账户时余额不变（只登记台账）');
+
+  // 9.14 审计：收入三动作落库（§40）
+  const actionsAfter = await auditActions();
+  ['CREATE_INCOME', 'UPDATE_INCOME', 'DELETE_INCOME'].forEach(a => assert(actionsAfter.includes(a), `审计含 ${a}`));
+
+  // ── 10. 资金恒等式（针对本冒烟自建账户；此时已含**支出与收入两个域**的流水）──
+  section('10. 资金恒等式（余额 = 期初 + 流水净额）');
 
   const [ident] = await pool.query(
     `SELECT a.initial_balance, a.current_balance,
@@ -466,6 +691,16 @@ main()
         ]);
       }
       await pool.query('DELETE FROM other_expenses WHERE expense_name LIKE ?', [PREFIX + '%']);
+      // 收入域：同样先删流水再删台账（related_module 是另一个值）
+      const incIds = (
+        await pool.query('SELECT income_id FROM other_incomes WHERE income_name LIKE ?', [PREFIX_INC + '%'])
+      )[0].map(r => r.income_id);
+      for (const id of incIds) {
+        await pool.query("DELETE FROM finance_transactions WHERE related_module = 'other_income' AND related_id = ?", [
+          id
+        ]);
+      }
+      await pool.query('DELETE FROM other_incomes WHERE income_name LIKE ?', [PREFIX_INC + '%']);
       if (ctx.accountId) {
         await pool.query('DELETE FROM finance_transactions WHERE account_id = ?', [ctx.accountId]);
         await pool.query('DELETE FROM finance_accounts WHERE account_id = ?', [ctx.accountId]);
@@ -480,7 +715,13 @@ main()
       const [left] = await pool.query('SELECT COUNT(*) n FROM other_expenses WHERE expense_name LIKE ?', [
         PREFIX + '%'
       ]);
-      console.log(`\n清理：残留台账 ${left[0].n} 行${Number(left[0].n) === 0 ? ' ✓' : ' ✗'}`);
+      const [leftInc] = await pool.query('SELECT COUNT(*) n FROM other_incomes WHERE income_name LIKE ?', [
+        PREFIX_INC + '%'
+      ]);
+      console.log(
+        `\n清理：残留台账 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行` +
+          `${Number(left[0].n) === 0 && Number(leftInc[0].n) === 0 ? ' ✓' : ' ✗'}`
+      );
     } catch (e) {
       console.log('清理失败：' + e.message);
     }

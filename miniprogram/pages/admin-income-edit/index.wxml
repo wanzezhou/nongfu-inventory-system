@@ -1,0 +1,88 @@
+<!-- 收入新增 / 编辑（管理员 · Phase 8b 第 2 域）
+     ⚠️ 「账户」可留空：留空表示**只登记台账、不动账户余额**（后端 applyIncomeLedger
+        在 account_id 为空时直接返回）。这是业务上真实存在的场景（记一笔还没走账的收入），
+        所以不能做成必填 —— 但必须在界面上说清楚，否则用户会以为钱已经到账了。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:else>
+    <view class="card">
+      <view class="section-title">{{isEdit ? '编辑收入' : '记一笔收入'}}</view>
+
+      <view class="form-row">
+        <text class="form-label">收入名称<text class="form-required">*</text></text>
+        <input
+          class="form-input"
+          value="{{incomeName}}"
+          placeholder="如：废品回收"
+          maxlength="50"
+          bindinput="onNameInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">金额<text class="form-required">*</text></text>
+        <input
+          class="form-input"
+          type="digit"
+          value="{{amount}}"
+          placeholder="元，需大于 0"
+          bindinput="onAmountInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">日期<text class="form-required">*</text></text>
+        <picker mode="date" value="{{incomeDate}}" bindchange="onDateChange">
+          <view class="form-input">{{incomeDate}}</view>
+        </picker>
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">类别<text class="form-required">*</text></text>
+        <picker range="{{categories}}" value="{{categoryIndex}}" bindchange="onCategoryChange">
+          <view class="form-input">{{category || '请选择'}}</view>
+        </picker>
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">账户</text>
+        <picker range="{{accountLabels}}" value="{{accountIndex}}" bindchange="onAccountChange">
+          <view class="form-input">{{accountLabels[accountIndex]}}</view>
+        </picker>
+      </view>
+      <view class="t-sub">
+        留空（选「不记账」）时只登记台账，不动任何账户余额；选了账户则同步增加该账户余额并生成资金流水。
+      </view>
+
+      <view class="form-row form-row-stack">
+        <text class="form-label">备注</text>
+        <textarea
+          class="form-textarea"
+          value="{{remark}}"
+          placeholder="选填"
+          maxlength="200"
+          bindinput="onRemarkInput"
+        />
+      </view>
+    </view>
+
+    <view wx:if="{{isEdit}}" class="card card-flat">
+      <view class="t-sub">该记录的账户流水会随编辑/删除自动撤销并重记，无需手工调账。</view>
+    </view>
+  </block>
+
+  <view class="footer-bar">
+    <view wx:if="{{isEdit}}" class="btn btn-ghost" bindtap="onDelete">删除</view>
+    <view
+      class="btn btn-primary flex-1 {{submitting ? 'btn-disabled' : ''}}"
+      bindtap="onSubmit"
+    >{{submitting ? '提交中…' : (isEdit ? '保存修改' : '保存')}}</view>
+  </view>
+</view>

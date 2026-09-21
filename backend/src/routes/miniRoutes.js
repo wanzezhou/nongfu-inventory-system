@@ -38,6 +38,7 @@ const homeCtrl = require('../controllers/mini/homeController');
 const adminCtrl = require('../controllers/mini/adminController');
 // Phase 8b 管理员写操作：按业务域分文件（controllers/mini/admin/*），逐域追加
 const adminExpenseCtrl = require('../controllers/mini/admin/expenseController');
+const adminIncomeCtrl = require('../controllers/mini/admin/incomeController');
 
 const router = express.Router();
 
@@ -137,6 +138,16 @@ router.get('/admin/expenses/:id', requireMiniAdmin, adminExpenseCtrl.getExpenseB
 router.post('/admin/expenses', requireMiniAdmin, requireMiniActive, adminExpenseCtrl.createExpense);
 router.put('/admin/expenses/:id', requireMiniAdmin, requireMiniActive, adminExpenseCtrl.updateExpense);
 router.delete('/admin/expenses/:id', requireMiniAdmin, requireMiniActive, adminExpenseCtrl.deleteExpense);
+
+// ── 域 2/17：收入 ────────────────────────────────────────────────────────────
+// ⚠️ 与支出域同构（含静态段前置）。两域是**一组**：改一处务必同时看另一处 ——
+//    它们的记账方向**相反**（收入 +、支出 −），是最容易只改对一半的地方。
+router.get('/admin/incomes/options', requireMiniAdmin, adminIncomeCtrl.getFormOptions);
+router.get('/admin/incomes', requireMiniAdmin, adminIncomeCtrl.listIncomes);
+router.get('/admin/incomes/:id', requireMiniAdmin, adminIncomeCtrl.getIncomeById);
+router.post('/admin/incomes', requireMiniAdmin, requireMiniActive, adminIncomeCtrl.createIncome);
+router.put('/admin/incomes/:id', requireMiniAdmin, requireMiniActive, adminIncomeCtrl.updateIncome);
+router.delete('/admin/incomes/:id', requireMiniAdmin, requireMiniActive, adminIncomeCtrl.deleteIncome);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，

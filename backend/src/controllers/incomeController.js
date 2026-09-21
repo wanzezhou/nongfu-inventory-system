@@ -113,43 +113,62 @@ function validateBody(body) {
   return null;
 }
 
+/**
+ * 收入列表的筛选条件 —— Web 与**小程序管理端（Phase 8b）共用同一段**，避免两处分叉
+ *
+ * ⚠️ 区间语义必须单源：这里走 `buildRangeWhere`（start **含** / end **不含**）。
+ *    本仓库存在**两套**区间约定（另一套 `financialController.resolveDateRange` 是 end **含**），
+ *    两者混用会静默漏掉当天数据。与 `buildExpenseListWhere` 同构 —— 两域一起改，
+ *    别只改一处（否则「支出对的、收入错的」这种一半正确最难发现）。
+ *
+ * @returns {{clause:string, params:Array}|{error:string}} 区间非法时返回 { error }（用户文案）
+ */
+function buildIncomeListWhere(query = {}) {
+  const { month, range, startDate, endDate, category, keyword } = query;
+  const parts = [];
+  const params = [];
+  // 时间条件：range / month 走统一区间解析（month 为旧参数，等价整月）
+  //           直接传 startDate/endDate（无 range/month）时沿用原闭区间语义
+  if (range || month) {
+    const r = resolveRange({ range, month, startDate, endDate });
+    if (!r) return { error: RANGE_INVALID_MSG };
+    const rw = buildRangeWhere('income_date', r);
+    if (rw.clause) {
+      parts.push(rw.clause);
+      params.push(...rw.params);
+    }
+  } else {
+    if (startDate) {
+      parts.push('income_date >= ?');
+      params.push(startDate);
+    }
+    if (endDate) {
+      parts.push('income_date <= ?');
+      params.push(endDate);
+    }
+  }
+  if (category) {
+    parts.push('category = ?');
+    params.push(category);
+  }
+  if (keyword) {
+    parts.push('(income_name LIKE ? OR remark LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  return { clause: parts.length ? 'WHERE ' + parts.join(' AND ') : '', params };
+}
+
 // 列表（筛选：预设区间 / 月份 / 日期范围 / 类别 / 关键词，分页）
 async function getIncomes(req, res) {
   try {
-    const { month, range, startDate, endDate, category, keyword, page = 1, pageSize = 10 } = req.query;
+    const { page = 1, pageSize = 10 } = req.query;
     const { page: p, size, offset } = parsePage({ page, pageSize });
-    const parts = [];
-    const params = [];
-    // 时间条件与其他支出页一致：range / month 走统一区间解析；只传 startDate/endDate 时沿用闭区间语义
-    if (range || month) {
-      const r = resolveRange({ range, month, startDate, endDate });
-      if (!r) {
-        return error(res, RANGE_INVALID_MSG, 400);
-      }
-      const rw = buildRangeWhere('income_date', r);
-      if (rw.clause) {
-        parts.push(rw.clause);
-        params.push(...rw.params);
-      }
-    } else {
-      if (startDate) {
-        parts.push('income_date >= ?');
-        params.push(startDate);
-      }
-      if (endDate) {
-        parts.push('income_date <= ?');
-        params.push(endDate);
-      }
+    const filters = buildIncomeListWhere(req.query);
+    if (filters.error) {
+      return error(res, filters.error, 400);
     }
-    if (category) {
-      parts.push('category = ?');
-      params.push(category);
-    }
-    if (keyword) {
-      parts.push('(income_name LIKE ? OR remark LIKE ?)');
-      params.push(`%${keyword}%`, `%${keyword}%`);
-    }
-    const where = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
+    const where = filters.clause;
+    const params = filters.params;
     const [rows] = await pool.execute(
       `SELECT income_id, income_name, category, amount, DATE_FORMAT(income_date, '%Y-%m-%d') AS income_date,
               account_id, account_name, remark, created_by, created_at
@@ -344,6 +363,7 @@ module.exports = {
   deleteIncome,
   applyIncomeLedger,
   revertIncomeLedger,
+  buildIncomeListWhere,
   PRESET_CATEGORIES,
   validateBody,
   genId

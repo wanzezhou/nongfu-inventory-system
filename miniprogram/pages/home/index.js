@@ -118,6 +118,10 @@ Page({
   goAdminExpenses() {
     ui.navTo('/pages/admin-expenses/index');
   },
+  /** Phase 8b 业务域：收入台账 */
+  goAdminIncomes() {
+    ui.navTo('/pages/admin-incomes/index');
+  },
   goOrderDetail(e) {
     ui.navTo(`/pages/order-detail/index?id=${e.currentTarget.dataset.id}`);
   },

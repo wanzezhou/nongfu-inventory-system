@@ -16,7 +16,9 @@
     "pages/station-profile/index",
     "pages/admin-wallet/index",
     "pages/admin-expenses/index",
-    "pages/admin-expense-edit/index"
+    "pages/admin-expense-edit/index",
+    "pages/admin-incomes/index",
+    "pages/admin-income-edit/index"
   ],
   "window": {
     "backgroundTextStyle": "light",
