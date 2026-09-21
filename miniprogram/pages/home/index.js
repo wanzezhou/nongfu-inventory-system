@@ -122,6 +122,10 @@ Page({
   goAdminIncomes() {
     ui.navTo('/pages/admin-incomes/index');
   },
+  /** Phase 8b 业务域：商品管理（含「业务员可售」开关与最低价，业务员端能否下单的总闸门） */
+  goAdminProducts() {
+    ui.navTo('/pages/admin-products/index');
+  },
   goOrderDetail(e) {
     ui.navTo(`/pages/order-detail/index?id=${e.currentTarget.dataset.id}`);
   },

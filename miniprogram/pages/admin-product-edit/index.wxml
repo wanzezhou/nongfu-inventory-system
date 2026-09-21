@@ -1,0 +1,193 @@
+<!-- 商品 新增 / 编辑（管理员 · Phase 8b 第 3 域）
+     ⚠️ 价格与配送费共 9 个字段，用「字段定义数组 + wx:for」渲染而不是手写 9 段标签 ——
+        手写时最容易出现的错是「label 与 data-field 对不上」（比如把"批发价"绑到批发价以外的字段），
+        而那种错不会报错，只会静静地写错价格。定义数组让两者在同一个地方、挨着写。
+     ⚠️ 渲染文本里禁止 markdown 粗体（**xxx** 会原样显示星号）。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:else>
+    <!-- 商品图片 -->
+    <view class="card">
+      <view class="section-title">商品图片</view>
+      <view class="pr-img-row">
+        <image
+          wx:if="{{imageFull}}"
+          class="pr-img"
+          src="{{imageFull}}"
+          mode="aspectFill"
+          bindtap="onPreviewImage"
+        />
+        <view wx:else class="pr-img pr-img-ph">{{imageInitial}}</view>
+        <view class="flex-1">
+          <view class="btn btn-ghost btn-sm" bindtap="onChooseImage">
+            {{imageFull ? '更换图片' : '选择图片'}}
+          </view>
+          <view wx:if="{{imageUrl}}" class="btn btn-ghost btn-sm mt-8" bindtap="onClearImage">移除图片</view>
+          <view class="t-sub mt-8">图片为公开资源（无需登录即可访问），请勿上传含内部信息的照片。</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 基本信息 -->
+    <view class="card">
+      <view class="section-title">{{isEdit ? '编辑商品' : '新建商品'}}</view>
+
+      <view class="form-row">
+        <text class="form-label">商品编码<text class="form-required">*</text></text>
+        <input
+          class="form-input"
+          value="{{form.productCode}}"
+          placeholder="如 SPBM001"
+          maxlength="50"
+          bindinput="onInput"
+          data-field="productCode"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">商品名称<text class="form-required">*</text></text>
+        <input
+          class="form-input"
+          value="{{form.productName}}"
+          placeholder="如 农夫山泉550ml"
+          maxlength="100"
+          bindinput="onInput"
+          data-field="productName"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">规格</text>
+        <input
+          class="form-input"
+          value="{{form.specification}}"
+          placeholder="如 550ml*24瓶"
+          maxlength="100"
+          bindinput="onInput"
+          data-field="specification"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">单位</text>
+        <input
+          class="form-input"
+          value="{{form.unit}}"
+          placeholder="如 箱"
+          maxlength="20"
+          bindinput="onInput"
+          data-field="unit"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">类别</text>
+        <picker range="{{categoryOptions}}" value="{{categoryIndex}}" bindchange="onCategoryChange">
+          <view class="form-input">{{form.category || '请选择或直接输入'}}</view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="form-label">新类别</text>
+        <input
+          class="form-input"
+          value="{{form.category}}"
+          placeholder="可直接输入新类别名"
+          maxlength="50"
+          bindinput="onInput"
+          data-field="category"
+        />
+      </view>
+    </view>
+
+    <!-- 价格 -->
+    <view class="card">
+      <view class="section-title">价格（元）</view>
+      <view wx:for="{{priceFields}}" wx:key="key" class="form-row">
+        <text class="form-label">{{item.label}}</text>
+        <input
+          class="form-input"
+          type="digit"
+          value="{{form[item.key]}}"
+          placeholder="元"
+          bindinput="onInput"
+          data-field="{{item.key}}"
+        />
+      </view>
+    </view>
+
+    <!-- 配送费 -->
+    <view class="card">
+      <view class="section-title">配送费（元）</view>
+      <view wx:for="{{feeFields}}" wx:key="key" class="form-row">
+        <text class="form-label">{{item.label}}</text>
+        <input
+          class="form-input"
+          type="digit"
+          value="{{form[item.key]}}"
+          placeholder="元"
+          bindinput="onInput"
+          data-field="{{item.key}}"
+        />
+      </view>
+    </view>
+
+    <!-- 业务员小程序销售 -->
+    <view class="card">
+      <view class="section-title">业务员小程序销售</view>
+      <view class="form-row">
+        <text class="form-label">允许业务员下单</text>
+        <switch checked="{{salesmanEnabled}}" color="#c8102e" bindchange="onSalesmanEnabledChange" />
+      </view>
+      <view class="form-row">
+        <text class="form-label">
+          最低成交价<text wx:if="{{salesmanEnabled}}" class="form-required">*</text>
+        </text>
+        <input
+          class="form-input"
+          type="digit"
+          value="{{form.salesmanMinPrice}}"
+          placeholder="元"
+          bindinput="onInput"
+          data-field="salesmanMinPrice"
+        />
+      </view>
+      <view class="t-sub">
+        业务员能否下单需同时满足两个条件：开启本开关、填写最低成交价。缺一个都不行，所以开启时最低价必填。
+      </view>
+      <view class="t-sub mt-8">
+        最低成交价不得高于参考零售价：业务员不手填成交价时会回退按零售价下单，若零售价已低于最低价，该商品会永远卖不出去。
+      </view>
+    </view>
+
+    <!-- 状态 -->
+    <view class="card">
+      <view class="section-title">状态</view>
+      <view class="form-row">
+        <text class="form-label">启用（关闭即停用，业务员端立即看不到）</text>
+        <switch checked="{{statusOn}}" color="#c8102e" bindchange="onStatusChange" />
+      </view>
+    </view>
+
+    <view wx:if="{{isEdit}}" class="card card-flat">
+      <view class="t-sub">
+        保存后立即生效。业务员端的商品列表按「启用 + 已开启销售 + 已配最低价」过滤，
+        改动不需要重启服务。
+      </view>
+    </view>
+  </block>
+
+  <view class="footer-bar">
+    <view wx:if="{{isEdit && statusOn}}" class="btn btn-ghost" bindtap="onDisable">停用</view>
+    <view
+      class="btn btn-primary flex-1 {{submitting ? 'btn-disabled' : ''}}"
+      bindtap="onSubmit"
+    >{{submitting ? '提交中…' : (isEdit ? '保存修改' : '保存')}}</view>
+  </view>
+</view>

@@ -8,6 +8,7 @@
  * 已覆盖的域：
  *   · 第 1 域 支出/费用 —— 第 3~8 节
  *   · 第 2 域 收入     —— 第 9 节
+ *   · 第 3 域 商品     —— 第 11 节（第 10 节是资金恒等式）
  *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
  *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
@@ -29,6 +30,11 @@
  *   8) 资金恒等式（本冒烟自建账户）：余额 = 期初 + 流水净额
  *   9) 收入域：**方向与支出相反**（新增余额 +amount、删除余额 −amount），
  *      其余同构验收（校验/幂等/审计/不选账户）
+ *  11) 商品域：⚠️ **业务员可售闸门**（§8.5 是「开关 ∧ 最低价」两个条件的与）——
+ *      含「开启但缺最低价」「最低价高于零售价」两条硬校验、
+ *      以及**跨端联动**（业务员端商品列表能否看到本商品，这是唯一能证明闸门真的联通的断言）；
+ *      另有编码唯一（DB 唯一键不能漏成 500）、部分更新（不传即不动）、
+ *      图片上传（multipart 真上传 + 落盘 + 静态可访问）
  *
  * ⚠️ 测试对象**全部自建**（冒烟账户 / SMKEXP·SMKINC 前缀台账），不碰任何真实账户与台账：
  *    资金类冒烟最忌讳拿真实账户试，余额一旦被改就会污染对账。
@@ -39,6 +45,8 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 require('dotenv').config();
 const BASE = 'http://localhost:3000/api';
 
+const fs = require('fs');
+const path = require('path');
 const { pool } = require('../src/config/db');
 const { signMiniToken } = require('../src/services/miniAccountService');
 const { cleanupSmokeResidue } = require('./lib/smokeCleanup');
@@ -668,10 +676,312 @@ async function main() {
     );
   }
 
-  return { accountId, adminAccountId, salesmanAccountId };
+  // ═════════════════ 11. 商品域（Phase 8b 第 3 域）═══════════════════════════
+  section('11. 商品域：业务员可售闸门（§8.5 两条件的与）+ 编码唯一 + 图片上传 + 部分更新');
+
+  const PCODE = 'SMKPRD' + TS;
+  let uploadedImageName = '';
+
+  // 11.1 列表与选项
+  const prList = await call('GET', '/mini/admin/products', null, adminToken);
+  assert(prList.code === 200, `商品列表 200：${prList.code}`);
+  assert(
+    prList.data && Array.isArray(prList.data.list) && typeof prList.data.total === 'number',
+    '商品列表返回 { list, total, page, pageSize }',
+    JSON.stringify(prList.data).slice(0, 200)
+  );
+  const prOpts = await call('GET', '/mini/admin/products/options', null, adminToken);
+  assert(prOpts.code === 200 && Array.isArray(prOpts.data.categories), `商品类别选项 200：${prOpts.code}`);
+
+  // 11.2 明细不存在 → 404
+  const prMiss = await call('GET', '/mini/admin/products/SMOKE_NOT_EXIST', null, adminToken);
+  assert(prMiss.code === 404, `不存在的商品返回 404：${prMiss.code}`);
+
+  // 11.3 基础校验（每条都同时断言拒绝文案指向具体字段，避免"因别的原因 400 也算过"）
+  const prNoCode = await call(
+    'POST',
+    '/mini/admin/products',
+    { clientRequestId: PCODE + '_nocode', productName: '冒烟缺编码', retailPrice: 10 },
+    adminToken
+  );
+  assert(prNoCode.code === 400 && /编码/.test(prNoCode.message || ''), `缺编码被拒且文案指向编码：${prNoCode.message}`);
+
+  const prNoName = await call(
+    'POST',
+    '/mini/admin/products',
+    { clientRequestId: PCODE + '_noname', productCode: PCODE + 'NN', retailPrice: 10 },
+    adminToken
+  );
+  assert(prNoName.code === 400 && /名称/.test(prNoName.message || ''), `缺名称被拒且文案指向名称：${prNoName.message}`);
+
+  const prNeg = await call(
+    'POST',
+    '/mini/admin/products',
+    { clientRequestId: PCODE + '_neg', productCode: PCODE + 'NEG', productName: '冒烟负价', retailPrice: -1 },
+    adminToken
+  );
+  assert(prNeg.code === 400 && /零售价/.test(prNeg.message || ''), `负数零售价被拒：${prNeg.message}`);
+
+  // ── 11.4 ⚠️ 本域核心：业务员可售的两条硬校验 ─────────────────────────────
+  // ① 开启开关但没给最低价 → 必须拒绝。
+  //    放行它等于制造一个「界面显示已开启、业务员端却买不了」的静默失效开关。
+  const prNoMin = await call(
+    'POST',
+    '/mini/admin/products',
+    {
+      clientRequestId: PCODE + '_nomin',
+      productCode: PCODE + 'NM',
+      productName: '冒烟缺最低价',
+      retailPrice: 20,
+      salesmanMiniEnabled: 1
+    },
+    adminToken
+  );
+  assert(prNoMin.code === 400, `开启可否但未填最低价被拒（400）：${prNoMin.code}`);
+  assert(/最低成交价/.test(prNoMin.message || ''), `拒绝文案说明是缺最低成交价（而不是别的字段）：${prNoMin.message}`);
+
+  // ② 最低价 > 零售价 → 必须拒绝。
+  //    业务员不手填成交价时会回退按零售价下单，这个组合下商品**永远卖不出去**，但界面看起来正常。
+  const prOver = await call(
+    'POST',
+    '/mini/admin/products',
+    {
+      clientRequestId: PCODE + '_over',
+      productCode: PCODE + 'OV',
+      productName: '冒烟最低价高于零售价',
+      retailPrice: 20,
+      salesmanMiniEnabled: 1,
+      salesmanMinPrice: 30
+    },
+    adminToken
+  );
+  assert(prOver.code === 400, `最低价高于零售价被拒（400）：${prOver.code}`);
+  assert(/不能高于/.test(prOver.message || ''), `拒绝文案说明高于零售价：${prOver.message}`);
+
+  // 11.5 新增成功（开启可售）
+  const prCreateKey = PCODE + '_create';
+  const PR_CREATE_BODY = {
+    clientRequestId: prCreateKey,
+    productCode: PCODE + 'OK',
+    productName: PCODE + ' 冒烟商品',
+    specification: '550ml*24瓶',
+    unit: '箱',
+    category: '冒烟类别',
+    purchasePrice: 10,
+    wholesalePrice: 15,
+    retailPrice: 20,
+    machinePrice: 18,
+    salesmanMiniEnabled: 1,
+    salesmanMinPrice: 18
+  };
+  const prCreate = await call('POST', '/mini/admin/products', PR_CREATE_BODY, adminToken);
+  assert(prCreate.code === 200, `新增商品成功：${prCreate.code} ${prCreate.message || ''}`);
+  const productId = prCreate.data && prCreate.data.productId;
+  assert(!!productId, `返回 productId：${productId}`);
+
+  const prDetail = await call('GET', `/mini/admin/products/${productId}`, null, adminToken);
+  assert(prDetail.code === 200, `商品详情 200：${prDetail.code}`);
+  assert(
+    Number(prDetail.data.purchasePrice) === 10 && Number(prDetail.data.retailPrice) === 20,
+    `详情价格落库正确（进 10 / 零 20）：${prDetail.data.purchasePrice} / ${prDetail.data.retailPrice}`
+  );
+  assert(
+    Number(prDetail.data.salesmanMiniEnabled) === 1 && Number(prDetail.data.salesmanMinPrice) === 18,
+    `可售配置落库正确（开关 1 / 最低 18）：${prDetail.data.salesmanMiniEnabled} / ${prDetail.data.salesmanMinPrice}`
+  );
+  assert(prDetail.data.salesmanReady === true, `派生字段 salesmanReady = true：${prDetail.data.salesmanReady}`);
+
+  // 11.6 编码唯一（DB 有 uk_product_code；文案必须是可读的，不能是 500）
+  const prDup = await call(
+    'POST',
+    '/mini/admin/products',
+    { clientRequestId: PCODE + '_dup', productCode: PCODE + 'OK', productName: '冒烟重复编码', retailPrice: 5 },
+    adminToken
+  );
+  assert(prDup.code === 400, `重复编码被拒（400，不是 500）：${prDup.code}`);
+  assert(String(prDup.message || '').includes(PCODE + 'OK'), `重复编码文案带上具体编码：${prDup.message}`);
+
+  // ── 11.7 ★ 闸门联动：业务员端到底能不能看到这个商品 ──────────────────────
+  // 前面的断言只证明「管理员端写对了」，这条才证明**业务员端真的可用** ——
+  // 否则可能出现「管理端显示已开启、业务员端列表里却没有」的整条链路断裂。
+  const seeOn = await call('GET', '/mini/products?keyword=' + encodeURIComponent(PCODE + 'OK'), null, salesmanToken);
+  assert(seeOn.code === 200, `业务员端商品列表 200：${seeOn.code}`);
+  assert(
+    (seeOn.data.list || []).some(p => p.productId === productId),
+    `★ 开启且配价后，业务员端能看到该商品（闸门真的联通）：命中 ${(seeOn.data.list || []).length} 条`
+  );
+
+  // 11.8 关闭开关 → 业务员端立即看不到（闸门可关）
+  const prOff = await call(
+    'PUT',
+    `/mini/admin/products/${productId}`,
+    { clientRequestId: PCODE + '_off', salesmanMiniEnabled: 0 },
+    adminToken
+  );
+  assert(prOff.code === 200, `关闭可售成功：${prOff.code} ${prOff.message || ''}`);
+  const seeOff = await call('GET', '/mini/products?keyword=' + encodeURIComponent(PCODE + 'OK'), null, salesmanToken);
+  assert(
+    !(seeOff.data.list || []).some(p => p.productId === productId),
+    '★ 关闭开关后业务员端立即看不到（无需重启服务）'
+  );
+  // 恢复开启，供后续断言继续用
+  await call(
+    'PUT',
+    `/mini/admin/products/${productId}`,
+    { clientRequestId: PCODE + '_on', salesmanMiniEnabled: 1 },
+    adminToken
+  );
+
+  // ── 11.9 部分更新：只改名称，其余字段必须**原样不动** ─────────────────────
+  // 「不传就不动」是后端刻意的语义。若被写成「不传即清空」，用户改个名字就会把
+  // 最低价和图片一起清掉 —— 而界面（只显示名称变了）看不出任何异常。
+  const prRename = await call(
+    'PUT',
+    `/mini/admin/products/${productId}`,
+    { clientRequestId: PCODE + '_rename', productName: PCODE + ' 改名后' },
+    adminToken
+  );
+  assert(prRename.code === 200, `只改名称成功：${prRename.code} ${prRename.message || ''}`);
+  const afterRename = await call('GET', `/mini/admin/products/${productId}`, null, adminToken);
+  assert(afterRename.data.productName === PCODE + ' 改名后', `名称已改：${afterRename.data.productName}`);
+  assert(
+    Number(afterRename.data.salesmanMinPrice) === 18,
+    `未提交的最低价保持原值 18（不是被清空）：${afterRename.data.salesmanMinPrice}`
+  );
+  assert(
+    Number(afterRename.data.salesmanMiniEnabled) === 1,
+    `未提交的开关保持开启：${afterRename.data.salesmanMiniEnabled}`
+  );
+  assert(Number(afterRename.data.retailPrice) === 20, `未提交的零售价保持 20：${afterRename.data.retailPrice}`);
+  assert(afterRename.data.salesmanReady === true, '改名后仍可售（派生字段未被误算）');
+
+  // ── 11.10 编辑时必须按「合并后的值」校验（只改最低价也要撞上零售价上界）──
+  const prBadMin = await call(
+    'PUT',
+    `/mini/admin/products/${productId}`,
+    { clientRequestId: PCODE + '_badmin', salesmanMinPrice: 99 },
+    adminToken
+  );
+  assert(prBadMin.code === 400, `只提交最低价 99（> 库中零售价 20）被拒（400）：${prBadMin.code}`);
+  assert(
+    /不能高于/.test(prBadMin.message || ''),
+    `编辑时用的是「合并后的值」而非本次入参（否则这条会静默通过）：${prBadMin.message}`
+  );
+  // 合法改动：最低价 18 → 16
+  const prMin = await call(
+    'PUT',
+    `/mini/admin/products/${productId}`,
+    { clientRequestId: PCODE + '_min', salesmanMinPrice: 16 },
+    adminToken
+  );
+  assert(prMin.code === 200, `合法降低最低价成功：${prMin.code} ${prMin.message || ''}`);
+
+  // 11.11 幂等：重放合并 / 同键不同参数 400
+  const prReplay = await call('POST', '/mini/admin/products', PR_CREATE_BODY, adminToken);
+  assert(
+    prReplay.code === 200 && prReplay.data && prReplay.data.replayed === true,
+    `新增同键重放被识别（replayed=true）：${prReplay.code} ${JSON.stringify(prReplay.data || {})}`
+  );
+  const prConflict = await call(
+    'POST',
+    '/mini/admin/products',
+    Object.assign({}, PR_CREATE_BODY, { productName: PCODE + ' 换了名字' }),
+    adminToken
+  );
+  assert(prConflict.code === 400, `同键不同参数被拒（400）：${prConflict.code}`);
+  const [prCount] = await pool.query('SELECT COUNT(*) n FROM products WHERE product_code LIKE ?', [PCODE + '%']);
+  assert(Number(prCount[0].n) === 1, `重放没有多建商品（仍 1 条）：${prCount[0].n}`);
+
+  // ── 11.12 图片上传（multipart）────────────────────────────────────────────
+  // 用 1×1 PNG 真实走一遍上传：验证的是「小程序端能用、落盘路径对、静态可访问」三件事。
+  // fetch + FormData 由 Node 内置提供（与小程序 wx.uploadFile 的请求形态一致）。
+  const PNG_1PX = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  let uploadRes = null;
+  try {
+    const fd = new FormData();
+    fd.append('file', new Blob([PNG_1PX], { type: 'image/png' }), 'smoke.png');
+    const resp = await fetch(BASE + '/mini/admin/products/upload-image', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + adminToken },
+      body: fd
+    });
+    uploadRes = { _status: resp.status, ...(await resp.json()) };
+  } catch (e) {
+    uploadRes = { _status: 0, message: e.message };
+  }
+  assert(
+    uploadRes._status === 200 && uploadRes.code === 200,
+    `图片上传成功：${uploadRes._status} ${uploadRes.message || ''}`
+  );
+  const imgPath = uploadRes.data && uploadRes.data.path;
+  assert(
+    typeof imgPath === 'string' && imgPath.startsWith('/product_images/'),
+    `返回站内相对路径（库里不写域名）：${imgPath}`
+  );
+  if (typeof imgPath === 'string' && imgPath.startsWith('/product_images/')) {
+    uploadedImageName = imgPath.replace('/product_images/', '');
+    const abs = path.join(__dirname, '../../商品档案/商品图片', uploadedImageName);
+    assert(fs.existsSync(abs), `图片已落盘：${abs}`);
+    // 静态服务可直接访问（商品照片是公开资产）
+    const staticResp = await fetch(BASE.replace('/api', '') + imgPath);
+    assert(staticResp.status === 200, `静态路径可直接访问（HTTP 200）：${staticResp.status}`);
+
+    // 把图片写进商品并回读，验证「上传 → 存路径 → 显示」的完整链路
+    const setImg = await call(
+      'PUT',
+      `/mini/admin/products/${productId}`,
+      { clientRequestId: PCODE + '_img', imageUrl: imgPath },
+      adminToken
+    );
+    assert(setImg.code === 200, `把图片路径写入商品成功：${setImg.code}`);
+    const withImg = await call('GET', `/mini/admin/products/${productId}`, null, adminToken);
+    assert(withImg.data.imageUrl === imgPath, `详情能读回图片路径：${withImg.data.imageUrl}`);
+  }
+
+  // 11.13 停用（软删除）+ 幂等重放
+  const prDisableKey = PCODE + '_disable';
+  const prDisable = await call(
+    'DELETE',
+    `/mini/admin/products/${productId}?clientRequestId=${encodeURIComponent(prDisableKey)}`,
+    null,
+    adminToken
+  );
+  assert(prDisable.code === 200, `停用商品成功：${prDisable.code} ${prDisable.message || ''}`);
+  const [prGone] = await pool.query('SELECT status FROM products WHERE product_id = ?', [productId]);
+  assert(prGone.length === 1, '商品记录仍在（软删除，不物理删除 —— 历史订单要引用它）');
+  assert(Number(prGone[0].status) === 0, `status 已置 0（停用）：${prGone[0].status}`);
+  const prDisableReplay = await call(
+    'DELETE',
+    `/mini/admin/products/${productId}?clientRequestId=${encodeURIComponent(prDisableKey)}`,
+    null,
+    adminToken
+  );
+  assert(
+    prDisableReplay.code === 200 && prDisableReplay.data && prDisableReplay.data.replayed === true,
+    `停用同键重放标记 replayed：${prDisableReplay.code}`
+  );
+  // 停用后业务员端也看不到（闸门的第三档：状态过滤）
+  const seeDisabled = await call(
+    'GET',
+    '/mini/products?keyword=' + encodeURIComponent(PCODE + 'OK'),
+    null,
+    salesmanToken
+  );
+  assert(!(seeDisabled.data.list || []).some(p => p.productId === productId), '★ 停用后业务员端看不到该商品');
+
+  // 11.14 审计：商品四动作（含"改最低价额外记一条"）
+  const prActions = await auditActions();
+  ['CREATE_PRODUCT', 'UPDATE_PRODUCT', 'DISABLE_PRODUCT', 'SET_PRODUCT_MIN_PRICE'].forEach(a =>
+    assert(prActions.includes(a), `审计含 ${a}`)
+  );
+
+  return { accountId, adminAccountId, salesmanAccountId, uploadedImageName };
 }
 
-const ctx = { accountId: null, adminAccountId: null, salesmanAccountId: null };
+const ctx = { accountId: null, adminAccountId: null, salesmanAccountId: null, uploadedImageName: '' };
 
 main()
   .then(r => Object.assign(ctx, r))
@@ -701,6 +1011,20 @@ main()
         ]);
       }
       await pool.query('DELETE FROM other_incomes WHERE income_name LIKE ?', [PREFIX_INC + '%']);
+      // 商品域：**物理**删除冒烟商品（软删除是业务语义，冒烟必须把测试数据清干净），
+      // 并删掉上传的测试图片（否则每跑一次就往商品图片目录里留一个孤儿文件）
+      await pool.query('DELETE FROM products WHERE product_code LIKE ?', ['SMKPRD%']);
+      if (ctx.uploadedImageName) {
+        try {
+          const imgAbs = path.join(__dirname, '../../商品档案/商品图片', ctx.uploadedImageName);
+          if (fs.existsSync(imgAbs)) {
+            fs.unlinkSync(imgAbs);
+            console.log(`清理：已删除测试图片 ${ctx.uploadedImageName}`);
+          }
+        } catch (e) {
+          console.log('清理测试图片失败：' + e.message);
+        }
+      }
       if (ctx.accountId) {
         await pool.query('DELETE FROM finance_transactions WHERE account_id = ?', [ctx.accountId]);
         await pool.query('DELETE FROM finance_accounts WHERE account_id = ?', [ctx.accountId]);
@@ -718,9 +1042,11 @@ main()
       const [leftInc] = await pool.query('SELECT COUNT(*) n FROM other_incomes WHERE income_name LIKE ?', [
         PREFIX_INC + '%'
       ]);
+      const [leftPrd] = await pool.query('SELECT COUNT(*) n FROM products WHERE product_code LIKE ?', ['SMKPRD%']);
+      const clean = Number(left[0].n) === 0 && Number(leftInc[0].n) === 0 && Number(leftPrd[0].n) === 0;
       console.log(
-        `\n清理：残留台账 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行` +
-          `${Number(left[0].n) === 0 && Number(leftInc[0].n) === 0 ? ' ✓' : ' ✗'}`
+        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条` +
+          `${clean ? ' ✓' : ' ✗'}`
       );
     } catch (e) {
       console.log('清理失败：' + e.message);

@@ -158,12 +158,84 @@ const post = (url, data, opts) => request(Object.assign({ url, method: 'POST', d
 const put = (url, data, opts) => request(Object.assign({ url, method: 'PUT', data }, opts || {}));
 const del = (url, data, opts) => request(Object.assign({ url, method: 'DELETE', data }, opts || {}));
 
+/**
+ * 上传文件（Phase 8b 商品图片）
+ *
+ * ⚠️ 必须走 `wx.uploadFile`，**不能**用 `wx.request`：后者无法构造 multipart/form-data，
+ *    硬塞 FormData 会得到一个后端解析不出 `req.file` 的请求（表现为 400「未接收到图片文件」，
+ *    排查方向还容易被带偏到权限上去）。
+ *
+ * ⚠️ 两个小程序侧特有的坑：
+ *   ① **不设 Content-Type** —— 边界串（boundary）必须由小程序自己生成，手写会破坏 body 结构。
+ *   ② `success` 回调里的 `res.data` 是**字符串**（不像 wx.request 会自动 JSON.parse），
+ *      必须手动解析；直接当对象用会静默拿到 undefined 而后报"上传成功但没拿到地址"。
+ *
+ * @param {string} filePath 本地临时文件路径（wx.chooseMedia 的 tempFilePath）
+ * @param {object} opts { url, name='file', formData, auth=true, silent=false }
+ * @returns {Promise<any>} 成功时 resolve 信封里的 data（如 { path, url, filename, size }）
+ */
+function upload(filePath, opts) {
+  const { url, name = 'file', formData = null, auth = true, silent = false } = opts || {};
+  return new Promise((resolve, reject) => {
+    if (!filePath) {
+      reject(new Error('未选择文件'));
+      return;
+    }
+    wx.showLoading({ title: '上传中', mask: true });
+
+    const header = {};
+    const token = getToken();
+    if (auth && token) header.Authorization = 'Bearer ' + token;
+
+    wx.uploadFile({
+      url: API_ORIGIN + API_PREFIX + url,
+      filePath,
+      name,
+      formData: formData || undefined,
+      header,
+      timeout: REQUEST_TIMEOUT,
+      success(res) {
+        wx.hideLoading();
+        const renewed = res.header && (res.header['X-Mini-Token'] || res.header['x-mini-token']);
+        if (renewed) setToken(renewed);
+
+        let body = {};
+        try {
+          body = typeof res.data === 'string' ? JSON.parse(res.data) : res.data || {};
+        } catch (e) {
+          body = {};
+        }
+
+        if (res.statusCode === 401 || body.code === 401) {
+          handleUnauthorized(body.message);
+          reject(new Error(body.message || '登录已过期'));
+          return;
+        }
+        if (res.statusCode >= 200 && res.statusCode < 300 && body.code === 200) {
+          resolve(body.data);
+          return;
+        }
+        const msg = body.message || '上传失败（HTTP ' + res.statusCode + '）';
+        if (!silent) toast(msg);
+        reject(new Error(msg));
+      },
+      fail(err) {
+        wx.hideLoading();
+        const msg = '上传失败，请检查网络后重试';
+        if (!silent) toast(msg);
+        reject(new Error((err && err.errMsg) || msg));
+      }
+    });
+  });
+}
+
 module.exports = {
   request,
   get,
   post,
   put,
   del,
+  upload,
   getToken,
   setToken,
   clearToken,

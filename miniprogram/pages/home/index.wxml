@@ -204,6 +204,11 @@
           <text class="t-sub">收入台账</text>
           <text class="t-strong">记一笔 / 编辑 / 删除 ›</text>
         </view>
+        <view class="divider"></view>
+        <view class="kv-row" bindtap="goAdminProducts">
+          <text class="t-sub">商品管理</text>
+          <text class="t-strong">新建 / 改价 / 业务员可售 ›</text>
+        </view>
         <view class="t-sub mt-16">
           其余业务域仍使用 Web 管理端（移动端按 §43 逐域开通、逐域验收）。
         </view>

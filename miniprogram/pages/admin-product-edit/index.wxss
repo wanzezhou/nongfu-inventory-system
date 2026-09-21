@@ -1,0 +1,25 @@
+/* 商品编辑（Phase 8b 第 3 域）
+   只写本页特有的类；form-row / form-label / form-input / btn 等走 app.wxss 全局样式 */
+
+.pr-img-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 24rpx;
+}
+
+.pr-img {
+  width: 200rpx;
+  height: 200rpx;
+  border-radius: 12rpx;
+  background: #f2f3f5;
+  flex-shrink: 0;
+}
+
+.pr-img-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 72rpx;
+  font-weight: 600;
+  color: #c8102e;
+}

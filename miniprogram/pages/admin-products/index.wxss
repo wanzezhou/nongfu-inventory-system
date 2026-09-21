@@ -1,0 +1,102 @@
+/* 商品列表（Phase 8b 第 3 域）
+   类名前缀 pr- 与台账域的 in-/ex- 区分开：同一屏里出现两种域的样式时便于定位 */
+
+.pr-search {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 24rpx;
+  gap: 16rpx;
+}
+
+.pr-search-input {
+  flex: 1;
+  height: 72rpx;
+  padding: 0 24rpx;
+  border-radius: 36rpx;
+  background: #f2f3f5;
+  font-size: 28rpx;
+  color: #1f2329;
+}
+
+.pr-search-btn {
+  flex-shrink: 0;
+  height: 72rpx;
+  padding: 0 32rpx;
+  line-height: 72rpx;
+  border-radius: 36rpx;
+  background: #c8102e;
+  color: #fff;
+  font-size: 28rpx;
+}
+
+.pr-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0 24rpx 16rpx;
+  gap: 16rpx;
+}
+
+.pr-chip {
+  padding: 10rpx 28rpx;
+  border-radius: 28rpx;
+  background: #f2f3f5;
+  color: #5a6371;
+  font-size: 26rpx;
+}
+
+.pr-chip.is-active {
+  background: #fdecef;
+  color: #c8102e;
+  font-weight: 600;
+}
+
+.pr-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.pr-main {
+  min-width: 0;
+}
+
+.pr-thumb {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 12rpx;
+  background: #f2f3f5;
+  flex-shrink: 0;
+}
+
+.pr-thumb-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44rpx;
+  color: #c8102e;
+  font-weight: 600;
+}
+
+.pr-tag {
+  display: inline-block;
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  margin-right: 12rpx;
+}
+
+.pr-tag-ok {
+  background: #fdecef;
+  color: #c8102e;
+}
+
+.pr-tag-warn {
+  background: #fff7e6;
+  color: #ad6800;
+}
+
+.pr-tag-off {
+  background: #f2f3f5;
+  color: #8a9099;
+}

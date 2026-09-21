@@ -1,0 +1,85 @@
+<!-- 商品管理（管理员 · Phase 8b 第 3 域「商品」）
+     ⚠️ 本页是「业务员可售」的**唯一入口**：业务员端能否下单取决于这里是否
+        **同时**开启开关并配置最低成交价（§8.5 两个条件缺一不可）。
+        所以列表直接显示派生结论（可售 / 不可售），而不是让管理员自己在脑子里做与运算。
+     ⚠️ 金额只展示后端返回值，不做任何前端推算（§22.1）。 -->
+<view class="page page-with-footer">
+
+  <view wx:if="{{blocked}}" class="banner banner-danger">⛔ {{blocked}}</view>
+
+  <!-- 关键词（名称或编码） -->
+  <view class="pr-search">
+    <input
+      class="pr-search-input"
+      value="{{keyword}}"
+      placeholder="按名称或编码搜索"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onSearch"
+    />
+    <view class="pr-search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <!-- 状态 + 类别 -->
+  <view class="pr-filter">
+    <view
+      wx:for="{{statusOptions}}"
+      wx:key="key"
+      class="pr-chip {{status === item.key ? 'is-active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onStatusTap"
+    >{{item.label}}</view>
+    <picker range="{{categoryOptions}}" value="{{categoryIndex}}" bindchange="onCategoryChange">
+      <view class="pr-chip {{category ? 'is-active' : ''}}">{{category || '全部类别'}}</view>
+    </picker>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">符合条件的商品</text>
+      <text class="t-strong">{{total}} 个</text>
+    </view>
+  </view>
+
+  <view wx:if="{{loadError}}" class="empty">
+    <view class="empty-icon">⚠</view>
+    <view>{{loadError}}</view>
+  </view>
+
+  <block wx:elif="{{list.length}}">
+    <view
+      wx:for="{{list}}"
+      wx:key="productId"
+      class="list-item"
+      data-id="{{item.productId}}"
+      bindtap="onItemTap"
+    >
+      <view class="pr-row">
+        <image wx:if="{{item.imageFull}}" class="pr-thumb" src="{{item.imageFull}}" mode="aspectFill" />
+        <view wx:else class="pr-thumb pr-thumb-ph">{{item.initial}}</view>
+        <view class="flex-1 pr-main">
+          <view class="row-between">
+            <text class="t-strong flex-1 t-ellipsis">{{item.productName}}</text>
+            <text class="t-strong amount-in">¥{{item.retailPriceText}}</text>
+          </view>
+          <view class="t-sub mt-8">{{item.productCode}} · {{item.specText}}</view>
+          <view class="mt-8">
+            <text class="pr-tag {{item.tagClass}}">{{item.salesmanTag}}</text>
+            <text wx:if="{{!item.status}}" class="pr-tag pr-tag-off">已停用</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    <view wx:if="{{!hasMore}}" class="empty">— 没有更多了 —</view>
+  </block>
+
+  <view wx:else class="empty">
+    <view class="empty-icon">📦</view>
+    <view>该条件下没有商品</view>
+  </view>
+
+  <view class="footer-bar">
+    <text class="t-sub">点商品可编辑或停用</text>
+    <view class="btn btn-primary btn-sm" bindtap="onCreate">＋ 新建商品</view>
+  </view>
+</view>

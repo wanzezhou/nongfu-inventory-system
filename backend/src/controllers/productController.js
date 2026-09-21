@@ -75,13 +75,13 @@ function cleanupOrphanUpload(file) {
 }
 
 function uploadProductImage(req, res, next) {
-  uploadProductImageRaw(req, res, (err) => {
+  uploadProductImageRaw(req, res, err => {
     if (!err) return next();
 
     // 清理可能已落盘的半成品文件
     cleanupOrphanUpload(req.file);
     if (Array.isArray(err.storageErrors)) {
-      err.storageErrors.forEach((se) => cleanupOrphanUpload(se.file));
+      err.storageErrors.forEach(se => cleanupOrphanUpload(se.file));
     }
 
     if (err instanceof multer.MulterError) {
@@ -125,27 +125,42 @@ function formatProduct(product, baseUrl) {
   };
 }
 
+/**
+ * 商品列表的筛选条件 —— Web 与**小程序管理端（Phase 8b）共用同一段**，避免两处分叉
+ *
+ * 本域筛选比台账类简单（无时间区间），但仍有必要单源：`status` 的「空串与 undefined
+ * 都表示不限」这个细节，以及 `keyword` 同时匹配名称与编码 —— 两处各写一遍迟早不一致，
+ * 而这类不一致的表现是「同一个关键词在两边搜出不同的商品」。
+ *
+ * @returns {{clause:string, params:Array}} clause 以 `WHERE 1=1` 起头（与既有写法一致）
+ */
+function buildProductListWhere(query = {}) {
+  const { keyword, category, status } = query;
+  let whereClause = 'WHERE 1=1';
+  const params = [];
+
+  if (keyword) {
+    whereClause += ' AND (product_name LIKE ? OR product_code LIKE ?)';
+    params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+
+  if (category) {
+    whereClause += ' AND category = ?';
+    params.push(category);
+  }
+
+  if (status !== undefined && status !== '') {
+    whereClause += ' AND status = ?';
+    params.push(Number(status));
+  }
+
+  return { clause: whereClause, params };
+}
+
 async function getProductList(req, res) {
   try {
-    const { keyword, category, status, page = 1, pageSize = 10 } = req.query;
-
-    let whereClause = 'WHERE 1=1';
-    const params = [];
-
-    if (keyword) {
-      whereClause += ' AND (product_name LIKE ? OR product_code LIKE ?)';
-      params.push(`%${keyword}%`, `%${keyword}%`);
-    }
-
-    if (category) {
-      whereClause += ' AND category = ?';
-      params.push(category);
-    }
-
-    if (status !== undefined && status !== '') {
-      whereClause += ' AND status = ?';
-      params.push(Number(status));
-    }
+    const { page = 1, pageSize = 10 } = req.query;
+    const { clause: whereClause, params } = buildProductListWhere(req.query);
 
     const countSql = `SELECT COUNT(*) as total FROM products ${whereClause}`;
     const [countResult] = await pool.execute(countSql, params);
@@ -195,10 +210,7 @@ async function getProductOptions(req, res) {
       params.push(Number(status));
     }
 
-    const [countResult] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM products ${whereClause}`,
-      params
-    );
+    const [countResult] = await pool.execute(`SELECT COUNT(*) AS total FROM products ${whereClause}`, params);
     const total = Number(countResult[0].total) || 0;
     if (total > PRODUCT_OPTIONS_MAX) {
       return error(res, `商品数量 ${total} 超过下拉上限 ${PRODUCT_OPTIONS_MAX}，请改用关键字搜索`, 400);
@@ -218,7 +230,7 @@ async function getProductOptions(req, res) {
 
     const baseUrl = getBaseUrl(req);
     return success(res, {
-      list: rows.map((item) => formatProduct(item, baseUrl)),
+      list: rows.map(item => formatProduct(item, baseUrl)),
       total
     });
   } catch (err) {
@@ -507,6 +519,7 @@ module.exports = {
   updateProduct,
   deleteProduct,
   getCategoryList,
+  buildProductListWhere,
   uploadProductImage,
   handleUploadImage
 };
