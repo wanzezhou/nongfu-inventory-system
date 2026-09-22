@@ -143,8 +143,8 @@ const RULES = [
     id: 'R11',
     level: 'error',
     name: 'SQL 占位符与参数数组顺序错位（会导致守卫恒不生效）',
-    multi: (text, nextText) => {
-      // 只认这个形态：同一句 SQL 里 `IN (${...})` 在**前**，且其后还有别的 `?`
+    multi: (text, nextText, prevText = '') => {
+      // 只认这个形态：同一句 SQL 里 `IN (${...})` 之后还有别的 `?`
       const m = /IN\s*\(\s*\$\{[^}]+\}\s*\)/.exec(text);
       if (!m || text.indexOf('?', m.index + m[0].length) === -1) return false;
       // 参数数组：优先取本行 SQL 之后的 `[...]`，否则取下一行行首的 `[...]`
@@ -152,9 +152,24 @@ const RULES = [
       const nextArr = nextText && nextText.match(/^\s*\[([^\]]*)\]/);
       const body = inline ? inline[1] : nextArr ? nextArr[1] : null;
       if (body === null) return false;
-      // 数组首位必须是展开（...ids），否则说明标量排在了 IN 的参数前面 → 顺序错位
-      const first = body.split(',')[0].trim();
-      return first !== '' && !first.startsWith('...');
+      // ⚠️ 判据必须按「IN 之前有几个 ?」定位，不能一律要求数组**首项**是展开：
+      //    原判据默认 IN 在 SQL 最前面，于是
+      //    `SET status = ?, used_at = ?, order_id = ? WHERE ticket_id IN (${...}) AND status = ?`
+      //    配 `[USED, now, orderId, ...ids, UNUSED]`（**完全正确**的顺序）被误报
+      //    （2026-09-22 实测）。误报会训练人忽略告警，等于让整条门禁失效。
+      // ⚠️ SQL 跨行是常态（Prettier/printWidth）：IN 之前的 \`?\` 可能落在**上一行**。
+      //    只在当前行数会得到 0 → 把 \`SET a=?, b=?, c=? WHERE id IN (\${...}) AND status=?\`
+      //    这种**完全正确**的写法误报成「首项必须是展开」（2026-09-22 实测两轮才修对）。
+      //    仅当上一行含 \`?\` 且**不含** \`IN (\${…})\` 时才拼接（避免把另一条语句的占位符算进来）。
+      const head = prevText && /\?/.test(prevText) && !/IN\s*\(\s*\$\{/.test(prevText) ? prevText + '\n' : '';
+      const placeholdersBefore = ((head + text.slice(0, m.index)).match(/\?/g) || []).length;
+      const parts = body
+        .split(',')
+        .map(x => x.trim())
+        .filter(x => x !== '');
+      const target = parts[placeholdersBefore];
+      if (!target) return false;
+      return !target.startsWith('...');
     },
     why:
       'SQL 里 ? 的先后顺序决定参数绑定：`IN (${...})` 在前却把标量排在参数数组首位，' +
@@ -248,7 +263,7 @@ function checkLine(rule, file, text, prevText = '', nextText = '') {
   // （例：ProductList.vue:396 用注释记录"http://localhost:3000..."这类历史脏数据）
   if (/^\s*(\/\/|\/\*|\*|<!--)/.test(text)) return false;
   // R11 这类需要跨行判断的规则走 multi（SQL 与参数数组常分作两行）
-  if (rule.multi) return Boolean(rule.multi(text, nextText));
+  if (rule.multi) return Boolean(rule.multi(text, nextText, prevText));
   return rule.test.test(text);
 }
 

@@ -259,6 +259,9 @@ function buildOrderItems({ orderType, items, productMap }) {
 /** 直营水站销售：聚合校验并核销水票（status 未用→已核销，关联订单）；票不足 bizFail（调用方回滚） */
 async function writeOffTickets(connection, stationId, ticketDemand, orderId, productMap, now = new Date()) {
   for (const [pid, need] of Object.entries(ticketDemand)) {
+    // ⚠️ 这个 SELECT 只是**预检**（为了给出「还剩几张」的友好文案），**它不是守卫**：
+    //    它是普通读，在 REPEATABLE-READ 下读的是本事务第一次读时的快照 ——
+    //    看不到「本事务开始之后、别人提交的核销」。真正的守卫在下面的条件更新上。
     const [tickets] = await connection.execute(
       `SELECT ticket_id FROM water_tickets WHERE station_id = ? AND product_id = ? AND status = ? ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
       [stationId, pid, TICKET_STATUS.UNUSED]
@@ -269,10 +272,26 @@ async function writeOffTickets(connection, stationId, ticketDemand, orderId, pro
       );
     }
     const placeholders = tickets.map(() => '?').join(',');
-    await connection.execute(
-      `UPDATE water_tickets SET status = ?, used_at = ?, order_id = ? WHERE ticket_id IN (${placeholders})`,
-      [TICKET_STATUS.USED, now, orderId, ...tickets.map(t => t.ticket_id)]
+    // ⚠️⚠️ `AND status = ?` 不是装饰，是**唯一的并发守卫** —— 条件更新（CAS）。
+    //    UPDATE 不受事务快照影响（永远基于最新已提交版本判定 WHERE），因此并发的第二笔
+    //    会在这里命中 0 行 → affectedRows 不满足 need → 抛 bizFail → 整单回滚。
+    //    ⚠️ 实测（smoke_concurrency 第 1 段，2026-09-22）：不加这个条件时，库里正好 3 张票、
+    //    两笔订单各要 3 张，两笔都能通过上面的预检 → 同一批票被核销两次；后提交那笔把
+    //    `order_id` 覆盖成自己，于是**先提交的订单已经按抵扣价结算、却没有任何一张票指向它**
+    //    —— 账面完全看不出来（票数对得上、订单也查得到）。
+    //    ⚠️ 这里刻意**不用 `SELECT ... FOR UPDATE`**：water_tickets 只有 station_id / product_id /
+    //    status 三个**单列索引**（无联合索引），锁定读会把访问路径上扫到的不匹配行一起锁住，
+    //    间隙锁面扩大 → 同水站不同商品的并发订单之间更容易互锁。CAS 只锁真正命中的那几行。
+    const [upd] = await connection.execute(
+      `UPDATE water_tickets SET status = ?, used_at = ?, order_id = ?
+        WHERE ticket_id IN (${placeholders}) AND status = ?`,
+      [TICKET_STATUS.USED, now, orderId, ...tickets.map(t => t.ticket_id), TICKET_STATUS.UNUSED]
     );
+    if (upd.affectedRows !== need) {
+      throw bizFail(
+        `水站水票不足：商品「${productMap[pid].product_name}」需抵扣 ${need} 张，可核销 ${upd.affectedRows} 张（可能已被并发订单占用）`
+      );
+    }
   }
 }
 

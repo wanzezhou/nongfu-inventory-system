@@ -47,11 +47,16 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'nongfu_inventory',
   charset: 'utf8mb4',
-  connectionLimit: 2,
+  connectionLimit: 2
 });
 
 const line = (s = '') => console.log(s);
-const head = (s) => { line(); line('─'.repeat(64)); line(s); line('─'.repeat(64)); };
+const head = s => {
+  line();
+  line('─'.repeat(64));
+  line(s);
+  line('─'.repeat(64));
+};
 
 async function main() {
   const conn = await pool.getConnection();
@@ -64,18 +69,20 @@ async function main() {
       return rows;
     };
 
-    const smokeWorkers = await pick(
-      "SELECT worker_id, worker_name, phone FROM workers WHERE worker_name LIKE '冒烟%'"
-    );
-    const smokeAccounts = await pick(
-      "SELECT id, username FROM mini_accounts WHERE username LIKE 'smoke\\_%'"
+    const smokeWorkers = await pick("SELECT worker_id, worker_name, phone FROM workers WHERE worker_name LIKE '冒烟%'");
+    // ⚠️ mini_accounts.username / password_hash 两列已随小程序迁移移除（新版走 wx.login + 实名手机号），
+    //    继续查 username 会让本脚本**整体报错回滚**（Unknown column 'username'）——
+    //    同一个坑在 lib/smokeCleanup.js 修过并留了注释，这里漏了（2026-09-22 实测）。
+    const smokeAccounts = await pick("SELECT id, openid FROM mini_accounts WHERE openid LIKE 'smoke\\_%'");
+    // 冒烟自建公司账户：**按账户名**识别（账户域走 API 建，account_id 由服务端生成 ACC…，
+    // 按前缀清必然漏 —— 实测曾积 56 个）
+    const smokeFinanceAccounts = await pick(
+      "SELECT account_id, account_name FROM finance_accounts WHERE account_name LIKE '冒烟%'"
     );
     const smokeProducts = await pick(
       "SELECT product_id, product_code, product_name FROM products WHERE product_name LIKE '冒烟%' OR product_name LIKE '%测试商品%' OR product_code LIKE 'SMK%' OR product_code LIKE 'TESTP%'"
     );
-    const smokeOrders = await pick(
-      "SELECT order_id, customer_name FROM orders WHERE customer_name LIKE '冒烟%'"
-    );
+    const smokeOrders = await pick("SELECT order_id, customer_name FROM orders WHERE customer_name LIKE '冒烟%'");
     const smokePurchases = await pick(
       "SELECT purchase_id, product_id, status, remark, void_reason FROM purchase_records WHERE remark LIKE '%冒烟%' OR void_reason LIKE '%冒烟%'"
     );
@@ -88,21 +95,26 @@ async function main() {
 
     // 流水：①采购单关联 ②命中冒烟备注 ③本次额外确认的工资发放
     const txByPurchase = purchaseIds.length
-      ? await pick('SELECT tx_id, tx_no, amount, tx_type, remark FROM finance_transactions WHERE related_id IN (?)', [purchaseIds])
+      ? await pick('SELECT tx_id, tx_no, amount, tx_type, remark FROM finance_transactions WHERE related_id IN (?)', [
+          purchaseIds
+        ])
       : [];
     const txByRemark = await pick(
       "SELECT tx_id, tx_no, amount, tx_type, remark FROM finance_transactions WHERE remark LIKE '%冒烟%'"
     );
     const txBySalary = EXTRA_SALARY_PAYMENT_IDS.length
       ? await pick(
-        "SELECT tx_id, tx_no, amount, tx_type, remark FROM finance_transactions WHERE related_module = 'salary_payment' AND related_id IN (?)",
-        [EXTRA_SALARY_PAYMENT_IDS]
-      )
+          "SELECT tx_id, tx_no, amount, tx_type, remark FROM finance_transactions WHERE related_module = 'salary_payment' AND related_id IN (?)",
+          [EXTRA_SALARY_PAYMENT_IDS]
+        )
       : [];
     const txIds = [...new Set([...txByPurchase, ...txByRemark, ...txBySalary].map(r => r.tx_id))];
 
     const salaries = EXTRA_SALARY_PAYMENT_IDS.length
-      ? await pick('SELECT payment_id, worker_name, salary_month, amount FROM salary_payments WHERE payment_id IN (?)', [EXTRA_SALARY_PAYMENT_IDS])
+      ? await pick(
+          'SELECT payment_id, worker_name, salary_month, amount FROM salary_payments WHERE payment_id IN (?)',
+          [EXTRA_SALARY_PAYMENT_IDS]
+        )
       : [];
 
     // 关联产物（用于删除）
@@ -118,12 +130,13 @@ async function main() {
     const dfSettleByProduct = productIds.length
       ? await pick('SELECT settlement_id FROM delivery_fee_settlement WHERE product_id IN (?)', [productIds])
       : [];
-    const finSettle = orderIds.length || workerIds.length
-      ? await pick(
-        `SELECT settlement_id FROM financial_settlement WHERE order_id IN (?) OR worker_id IN (?)`,
-        [orderIds.length ? orderIds : [null], workerIds.length ? workerIds : [null]]
-      )
-      : [];
+    const finSettle =
+      orderIds.length || workerIds.length
+        ? await pick(`SELECT settlement_id FROM financial_settlement WHERE order_id IN (?) OR worker_id IN (?)`, [
+            orderIds.length ? orderIds : [null],
+            workerIds.length ? workerIds : [null]
+          ])
+        : [];
     const invRows = productIds.length
       ? await pick('SELECT inventory_id FROM inventory WHERE product_id IN (?)', [productIds])
       : [];
@@ -160,7 +173,9 @@ async function main() {
       "SELECT ticket_id, product_id, month, issued_by FROM water_tickets WHERE month LIKE '2099%' OR issued_by IN ('smoke', 't1', 'a6') OR remark LIKE '%冒烟%'"
     );
     const salaryLinks = EXTRA_SALARY_PAYMENT_IDS.length
-      ? await pick('SELECT payment_id, advance_id FROM salary_payment_advances WHERE payment_id IN (?)', [EXTRA_SALARY_PAYMENT_IDS])
+      ? await pick('SELECT payment_id, advance_id FROM salary_payment_advances WHERE payment_id IN (?)', [
+          EXTRA_SALARY_PAYMENT_IDS
+        ])
       : [];
     const ordersByWorker = workerIds.length
       ? await pick('SELECT order_id FROM orders WHERE worker_id IN (?) OR created_by IN (?)', [workerIds, workerIds])
@@ -177,11 +192,18 @@ async function main() {
     head(`冒烟残留清理计划　${APPLY ? '【实际执行】' : '【预演 · 不修改数据】'}`);
     const plan = [
       ['workers（冒烟员工）', smokeWorkers.map(r => `${r.worker_id}/${r.worker_name}`)],
-      ['mini_accounts（冒烟账号）', smokeAccounts.map(r => `${r.id}/${r.username}`)],
+      ['mini_accounts（冒烟账号）', smokeAccounts.map(r => `${r.id}/${r.openid}`)],
+      ['finance_accounts（冒烟公司账户）', smokeFinanceAccounts.map(r => `${r.account_id}/${r.account_name}`)],
       ['products（冒烟商品）', smokeProducts.map(r => `${r.product_code}/${r.product_name}`)],
       ['orders（冒烟订单）', smokeOrders.map(r => `${r.order_id}/${r.customer_name}`)],
       ['purchase_records（冒烟入库单）', smokePurchases.map(r => `${r.purchase_id}(status=${r.status})`)],
-      ['finance_transactions（冒烟流水）', [].concat(txByPurchase, txByRemark, txBySalary).filter((v, i, a) => a.findIndex(x => x.tx_id === v.tx_id) === i).map(r => `${r.tx_no}/${r.tx_type}/${r.amount}`)],
+      [
+        'finance_transactions（冒烟流水）',
+        []
+          .concat(txByPurchase, txByRemark, txBySalary)
+          .filter((v, i, a) => a.findIndex(x => x.tx_id === v.tx_id) === i)
+          .map(r => `${r.tx_no}/${r.tx_type}/${r.amount}`)
+      ],
       ['finance_transactions（营收入账孤儿流水）', orphanRevenueTx.map(r => `${r.tx_id}/${r.related_id}/${r.amount}`)],
       ['salary_payments（确认删除的测试发放）', salaries.map(r => `${r.payment_id}/${r.worker_name}/${r.amount}`)],
       ['order_items（冒烟订单明细）', [].concat(orderItems, orderItemsByProduct).map(r => `#${r.item_id}`)],
@@ -189,10 +211,26 @@ async function main() {
       ['water_tickets（2099/脚本标记水票）', ticketMarkers.map(r => `${r.ticket_id}(${r.month}/${r.issued_by})`)],
       ['machine_stations（冒烟机台）', smokeMachines.map(r => `${r.machine_id}/${r.station_name}`)],
       ['sub_stations（冒烟水站）', smokeStations.map(r => `${r.station_id}/${r.station_name}(欠款${r.current_debt})`)],
-      ['其他零散关联', [].concat(machineSales.map(r => `machine_sales/${r.sale_id}`), stockOuts.map(r => `stock_out_records/${r.record_id}`), tickets.map(r => `water_tickets/${r.ticket_id}`), ticketIssues.map(r => `water_ticket_issuance/${r.issuance_id}`), ticketsByOrder.map(r => `water_tickets/${r.ticket_id}`), dfSettleByOrder.map(r => `dfs/${r.settlement_id}`), dfSettleByProduct.map(r => `dfs/${r.settlement_id}`), finSettle.map(r => `fin#${r.settlement_id}`), salaryLinks.map(r => `spa/${r.payment_id}`), ordersByWorker.map(r => `orders/${r.order_id}`))],
+      [
+        '其他零散关联',
+        [].concat(
+          machineSales.map(r => `machine_sales/${r.sale_id}`),
+          stockOuts.map(r => `stock_out_records/${r.record_id}`),
+          tickets.map(r => `water_tickets/${r.ticket_id}`),
+          ticketIssues.map(r => `water_ticket_issuance/${r.issuance_id}`),
+          ticketsByOrder.map(r => `water_tickets/${r.ticket_id}`),
+          dfSettleByOrder.map(r => `dfs/${r.settlement_id}`),
+          dfSettleByProduct.map(r => `dfs/${r.settlement_id}`),
+          finSettle.map(r => `fin#${r.settlement_id}`),
+          salaryLinks.map(r => `spa/${r.payment_id}`),
+          ordersByWorker.map(r => `orders/${r.order_id}`)
+        )
+      ]
     ];
     for (const [label, items] of plan) {
-      line(`${label.padEnd(38, ' ')} ${String(items.length).padStart(3)} 条${items.length ? '  → ' + items.slice(0, 6).join(', ') + (items.length > 6 ? ' …' : '') : ''}`);
+      line(
+        `${label.padEnd(38, ' ')} ${String(items.length).padStart(3)} 条${items.length ? '  → ' + items.slice(0, 6).join(', ') + (items.length > 6 ? ' …' : '') : ''}`
+      );
     }
 
     // 账户余额变化预览
@@ -218,7 +256,9 @@ async function main() {
       );
       const after = Math.round((before - Number(r[0].n)) * 100) / 100;
       const flag = after !== before ? '  ← 变化' : '';
-      line(`  ${a.account_name.padEnd(12, ' ')} ${before.toFixed(2).padStart(10)} → ${after.toFixed(2).padStart(10)}${flag}`);
+      line(
+        `  ${a.account_name.padEnd(12, ' ')} ${before.toFixed(2).padStart(10)} → ${after.toFixed(2).padStart(10)}${flag}`
+      );
     }
 
     // 水站欠款对账（只读报告）：口径 = 该站**有效** type2 订单金额合计
@@ -227,17 +267,29 @@ async function main() {
     const { reconcileStationDebt } = require('./lib/smokeCleanup');
     const debtRecon = await reconcileStationDebt(pool, null, false);
     line();
-    line(`水站欠款对账（口径：该站有效 type2 订单金额合计）　共 ${debtRecon.total} 个水站，存在偏差 ${debtRecon.drift.length} 个`);
+    line(
+      `水站欠款对账（口径：该站有效 type2 订单金额合计）　共 ${debtRecon.total} 个水站，存在偏差 ${debtRecon.drift.length} 个`
+    );
     for (const d of debtRecon.drift) {
-      line(`  ${d.stationId} ${String(d.stationName || '').padEnd(10, ' ')} 账面 ${d.book.toFixed(2).padStart(10)} ≠ 凭证 ${d.voucher.toFixed(2).padStart(10)}　差额 ${(d.book - d.voucher).toFixed(2)}`);
+      line(
+        `  ${d.stationId} ${String(d.stationName || '').padEnd(10, ' ')} 账面 ${d.book.toFixed(2).padStart(10)} ≠ 凭证 ${d.voucher.toFixed(2).padStart(10)}　差额 ${(d.book - d.voucher).toFixed(2)}`
+      );
     }
     if (debtRecon.drift.length) {
       line('  说明：本脚本不自动修正历史漂移；如需按凭证归位，请先确认后单独处理。');
     }
 
-    const total = productIds.length + orderIds.length + purchaseIds.length + txIds.length +
-      workerIds.length + accountIds.length + salaries.length + orderItems.length +
-      orderItemsByProduct.length + invRows.length;
+    const total =
+      productIds.length +
+      orderIds.length +
+      purchaseIds.length +
+      txIds.length +
+      workerIds.length +
+      accountIds.length +
+      salaries.length +
+      orderItems.length +
+      orderItemsByProduct.length +
+      invRows.length;
     line();
     line(`合计待删除记录：约 ${total} 条`);
 
@@ -276,7 +328,9 @@ async function main() {
     }
     // 3.2b 标记水票（2099 未来月份 / 脚本 issued_by / 冒烟备注）
     if (ticketMarkers.length) {
-      await del('water_tickets(marked)', 'DELETE FROM water_tickets WHERE ticket_id IN (?)', [ticketMarkers.map(r => r.ticket_id)]);
+      await del('water_tickets(marked)', 'DELETE FROM water_tickets WHERE ticket_id IN (?)', [
+        ticketMarkers.map(r => r.ticket_id)
+      ]);
     }
     // 3.2c 冒烟机台：先删其销量，再删机台本身
     if (machineIds.length) {
@@ -285,7 +339,9 @@ async function main() {
     }
     // 3.3 工资发放子孙
     if (EXTRA_SALARY_PAYMENT_IDS.length) {
-      await del('salary_payment_advances', 'DELETE FROM salary_payment_advances WHERE payment_id IN (?)', [EXTRA_SALARY_PAYMENT_IDS]);
+      await del('salary_payment_advances', 'DELETE FROM salary_payment_advances WHERE payment_id IN (?)', [
+        EXTRA_SALARY_PAYMENT_IDS
+      ]);
     }
     // 3.4 资金流水（先于业务单删除）
     if (txIds.length) {
@@ -293,10 +349,12 @@ async function main() {
     }
     // 3.4b 订单营收入账的孤儿流水（关联订单已不存在）
     if (orphanRevenueTx.length) {
-      await del('finance_transactions(order_revenue 孤儿)',
+      await del(
+        'finance_transactions(order_revenue 孤儿)',
         `DELETE FROM finance_transactions
          WHERE related_module = 'order_revenue'
-           AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = finance_transactions.related_id)`);
+           AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = finance_transactions.related_id)`
+      );
     }
     // 3.5 业务单
     if (purchaseIds.length) {
@@ -317,20 +375,37 @@ async function main() {
     // 3.5b 冒烟自建水站：先清引用（水票/发行批次/结算/订单），再删水站本身
     if (stationIds.length) {
       await del('water_tickets(by station)', 'DELETE FROM water_tickets WHERE station_id IN (?)', [stationIds]);
-      await del('water_ticket_issuance(station)', 'DELETE FROM water_ticket_issuance WHERE station_id IN (?)', [stationIds]);
-      await del('financial_settlement(station)', 'DELETE FROM financial_settlement WHERE station_id IN (?)', [stationIds]);
+      await del('water_ticket_issuance(station)', 'DELETE FROM water_ticket_issuance WHERE station_id IN (?)', [
+        stationIds
+      ]);
+      await del('financial_settlement(station)', 'DELETE FROM financial_settlement WHERE station_id IN (?)', [
+        stationIds
+      ]);
       await del('orders(by station)', 'DELETE FROM orders WHERE station_id IN (?)', [stationIds]);
       await del('sub_stations', 'DELETE FROM sub_stations WHERE station_id IN (?)', [stationIds]);
     }
     // 3.6 员工（先摘除引用）
     if (workerIds.length) {
       await del('financial_settlement(worker)', 'DELETE FROM financial_settlement WHERE worker_id IN (?)', [workerIds]);
-      await del('orders(by worker)', 'DELETE FROM orders WHERE worker_id IN (?) OR created_by IN (?)', [workerIds, workerIds]);
+      await del('orders(by worker)', 'DELETE FROM orders WHERE worker_id IN (?) OR created_by IN (?)', [
+        workerIds,
+        workerIds
+      ]);
       await del('workers', 'DELETE FROM workers WHERE worker_id IN (?)', [workerIds]);
     }
     // 3.7 冒烟登录账号
     if (accountIds.length) {
       await del('mini_accounts', 'DELETE FROM mini_accounts WHERE id IN (?)', [accountIds]);
+    }
+    // 3.7a 冒烟自建公司账户（先删其流水，再删账户；随后的余额重算会覆盖剩余账户）
+    const smokeFinanceAccountIds = smokeFinanceAccounts.map(r => r.account_id);
+    if (smokeFinanceAccountIds.length) {
+      await del('finance_transactions(smoke accounts)', 'DELETE FROM finance_transactions WHERE account_id IN (?)', [
+        smokeFinanceAccountIds
+      ]);
+      await del('finance_accounts(smoke)', 'DELETE FROM finance_accounts WHERE account_id IN (?)', [
+        smokeFinanceAccountIds
+      ]);
     }
     // 3.7b 冒烟后台账号（users 表；smoke_* 前缀，含 smoke_staff_* 临时鉴权用户）
     await del('users(smoke_*)', "DELETE FROM users WHERE username LIKE 'smoke\\_%'");
@@ -347,8 +422,13 @@ async function main() {
       const net = Number(netMap[a.account_id] || 0);
       const target = Math.round((init + net) * 100) / 100;
       if (Math.abs(target - Number(a.current_balance)) > 0.001) {
-        await conn.query('UPDATE finance_accounts SET current_balance = ? WHERE account_id = ?', [target, a.account_id]);
-        line(`  ${a.account_name.padEnd(12, ' ')} ${Number(a.current_balance).toFixed(2).padStart(10)} → ${target.toFixed(2).padStart(10)}`);
+        await conn.query('UPDATE finance_accounts SET current_balance = ? WHERE account_id = ?', [
+          target,
+          a.account_id
+        ]);
+        line(
+          `  ${a.account_name.padEnd(12, ' ')} ${Number(a.current_balance).toFixed(2).padStart(10)} → ${target.toFixed(2).padStart(10)}`
+        );
       } else {
         line(`  ${a.account_name.padEnd(12, ' ')} ${Number(a.current_balance).toFixed(2).padStart(10)}   （无变化）`);
       }
@@ -358,7 +438,8 @@ async function main() {
     const bad = [];
     for (const a of accts) {
       const [[row]] = await conn.query(
-        'SELECT current_balance, initial_balance FROM finance_accounts WHERE account_id = ?', [a.account_id]
+        'SELECT current_balance, initial_balance FROM finance_accounts WHERE account_id = ?',
+        [a.account_id]
       );
       const net = Number(netMap[a.account_id] || 0);
       const expect = Math.round((Number(row.initial_balance) + net) * 100) / 100;
@@ -375,7 +456,13 @@ async function main() {
     line();
     line('✅ 清理完成，已提交。');
   } catch (e) {
-    try { await conn.rollback(); line(); line('❌ 执行失败，已回滚，数据未变更。'); } catch { /* ignore */ }
+    try {
+      await conn.rollback();
+      line();
+      line('❌ 执行失败，已回滚，数据未变更。');
+    } catch {
+      /* ignore */
+    }
     throw e;
   } finally {
     conn.release();
@@ -394,4 +481,8 @@ async function netOf(conn) {
 
 main()
   .then(() => pool.end())
-  .catch((e) => { console.error('\n错误：', e.message); pool.end(); process.exit(1); });
+  .catch(e => {
+    console.error('\n错误：', e.message);
+    pool.end();
+    process.exit(1);
+  });

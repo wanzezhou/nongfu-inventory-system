@@ -1,7 +1,8 @@
 /**
  * 冒烟批次运行器（2026-09-16）
  * ---------------------------------------------------------------------------
- * 背景：项目里 15 个冒烟脚本分两类 —— 11 个需要外部已启动的后端，4 个自启后端。
+ * 背景：冒烟脚本分三类 —— 需要外部已启动后端的、自启后端的（4 个）、以及**既不自启也不需要**的
+ *   （纯服务层 + 直连数据库，如 smoke_concurrency）。数量随交付增长，别在此处写死。
  *   ① 不自启的脚本串行跑时必须「起后端 → 跑 → 关后端」，且**必须与后端同一 shell 生命周期**
  *      （后端进程随 shell 退出被回收，见 REF-工程手册 §四）。
  *   ② 自启的 4 个（machine_sale_import / order_revenue_posting / cost_profit / barrel）
@@ -32,26 +33,48 @@ const SELF_STARTING = new Set([
   'smoke_barrel.js'
 ]);
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// 既不自启后端、也不需要后端的脚本（纯服务层 + 直连数据库）
+// ⚠️ 必须与「需外部后端」区分：否则会为它白起一个后端，并吃掉一次登录配额。
+const NO_SERVER = new Set(['smoke_concurrency.js']);
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function listSmokes() {
-  return fs.readdirSync(SCRIPTS_DIR)
-    .filter((n) => /^smoke_.*\.js$/.test(n) && n !== 'run_smokes.js')
+  return fs
+    .readdirSync(SCRIPTS_DIR)
+    .filter(n => /^smoke_.*\.js$/.test(n) && n !== 'run_smokes.js')
     .sort();
+}
+
+/** 运行清单里的分类标签（三种：自启后端 / 需外部后端 / 无需后端） */
+function labelOf(name) {
+  if (SELF_STARTING.has(name)) return '[自启后端]';
+  if (NO_SERVER.has(name)) return '[无需后端]';
+  return '[需外部后端]';
 }
 
 async function kill3000() {
   try {
     const out = execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8' });
     const pids = new Set();
-    out.split('\n')
-      .filter((l) => l.includes(':3000') && l.includes('LISTENING'))
-      .forEach((l) => { const p = l.trim().split(/\s+/).pop(); if (/^\d+$/.test(p)) pids.add(p); });
+    out
+      .split('\n')
+      .filter(l => l.includes(':3000') && l.includes('LISTENING'))
+      .forEach(l => {
+        const p = l.trim().split(/\s+/).pop();
+        if (/^\d+$/.test(p)) pids.add(p);
+      });
     for (const pid of pids) {
-      try { execFileSync('taskkill', ['/PID', pid, '/F', '/T'], { encoding: 'utf8' }); } catch (e) { /* ignore */ }
+      try {
+        execFileSync('taskkill', ['/PID', pid, '/F', '/T'], { encoding: 'utf8' });
+      } catch (e) {
+        /* ignore */
+      }
     }
     if (pids.size) console.log(`  （已清理 :3000 占用 pid=${[...pids].join(',')}）`);
-  } catch (e) { /* netstat 不可用时忽略 */ }
+  } catch (e) {
+    /* netstat 不可用时忽略 */
+  }
 }
 
 /**
@@ -69,7 +92,9 @@ async function waitReady(maxMs = 60000) {
         const j = await r.json().catch(() => null);
         if (j?.data?.db?.ok) return true;
       }
-    } catch (e) { /* 还没起来 */ }
+    } catch (e) {
+      /* 还没起来 */
+    }
     await sleep(400);
   }
   return false;
@@ -98,7 +123,9 @@ function parseResult(text) {
 function runScript(file) {
   try {
     const out = execFileSync(process.execPath, [path.join(SCRIPTS_DIR, file)], {
-      cwd: path.join(ROOT, 'backend'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
+      cwd: path.join(ROOT, 'backend'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe']
     });
     return { ok: true, out };
   } catch (e) {
@@ -111,34 +138,36 @@ function runScript(file) {
   if (args.includes('--list')) {
     const all = listSmokes();
     console.log(`共 ${all.length} 个冒烟脚本：`);
-    all.forEach((n) => console.log(`  ${SELF_STARTING.has(n) ? '[自启后端]' : '[需外部后端]'} ${n}`));
+    all.forEach(n => console.log(`  ${labelOf(n)} ${n}`));
     return;
   }
 
-  let targets = args.filter((a) => a !== '--all');
+  let targets = args.filter(a => a !== '--all');
   if (args.includes('--all') || targets.length === 0) targets = listSmokes();
-  targets = targets.map((t) => (t.endsWith('.js') ? t : `${t}.js`));
+  targets = targets.map(t => (t.endsWith('.js') ? t : `${t}.js`));
 
-  const missing = targets.filter((t) => !fs.existsSync(path.join(SCRIPTS_DIR, t)));
+  const missing = targets.filter(t => !fs.existsSync(path.join(SCRIPTS_DIR, t)));
   if (missing.length) {
     console.error('脚本不存在: ' + missing.join(', '));
     process.exit(1);
   }
 
   console.log(`将运行 ${targets.length} 个冒烟脚本：`);
-  targets.forEach((t) => console.log(`  ${SELF_STARTING.has(t) ? '[自启后端]' : '[需外部后端]'} ${t}`));
+  targets.forEach(t => console.log(`  ${labelOf(t)} ${t}`));
 
-  const needsBackend = targets.some((t) => !SELF_STARTING.has(t));
+  const needsBackend = targets.some(t => !SELF_STARTING.has(t) && !NO_SERVER.has(t));
   let srv = null;
   const logs = [];
 
   if (needsBackend) {
     await kill3000();
     srv = spawn(process.execPath, [path.join(ROOT, 'backend', 'src', 'app.js')], {
-      cwd: path.join(ROOT, 'backend'), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true
+      cwd: path.join(ROOT, 'backend'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     });
-    srv.stdout.on('data', (d) => logs.push(String(d)));
-    srv.stderr.on('data', (d) => logs.push(String(d)));
+    srv.stdout.on('data', d => logs.push(String(d)));
+    srv.stderr.on('data', d => logs.push(String(d)));
     const ready = await waitReady();
     if (!ready) {
       console.error('后端启动失败，最近日志：\n' + logs.join('').slice(-2000));
@@ -176,13 +205,18 @@ function runScript(file) {
   }
 
   console.log('\n================ 批次汇总 ================');
-  summary.forEach((s) => console.log(
-    `  ${s.fail === 0 ? '✓' : '✗'} ${s.file}  通过 ${s.pass ?? '-'} / 失败 ${s.fail ?? '-'}${s.exitedOk ? '' : '  (异常退出)'}`
-  ));
+  summary.forEach(s =>
+    console.log(
+      `  ${s.fail === 0 ? '✓' : '✗'} ${s.file}  通过 ${s.pass ?? '-'} / 失败 ${s.fail ?? '-'}${s.exitedOk ? '' : '  (异常退出)'}`
+    )
+  );
   console.log(`  合计：通过 ${sumPass} / 失败 ${sumFail}`);
-  if (targets.filter((t) => !SELF_STARTING.has(t)).length > LOGIN_LIMIT) {
-    console.log(`  ⚠️ 本次需外部后端的脚本 ${targets.filter((t) => !SELF_STARTING.has(t)).length} 个 > 登录限流 ${LOGIN_LIMIT} 次/15min，`
-      + '后段脚本可能因 429 假失败——请分批运行并重启后端');
+  const externalCount = targets.filter(t => !SELF_STARTING.has(t) && !NO_SERVER.has(t)).length;
+  if (externalCount > LOGIN_LIMIT) {
+    console.log(
+      `  ⚠️ 本次需外部后端的脚本 ${externalCount} 个 > 登录限流 ${LOGIN_LIMIT} 次/15min，` +
+        '后段脚本可能因 429 假失败——请分批运行并重启后端'
+    );
   }
   console.log(`=== ${failed === 0 ? '全部通过 ✓' : failed + ' 个脚本存在失败 ✗'} ===`);
   process.exit(failed === 0 ? 0 : 1);

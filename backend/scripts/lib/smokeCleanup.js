@@ -41,7 +41,11 @@ const MARKERS = {
   txByRemark: "remark LIKE '%冒烟%'",
   subStations: "(station_name LIKE '冒烟%' OR station_id LIKE 'SMKST%')",
   machineStations: "(station_name LIKE '冒烟%' OR machine_id LIKE 'SMKM%')",
-  users: "username LIKE 'smoke\\_%'"
+  users: "username LIKE 'smoke\\_%'",
+  // 冒烟自建**公司账户**（finance_accounts）
+  // ⚠️ 2026-09-22 新增。必须按**账户名**识别，不能按 account_id 前缀：账户域是走 API 建的，
+  //    服务端自己生成 id（ACC<TS>），客户端传的 SMKA* 不被采用 —— 曾因此漏清 56 个账户。
+  accounts: "account_name LIKE '冒烟%'"
 };
 
 async function cleanupSmokeResidue(pool, opts = {}) {
@@ -77,6 +81,7 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const smokeWallets = hasWallets
       ? await pick(`SELECT wallet_id FROM wallet_accounts WHERE ${MARKERS.walletAccounts}`)
       : [];
+    const smokeFinanceAccounts = await pick(`SELECT account_id FROM finance_accounts WHERE ${MARKERS.accounts}`);
 
     const workerIds = smokeWorkers.map(r => r.worker_id);
     const accountIds = smokeAccounts.map(r => r.id);
@@ -87,6 +92,7 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     const machineIds = smokeMachines.map(r => r.machine_id);
     const userIds = smokeUsers.map(r => r.id);
     const walletIds = smokeWallets.map(r => r.wallet_id);
+    const financeAccountIds = smokeFinanceAccounts.map(r => r.account_id);
 
     // 冒烟订单曾引用的水站（删除订单前先记下，删完再按凭证重算欠款；见下方「水站欠款回补」）
     const touchedStationRows = orderIds.length
@@ -120,7 +126,8 @@ async function cleanupSmokeResidue(pool, opts = {}) {
       stationIds.length,
       machineIds.length,
       userIds.length,
-      walletIds.length
+      walletIds.length,
+      financeAccountIds.length
     ].reduce((a, b) => a + b, 0);
     if (!touched) return { total: 0, resume: '无残留' };
 
@@ -163,6 +170,15 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     }
     if (txIds.length) {
       await del('finance_transactions', 'DELETE FROM finance_transactions WHERE tx_id IN (?)', [txIds]);
+    }
+    if (financeAccountIds.length) {
+      // ⚠️ 顺序：先删流水再删账户。冒烟自建账户只参与冒烟内部的转账/收支，
+      //    因此删掉「记在这些账户名下」的流水不影响真实账户的恒等式
+      //    （真实账户自己那一侧的行不动；全局兜底重算见 cleanup_smoke_data.js）。
+      await del('finance_transactions', 'DELETE FROM finance_transactions WHERE account_id IN (?)', [
+        financeAccountIds
+      ]);
+      await del('finance_accounts', 'DELETE FROM finance_accounts WHERE account_id IN (?)', [financeAccountIds]);
     }
     // ---- 小程序钱包 / 幂等 / 审计 清理（2026-09-20 新增）----
     // ⚠️ 为什么必须在这里清：钱包的「余额 = 期初 + Σ正向流水 − Σ负向流水」是资金恒等式

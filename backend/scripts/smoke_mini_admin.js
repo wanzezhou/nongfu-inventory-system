@@ -236,9 +236,13 @@ async function main() {
     await pool.query('DELETE FROM sub_stations WHERE station_name LIKE ?', ['SMKST%']);
     // 订单域（第 9 域）的跨轮残留：明细/营收流水 → 订单 → 业务员钱包
     await cleanupOrderSmokeData();
-    // 账户域（第 10 域）的跨轮残留：流水 → 账户（按 SMKA% 前缀，与收尾同一口径）
-    await pool.query("DELETE FROM finance_transactions WHERE account_id LIKE 'SMKA%'");
-    await pool.query("DELETE FROM finance_accounts WHERE account_id LIKE 'SMKA%'");
+    // 账户域（第 10 域）的跨轮残留：流水 → 账户
+    // ⚠️ 按**账户名**清，不按 account_id 前缀 —— 账户域走 API 建，服务端自己生成 id（ACC…），
+    //    原先按 'SMKA%' 清**一条都匹配不到**（自检用了同一个错条件，于是双双「通过」）。
+    await pool.query(
+      "DELETE FROM finance_transactions WHERE account_id IN (SELECT account_id FROM finance_accounts WHERE account_name LIKE '冒烟账户%')"
+    );
+    await pool.query("DELETE FROM finance_accounts WHERE account_name LIKE '冒烟账户%'");
   }
 
   let conn = await pool.getConnection();
@@ -3923,11 +3927,14 @@ main()
           console.log('清理测试图片失败：' + e.message);
         }
       }
-      // 账户域（第 10 域）的账户都用 SMKA% 前缀（含第 0 节的 SMKACC+TS）——
-      // 按前缀清比逐个 ctx 字段可靠：第 16 节自建了甲~戊五个账户。
+      // 账户域（第 10 域）的账户：按**账户名**清（比逐个 ctx 字段可靠，第 16 节自建了甲~戊五个）。
+      // ⚠️ 原实现写「都用 SMKA% 前缀」是错的：账户由 API 创建，id 是服务端生成的 ACC…，
+      //    那个条件匹配不到任何一行 → 每轮泄漏 5 个账户（实测积到 56 个）。
       // ⚠️ 不放在 `if (ctx.accountId)` 里：早期异常时 ctx 可能为空，那样账户就漏清了。
-      await pool.query("DELETE FROM finance_transactions WHERE account_id LIKE 'SMKA%'");
-      await pool.query("DELETE FROM finance_accounts WHERE account_id LIKE 'SMKA%'");
+      await pool.query(
+        "DELETE FROM finance_transactions WHERE account_id IN (SELECT account_id FROM finance_accounts WHERE account_name LIKE '冒烟账户%')"
+      );
+      await pool.query("DELETE FROM finance_accounts WHERE account_name LIKE '冒烟账户%'");
       const accIds = [ctx.adminAccountId, ctx.salesmanAccountId].filter(Boolean);
       if (accIds.length) {
         await pool.query('DELETE FROM mini_audit_logs WHERE actor_id IN (?)', [accIds.map(i => `mini:${i}`)]);
@@ -3978,8 +3985,10 @@ main()
           "SELECT COUNT(*) n FROM wallet_accounts WHERE owner_id IN (SELECT worker_id FROM workers WHERE worker_name LIKE 'SMKWKORD%')"
         )
       )[0];
-      // 账户域残留（SMKA% 前缀，含第 0 节账户与第 16 节甲~戊）
-      const accLeft = (await pool.query("SELECT COUNT(*) n FROM finance_accounts WHERE account_id LIKE 'SMKA%'"))[0];
+      // 账户域残留（按账户名 —— 必须与上面的清理**同一口径**；否则「清理空转、自检也空转」）
+      const accLeft = (
+        await pool.query("SELECT COUNT(*) n FROM finance_accounts WHERE account_name LIKE '冒烟账户%'")
+      )[0];
       // 工资域残留：员工（SMKSLR%）+ 发放单 + 预支 —— 任何一项非 0 都说明清理没走完
       const slLeft = (
         await pool.query(
