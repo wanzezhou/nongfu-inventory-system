@@ -1,0 +1,89 @@
+<!-- 水票（管理员 · Phase 8b 第 15 域）
+     ⚠️ 只有查 + 作废单张：发行的定价权在服务端尚未收口（§12.10），故不开放手机端发行。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+
+  <view class="card">
+    <view class="row-between">
+      <text
+        wx:for="{{tabs}}"
+        wx:key="key"
+        class="{{tab === item.key ? 't-strong' : 't-sub'}}"
+        data-key="{{item.key}}"
+        bindtap="onTab"
+      >{{item.label}}</text>
+    </view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sub">水站</text>
+      <picker mode="selector" range="{{stationLabels}}" value="{{stationIndex}}" bindchange="onStationChange">
+        <view class="row-between">
+          <text class="t-strong">{{stationLabels[stationIndex]}}</text>
+          <text class="t-sub">›</text>
+        </view>
+      </picker>
+    </view>
+    <view class="t-sm t-sub mt-8">共 {{total}} 条</view>
+  </view>
+
+  <view wx:if="{{notice}}" class="banner banner-info">{{notice}}</view>
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+  <view wx:elif="{{!rows.length && !loading}}" class="empty">
+    <text class="empty-icon">🎫</text>
+    <text class="t-sub">没有符合条件的数据</text>
+  </view>
+
+  <!-- 库存：按水站 × 商品 -->
+  <block wx:if="{{tab === 'inventory'}}">
+    <view wx:for="{{rows}}" wx:key="index" class="card">
+      <view class="row-between">
+        <text class="t-strong">{{item.productName}}</text>
+        <text class="t-strong">{{item.available}} 张</text>
+      </view>
+      <view class="t-sm t-sub mt-8">
+        {{item.stationName}} · {{item.specification}} · 配送费小计 ¥{{item.feeText}}
+      </view>
+    </view>
+  </block>
+
+  <!-- 明细：按张 -->
+  <block wx:if="{{tab === 'list'}}">
+    <view wx:for="{{rows}}" wx:key="ticketId" class="card">
+      <view class="row-between">
+        <text class="t-strong">{{item.productName}}</text>
+        <text class="t-strong">{{item.statusName}}</text>
+      </view>
+      <view class="t-sm t-sub mt-8">
+        {{item.stationName}} · {{item.specification}} · {{item.month}}
+      </view>
+      <view class="t-sm t-sub mt-8">{{item.ticketId}}</view>
+      <block wx:if="{{item.canCancel}}">
+        <view class="divider"></view>
+        <view class="row-between">
+          <text class="t-sm t-sub">未使用，可作废</text>
+          <text class="t-primary" data-id="{{item.ticketId}}" bindtap="onCancelTicket">作废</text>
+        </view>
+      </block>
+    </view>
+  </block>
+
+  <!-- 发行记录：按批次 -->
+  <block wx:if="{{tab === 'issuances'}}">
+    <view wx:for="{{rows}}" wx:key="batchId" class="card">
+      <view class="row-between">
+        <text class="t-strong">{{item.stationName}}</text>
+        <text class="t-strong">{{item.totalQuantity}} 张</text>
+      </view>
+      <view class="t-sm t-sub mt-8">
+        {{item.month}} · {{item.itemCount}} 个商品 · 配送费合计 ¥{{item.feeText}}
+      </view>
+      <view class="t-sm t-sub mt-8">{{item.batchId}} · {{item.createdAt}}</view>
+      <view class="divider"></view>
+      <view wx:for="{{item.items}}" wx:for-item="it" wx:key="issuanceId" class="row-between mt-8">
+        <text class="t-sm">{{it.productName}} × {{it.quantity}}</text>
+        <text class="t-sm t-sub">配送费 ¥{{it.feeText}}</text>
+      </view>
+    </view>
+  </block>
+  <view class="mt-24"></view>
+</view>

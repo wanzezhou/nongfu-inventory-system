@@ -215,7 +215,13 @@ const IDEM_SCOPE = {
   // ── Phase 8b 第 17 域 系统设置（打印店长）──
   //    ⚠️ 只有一个动作、只改一行配置，但它决定「客户回拨的是谁的电话」——
   //      重放不会造成账面问题，却会让审计里出现两条无法区分的记录。仍按定式带键。
-  UPDATE_SETTING: 'UPDATE_SETTING'
+  UPDATE_SETTING: 'UPDATE_SETTING',
+  // ── Phase 8b 第 15 域 水票（仅「作废单张」）──
+  //    ⚠️ 水票的发行/调整/批次删除**不在本批**：§7.2 明确它们属 Phase 7 独立批次
+  //      （要改 5 个既有 Web 端点 + 逐个定处置与回滚路径），且 §12.10 要求
+  //      「配送费积分由服务端从商品档案重取」——现发行接口信任客户端传入值。
+  //      在只做「手机端接入」的批次里改动 Web 的既有发行语义，风险远大于收益。
+  CANCEL_TICKET_ADMIN: 'CANCEL_TICKET_ADMIN'
 };
 /** 服务端保留幂等键至少 24h（覆盖「用户离线数小时后重试」，§23.1） */
 const IDEM_TTL_HOURS = 24;
@@ -309,7 +315,11 @@ const AUDIT_ACTION = {
   // ── Phase 8b 第 17 域 系统设置 ──
   //    ⚠️ 审计 detail 里记 before/after 的**人**（不只是 id）：
   //      打印配置的变更只对「电话是谁的」有意义，光记 id 事后要再查一次员工表才知道换成了谁。
-  UPDATE_SETTING: 'UPDATE_SETTING'
+  UPDATE_SETTING: 'UPDATE_SETTING',
+  // ── Phase 8b 第 15 域 水票（仅「作废单张」）──
+  //    与业务员侧的 CANCEL_ORDER 不同名：这里是管理员在管理端作废任意一张未用票，
+  //    审计里要能区分「谁在什么端作废的」。
+  CANCEL_TICKET_ADMIN: 'CANCEL_TICKET_ADMIN'
 };
 
 // ── 分页（⚠️ mysql2 不支持 LIMIT ?，必须 parseInt 内联）────────────────────

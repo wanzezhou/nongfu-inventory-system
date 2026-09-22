@@ -10,6 +10,14 @@ const { TICKET_STATUS, TICKET_STATUS_NAMES } = require('../constants/waterTicket
 // ---------------------------------------------------------------------------
 
 // 返货清单录入/发行：生成发行记录 + 等量水票（每商品一条发行记录，含返货配送费）
+/** 业务校验失败（`e.business = true`）—— 项目既有约定（同 salaryLedger.bizFail） */
+function bizFail(message, status = 400) {
+  const e = new Error(message);
+  e.business = true;
+  e.status = status;
+  return e;
+}
+
 async function issueTickets(req, res) {
   let connection;
   try {
@@ -21,23 +29,32 @@ async function issueTickets(req, res) {
     if (!actualStationId) return error(res, '请选择水站', 400);
     if (!Array.isArray(items) || items.length === 0) return error(res, '请至少填写一条返货商品', 400);
     // 字段名经 normalizeBody 中间件归一为驼峰
-    const cleanItems = items.map((it) => ({
+    const cleanItems = items.map(it => ({
       productId: it.productId,
       quantity: Number(it.quantity),
       distributionDeliveryFee: Number(it.distributionDeliveryFee !== undefined ? it.distributionDeliveryFee : 0)
     }));
-    const invalid = cleanItems.some((it) => !it.productId || isNaN(it.quantity) || it.quantity <= 0 || isNaN(it.distributionDeliveryFee) || it.distributionDeliveryFee < 0);
+    const invalid = cleanItems.some(
+      it =>
+        !it.productId ||
+        isNaN(it.quantity) ||
+        it.quantity <= 0 ||
+        isNaN(it.distributionDeliveryFee) ||
+        it.distributionDeliveryFee < 0
+    );
     if (invalid) return error(res, '每条需填写商品、数量（>0）与返货配送费（≥0）', 400);
 
     // 校验水站与商品存在
-    const [stationRows] = await pool.execute('SELECT station_id FROM sub_stations WHERE station_id = ?', [actualStationId]);
+    const [stationRows] = await pool.execute('SELECT station_id FROM sub_stations WHERE station_id = ?', [
+      actualStationId
+    ]);
     if (stationRows.length === 0) return error(res, '水站不存在', 404);
-    const productIds = cleanItems.map((it) => it.productId);
+    const productIds = cleanItems.map(it => it.productId);
     const [productRows] = await pool.execute(
       `SELECT product_id FROM products WHERE product_id IN (${productIds.map(() => '?').join(',')})`,
       productIds
     );
-    const existSet = new Set(productRows.map((p) => p.product_id));
+    const existSet = new Set(productRows.map(p => p.product_id));
     for (const it of cleanItems) {
       if (!existSet.has(it.productId)) return error(res, `商品不存在: ${it.productId}`, 400);
     }
@@ -55,7 +72,17 @@ async function issueTickets(req, res) {
       await connection.execute(
         `INSERT INTO water_ticket_issuance (issuance_id, batch_id, station_id, product_id, quantity, distribution_delivery_fee, month, remark, created_by)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [issuanceId, batchId, actualStationId, it.productId, it.quantity, it.distributionDeliveryFee, actualMonth, remark || null, operator]
+        [
+          issuanceId,
+          batchId,
+          actualStationId,
+          it.productId,
+          it.quantity,
+          it.distributionDeliveryFee,
+          actualMonth,
+          remark || null,
+          operator
+        ]
       );
       issuanceIds.push(issuanceId);
 
@@ -63,7 +90,19 @@ async function issueTickets(req, res) {
       const ticketValues = [];
       for (let i = 0; i < it.quantity; i++) {
         const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
-        ticketValues.push([ticketId, it.productId, actualStationId, TICKET_STATUS.UNUSED, actualMonth, issuanceId, now, operator, null, null, null]);
+        ticketValues.push([
+          ticketId,
+          it.productId,
+          actualStationId,
+          TICKET_STATUS.UNUSED,
+          actualMonth,
+          issuanceId,
+          now,
+          operator,
+          null,
+          null,
+          null
+        ]);
       }
       if (ticketValues.length) {
         await connection.query(
@@ -86,14 +125,27 @@ async function issueTickets(req, res) {
 }
 
 // 水票库存（按水站+商品统计未用票数）
-async function getTicketInventory(req, res) {
-  try {
-    const { stationId, station_id, month, productId } = req.query;
+/**
+ * 水票库存取数（Web 水票页与小程序管理端共用 —— 单源，不重写 SQL）
+ * @param {object} query { stationId|station_id, month, productId }
+ */
+async function loadTicketInventory(query = {}) {
+  {
+    const { stationId, station_id, month, productId } = query;
     const where = [];
     const params = [];
-    if (stationId || station_id) { where.push('t.station_id = ?'); params.push(stationId || station_id); }
-    if (month) { where.push('t.month = ?'); params.push(month); }
-    if (productId) { where.push('t.product_id = ?'); params.push(productId); }
+    if (stationId || station_id) {
+      where.push('t.station_id = ?');
+      params.push(stationId || station_id);
+    }
+    if (month) {
+      where.push('t.month = ?');
+      params.push(month);
+    }
+    if (productId) {
+      where.push('t.product_id = ?');
+      params.push(productId);
+    }
     where.push('t.status = ?');
     params.push(TICKET_STATUS.UNUSED);
     const whereSql = 'WHERE ' + where.join(' AND ');
@@ -111,7 +163,7 @@ async function getTicketInventory(req, res) {
        ORDER BY s.station_name, p.product_name`,
       params
     );
-    const list = rows.map((r) => ({
+    const list = rows.map(r => ({
       stationId: r.station_id,
       stationName: r.station_name || r.station_id,
       productId: r.product_id,
@@ -122,11 +174,20 @@ async function getTicketInventory(req, res) {
     }));
     // 水站级分销配送费总计（合并单元格求和用）
     const stationFeeMap = {};
-    list.forEach((x) => {
+    list.forEach(x => {
       stationFeeMap[x.stationId] = Math.round(((stationFeeMap[x.stationId] || 0) + x.deliveryFeeTotal) * 100) / 100;
     });
-    list.forEach((x) => { x.stationDeliveryFee = stationFeeMap[x.stationId] || 0; });
-    return success(res, { list });
+    list.forEach(x => {
+      x.stationDeliveryFee = stationFeeMap[x.stationId] || 0;
+    });
+    return { list };
+  }
+}
+
+/** HTTP 出口（薄封装） */
+async function getTicketInventory(req, res) {
+  try {
+    return success(res, await loadTicketInventory(req.query));
   } catch (e) {
     console.error('getTicketInventory error:', e);
     return error(res, '水票库存查询失败', 500);
@@ -134,16 +195,32 @@ async function getTicketInventory(req, res) {
 }
 
 // 水票明细（分页）
-async function getTicketList(req, res) {
-  try {
-    const { stationId, station_id, productId, status, month, page = 1, pageSize = 10 } = req.query;
+/**
+ * 水票明细取数（单源）
+ * @param {object} query { stationId|station_id, productId, status, month, page, pageSize }
+ */
+async function loadTicketList(query = {}) {
+  {
+    const { stationId, station_id, productId, status, month, page = 1, pageSize = 10 } = query;
     const { page: p, size, offset } = parsePage({ page, pageSize }, { maxSize: 100 });
     const where = [];
     const params = [];
-    if (stationId || station_id) { where.push('t.station_id = ?'); params.push(stationId || station_id); }
-    if (productId) { where.push('t.product_id = ?'); params.push(productId); }
-    if (status !== undefined && status !== '') { where.push('t.status = ?'); params.push(Number(status)); }
-    if (month) { where.push('t.month = ?'); params.push(month); }
+    if (stationId || station_id) {
+      where.push('t.station_id = ?');
+      params.push(stationId || station_id);
+    }
+    if (productId) {
+      where.push('t.product_id = ?');
+      params.push(productId);
+    }
+    if (status !== undefined && status !== '') {
+      where.push('t.status = ?');
+      params.push(Number(status));
+    }
+    if (month) {
+      where.push('t.month = ?');
+      params.push(month);
+    }
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
     const [countRows] = await pool.execute(`SELECT COUNT(*) AS total FROM water_tickets t ${whereSql}`, params);
@@ -158,7 +235,7 @@ async function getTicketList(req, res) {
        LIMIT ${parseInt(size)} OFFSET ${parseInt(offset)}`,
       params
     );
-    const list = rows.map((r) => ({
+    const list = rows.map(r => ({
       ticketId: r.ticket_id,
       productId: r.product_id,
       productName: r.product_name || r.product_id,
@@ -173,7 +250,14 @@ async function getTicketList(req, res) {
       usedAt: r.used_at,
       orderId: r.order_id || ''
     }));
-    return success(res, { list, total: countRows[0].total, page: p, pageSize: size });
+    return { list, total: countRows[0].total, page: p, pageSize: size };
+  }
+}
+
+/** HTTP 出口（薄封装） */
+async function getTicketList(req, res) {
+  try {
+    return success(res, await loadTicketList(req.query));
   } catch (e) {
     console.error('getTicketList error:', e);
     return error(res, '水票明细查询失败', 500);
@@ -181,30 +265,62 @@ async function getTicketList(req, res) {
 }
 
 // 作废水票（仅未用可作废）
+/**
+ * 作废单张水票 —— **须在调用方事务内执行**（Web 与小程序管理端共用同一段）
+ * ⚠️ 只改状态，**不动积分/钱包**：票据退还的是「未使用」这个状态，
+ *    而分销配送费积分在发行时就已发生，作废一张票不构成积分冲回
+ *    （积分冲回是 Phase 7 的独立议题，见 docs §7.2）。
+ * ⚠️ 状态守卫在 SQL 里（`AND status = UNUSED`）：并发下两次作废只有一次生效，
+ *    第二次 affectedRows=0 → 抛 bizFail，不会把「已使用的票」改成作废。
+ */
+async function cancelTicketById(conn, id) {
+  const [result] = await conn.execute('UPDATE water_tickets SET status = ? WHERE ticket_id = ? AND status = ?', [
+    TICKET_STATUS.VOID,
+    id,
+    TICKET_STATUS.UNUSED
+  ]);
+  if (result.affectedRows === 0) throw bizFail('水票不存在或已不可作废');
+  return { ticketId: id };
+}
+
+/** HTTP 出口（薄封装：事务边界在控制器，便于并进幂等/审计） */
 async function cancelTicket(req, res) {
+  const conn = await pool.getConnection();
   try {
-    const { id } = req.params;
-    const [result] = await pool.execute(
-      `UPDATE water_tickets SET status = ? WHERE ticket_id = ? AND status = ?`,
-      [TICKET_STATUS.VOID, id, TICKET_STATUS.UNUSED]
-    );
-    if (result.affectedRows === 0) return error(res, '水票不存在或已不可作废', 400);
-    return success(res, null, '已作废');
+    await conn.beginTransaction();
+    const data = await cancelTicketById(conn, req.params.id);
+    await conn.commit();
+    return success(res, data, '已作废');
   } catch (e) {
+    await conn.rollback();
+    // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('cancelTicket error:', e);
     return error(res, '作废失败', 500);
+  } finally {
+    conn.release();
   }
 }
 
 // 发行记录列表（按批次分组：同一次录入的多条记录合并展示，按录入时间倒序）
-async function getIssuanceList(req, res) {
-  try {
-    const { stationId, station_id, month, page = 1, pageSize = 10 } = req.query;
+/**
+ * 发行记录取数（单源）
+ * @param {object} query { stationId|station_id, month, page, pageSize }
+ */
+async function loadIssuanceList(query = {}) {
+  {
+    const { stationId, station_id, month, page = 1, pageSize = 10 } = query;
     const { page: p, size, offset } = parsePage({ page, pageSize }, { maxSize: 100 });
     const where = [];
     const params = [];
-    if (stationId || station_id) { where.push('i.station_id = ?'); params.push(stationId || station_id); }
-    if (month) { where.push('i.month = ?'); params.push(month); }
+    if (stationId || station_id) {
+      where.push('i.station_id = ?');
+      params.push(stationId || station_id);
+    }
+    if (month) {
+      where.push('i.month = ?');
+      params.push(month);
+    }
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
     // 批次级总数与分页
@@ -226,7 +342,7 @@ async function getIssuanceList(req, res) {
     );
 
     // 批次内明细
-    const batchIds = batchRows.map((b) => b.batch_id);
+    const batchIds = batchRows.map(b => b.batch_id);
     let itemsRows = [];
     if (batchIds.length) {
       [itemsRows] = await pool.execute(
@@ -240,7 +356,7 @@ async function getIssuanceList(req, res) {
       );
     }
 
-    const list = batchRows.map((b) => ({
+    const list = batchRows.map(b => ({
       batchId: b.batch_id,
       stationId: b.station_id,
       stationName: b.station_name || b.station_id,
@@ -252,8 +368,8 @@ async function getIssuanceList(req, res) {
       totalFee: Number(b.total_fee) || 0,
       itemCount: Number(b.item_count) || 0,
       items: itemsRows
-        .filter((x) => x.batch_id === b.batch_id)
-        .map((x) => ({
+        .filter(x => x.batch_id === b.batch_id)
+        .map(x => ({
           issuanceId: x.issuance_id,
           productId: x.product_id,
           productName: x.product_name || x.product_id,
@@ -263,7 +379,14 @@ async function getIssuanceList(req, res) {
           remark: x.remark || ''
         }))
     }));
-    return success(res, { list, total: countRows[0].total, page: p, pageSize: size });
+    return { list, total: countRows[0].total, page: p, pageSize: size };
+  }
+}
+
+/** HTTP 出口（薄封装） */
+async function getIssuanceList(req, res) {
+  try {
+    return success(res, await loadIssuanceList(req.query));
   } catch (e) {
     console.error('getIssuanceList error:', e);
     return error(res, '发行记录查询失败', 500);
@@ -285,7 +408,8 @@ async function updateIssuance(req, res) {
 
     const newQuantity = quantity !== undefined && quantity !== '' ? Number(quantity) : Number(old.quantity);
     if (isNaN(newQuantity) || newQuantity <= 0) return error(res, '数量必须大于0', 400);
-    const newFee = distributionDeliveryFee !== undefined ? Number(distributionDeliveryFee) : Number(old.distribution_delivery_fee);
+    const newFee =
+      distributionDeliveryFee !== undefined ? Number(distributionDeliveryFee) : Number(old.distribution_delivery_fee);
     if (isNaN(newFee) || newFee < 0) return error(res, '分销配送费必须大于等于0', 400);
     const newMonth = month || old.month;
 
@@ -300,7 +424,19 @@ async function updateIssuance(req, res) {
       const values = [];
       for (let i = 0; i < diff; i++) {
         const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
-        values.push([ticketId, old.product_id, old.station_id, TICKET_STATUS.UNUSED, newMonth, id, now, operator, null, null, null]);
+        values.push([
+          ticketId,
+          old.product_id,
+          old.station_id,
+          TICKET_STATUS.UNUSED,
+          newMonth,
+          id,
+          now,
+          operator,
+          null,
+          null,
+          null
+        ]);
       }
       await connection.query(
         `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
@@ -317,7 +453,7 @@ async function updateIssuance(req, res) {
         await connection.rollback();
         return error(res, `可作废的未用水票不足：需减 ${need} 张，仅剩 ${tickets.length} 张（部分已核销）`, 400);
       }
-      const ids = tickets.map((t) => t.ticket_id);
+      const ids = tickets.map(t => t.ticket_id);
       await connection.execute(
         `UPDATE water_tickets SET status = ? WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
         [TICKET_STATUS.VOID, ...ids]
@@ -376,7 +512,19 @@ async function adjustBalance(req, res) {
       const values = [];
       for (let i = 0; i < diff; i++) {
         const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
-        values.push([ticketId, actualProductId, actualStationId, TICKET_STATUS.UNUSED, now.toISOString().slice(0, 7), null, now, operator, null, null, '账户调整']);
+        values.push([
+          ticketId,
+          actualProductId,
+          actualStationId,
+          TICKET_STATUS.UNUSED,
+          now.toISOString().slice(0, 7),
+          null,
+          now,
+          operator,
+          null,
+          null,
+          '账户调整'
+        ]);
       }
       await connection.query(
         `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
@@ -392,7 +540,7 @@ async function adjustBalance(req, res) {
         await connection.rollback();
         return error(res, `可作废的未用水票不足：需减 ${need} 张，仅剩 ${tickets.length} 张（部分已核销）`, 400);
       }
-      const ids = tickets.map((t) => t.ticket_id);
+      const ids = tickets.map(t => t.ticket_id);
       await connection.execute(
         `UPDATE water_tickets SET status = ? WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
         [TICKET_STATUS.VOID, ...ids]
@@ -400,7 +548,18 @@ async function adjustBalance(req, res) {
     }
 
     await connection.commit();
-    return success(res, { stationId: actualStationId, productId: actualProductId, current, target, generated: Math.max(diff, 0), cancelled: Math.max(-diff, 0) }, '调整成功');
+    return success(
+      res,
+      {
+        stationId: actualStationId,
+        productId: actualProductId,
+        current,
+        target,
+        generated: Math.max(diff, 0),
+        cancelled: Math.max(-diff, 0)
+      },
+      '调整成功'
+    );
   } catch (e) {
     if (connection) await connection.rollback().catch(() => {});
     console.error('adjustBalance error:', e);
@@ -449,10 +608,10 @@ async function adjustDeliveryFee(req, res) {
         await connection.rollback();
         return error(res, '调整后单笔配送费为负，无法调整', 400);
       }
-      await connection.execute(
-        `UPDATE water_ticket_issuance SET distribution_delivery_fee = ? WHERE issuance_id = ?`,
-        [newFee, rows[0].issuance_id]
-      );
+      await connection.execute(`UPDATE water_ticket_issuance SET distribution_delivery_fee = ? WHERE issuance_id = ?`, [
+        newFee,
+        rows[0].issuance_id
+      ]);
     }
 
     await connection.commit();
@@ -500,7 +659,7 @@ async function adjustStationDeliveryFee(req, res) {
       }
       // 差额均摊到全部发行记录（首笔吸收余数），避免单笔为负
       const n = allRows.length;
-      const per = Math.floor(diff * 100 / n) / 100;
+      const per = Math.floor((diff * 100) / n) / 100;
       const remainder = Math.round((diff - per * n) * 100) / 100;
       for (let i = 0; i < n; i++) {
         const adj = i === 0 ? Math.round((per + remainder) * 100) / 100 : per;
@@ -539,15 +698,14 @@ async function deleteIssuanceBatch(req, res) {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    const [issRows] = await connection.execute(
-      'SELECT issuance_id FROM water_ticket_issuance WHERE batch_id = ?',
-      [batchId]
-    );
+    const [issRows] = await connection.execute('SELECT issuance_id FROM water_ticket_issuance WHERE batch_id = ?', [
+      batchId
+    ]);
     if (issRows.length === 0) {
       await connection.rollback();
       return error(res, '批次不存在', 404);
     }
-    const ids = issRows.map((r) => r.issuance_id);
+    const ids = issRows.map(r => r.issuance_id);
     const placeholders = ids.map(() => '?').join(',');
 
     // 检查已核销水票
@@ -581,6 +739,11 @@ module.exports = {
   getTicketInventory,
   getTicketList,
   cancelTicket,
+  // 取数 / 原语（小程序管理端复用）
+  loadTicketInventory,
+  loadTicketList,
+  loadIssuanceList,
+  cancelTicketById,
   getIssuanceList,
   updateIssuance,
   adjustBalance,

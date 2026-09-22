@@ -47,6 +47,7 @@ const adminSalaryCtrl = require('../controllers/mini/admin/salaryController');
 const adminReportCtrl = require('../controllers/mini/admin/reportController');
 const adminBarrelCtrl = require('../controllers/mini/admin/barrelController');
 const adminSettingsCtrl = require('../controllers/mini/admin/settingsController');
+const adminTicketCtrl = require('../controllers/mini/admin/waterTicketController');
 // 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
 const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
@@ -301,6 +302,20 @@ router.post('/admin/barrels/configs', requireMiniAdmin, requireMiniActive, admin
 router.post('/admin/barrels/deposits', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.createDeposit);
 router.put('/admin/barrels/configs/:id', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.updateConfig);
 router.delete('/admin/barrels/configs/:id', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.removeConfig);
+
+// ── 域 15/17：水票（查：库存 / 明细 / 发行记录 + 作废单张）──────────────────────
+// ⚠️⚠️ **发行类写操作刻意不在本批**（docs §7.2 把这 6 个既有 Web 端点划给 Phase 7，
+//    要求逐个定处置方案 + 准备回滚路径）；更硬的一条是 §12.10：
+//    `unit_distribution_fee` 必须由服务端从 products.distribution_delivery_fee 重取，
+//    而现发行接口把客户端传入值直接写库 —— 手机端开放发行等于把
+//    「公司欠水站多少积分」的定价权交给公网客户端。**不做发行不是省事，是不做才安全。**
+// ⚠️ 因此本域只有 1 个写接口（作废单张，不动积分），其余全为只读。
+// ⚠️ 静态段（options/inventory/list/issuances）必须早于 `/:id`（仓库既有陷阱）。
+router.get('/admin/water-tickets/options', requireMiniAdmin, adminTicketCtrl.getFormOptions);
+router.get('/admin/water-tickets/inventory', requireMiniAdmin, adminTicketCtrl.getInventory);
+router.get('/admin/water-tickets/list', requireMiniAdmin, adminTicketCtrl.listTickets);
+router.get('/admin/water-tickets/issuances', requireMiniAdmin, adminTicketCtrl.listIssuances);
+router.post('/admin/water-tickets/:id/cancel', requireMiniAdmin, requireMiniActive, adminTicketCtrl.cancelTicket);
 
 // ── 域 17/17：系统设置（销售单打印店长）──────────────────────────────────────
 // ⚠️ 校验（员工存在 + 在职）与写入都在 services/systemSettings，两端共用一套规则。

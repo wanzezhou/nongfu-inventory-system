@@ -37,6 +37,10 @@
  *   · 第 17 域 系统设置 —— 第 20 节。目前只有「销售单打印店长」一项。
  *     ⚠️ 这是**全局配置**：冒烟会把原值快照下来并在清理时还原（否则会污染真实打印配置）；
  *     另断言「配置指向已停用员工时**不静默换人**，只把状态透出」这条业务口径。
+ *   · 第 15 域 水票 —— 第 21 节。**只读 + 作废单张**，且带一条**范围反向断言**：
+ *     发行 / 批次删除 / 调整类接口必须**不存在**（docs §7.2 划给 Phase 7；§12.10 要求
+ *     配送费积分由服务端重取，而现发行接口信任客户端传入值）。
+ *     范围决定也要被断言 —— 否则将来有人「顺手」加上接口，就等于把定价权交给了公网客户端。
  *   · 第 12~14 域 营收 / 成本 / 利润 —— 第 18 节。**只读报表**，三个域共用一个页面。
  *     本节的断言重点不是「接口通不通」，而是 ★★ **跨端逐行一致**：
  *     同一区间下小程序与 Web 的同一个数必须逐位相等（这是「取数单源」唯一的可验证证明；
@@ -3191,6 +3195,153 @@ async function main() {
     `20.7 ★ 跨端一致：Web ${pmWeb.data && pmWeb.data.workerId} == 小程序 ${pmMini.data && pmMini.data.workerId}`
   );
 
+  // ═════════════ 21. 水票域（Phase 8b 第 15 域：只读 + 作废单张）═════════════
+  // ⚠️ 本域**刻意没有发行类接口**（见文件头与 docs §7.2）：故本节除了验「有什么」，
+  //    还要验「没有什么」——范围决定同样要被断言。
+  section('21. 水票域：库存/明细/发行记录 + 作废单张 + ★ 发行接口不得存在');
+
+  const wtTicketA = 'SMKWT' + TS + 'A'; // 未使用（可作废）
+  const wtTicketB = 'SMKWT' + TS + 'B'; // 已核销（作废必须被拒）
+  const [[wtStation]] = await pool.query('SELECT station_id FROM sub_stations ORDER BY station_id LIMIT 1');
+  const [[wtProduct]] = await pool.query('SELECT product_id FROM products ORDER BY product_id LIMIT 1');
+  const wtMonth = curMonth;
+  await pool.query(
+    `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issued_at, issued_by, remark)
+     VALUES (?, ?, ?, 1, ?, NOW(), 'smoke', '冒烟-未使用'), (?, ?, ?, 2, ?, NOW(), 'smoke', '冒烟-已核销')`,
+    [
+      wtTicketA,
+      wtProduct.product_id,
+      wtStation.station_id,
+      wtMonth,
+      wtTicketB,
+      wtProduct.product_id,
+      wtStation.station_id,
+      wtMonth
+    ]
+  );
+
+  // ── 21.1 权限 ────────────────────────────────────────────────────────────
+  const wtNoToken = await call('GET', '/mini/admin/water-tickets/inventory');
+  assert(
+    wtNoToken._status === 401 || wtNoToken.code === 401,
+    `21.1 无令牌读水票库存被拒 401（实得 ${wtNoToken._status}）`
+  );
+  const wtDenied = await call('GET', '/mini/admin/water-tickets/list', null, ordSalesmanToken);
+  assert(
+    wtDenied.code === 403 && /管理员角色/.test(String(wtDenied.message)),
+    `21.1 业务员读水票明细被拒 403（实得 ${wtDenied.code}）`
+  );
+  const wtCancelDenied = await call(
+    'POST',
+    '/mini/admin/water-tickets/' + wtTicketA + '/cancel',
+    { clientRequestId: 'x' },
+    ordSalesmanToken
+  );
+  assert(wtCancelDenied.code === 403, `21.1 业务员作废被拒 403（实得 ${wtCancelDenied.code}）`);
+
+  // ── 21.2 选项与三个只读接口 ──────────────────────────────────────────────
+  const wtOpts = await call('GET', '/mini/admin/water-tickets/options', null, adminToken);
+  assert(wtOpts.code === 200, `21.2 水票选项 200（${wtOpts.code} ${wtOpts.message || ''}）`);
+  assert(
+    Array.isArray(wtOpts.data.stations) &&
+      Array.isArray(wtOpts.data.products) &&
+      Array.isArray(wtOpts.data.statusOptions),
+    '21.2 选项含 水站 / 商品 / 状态'
+  );
+  assert(!('activeAccounts' in wtOpts.data), '21.2 ★ 选项**不含账户**（本域没有发行入口，列出来会被当成「可以做」）');
+  const wtInv = await call('GET', '/mini/admin/water-tickets/inventory', null, adminToken);
+  assert(
+    wtInv.code === 200 && Array.isArray(wtInv.data.list),
+    `21.2 水票库存 200（${wtInv.code} ${wtInv.message || ''}）`
+  );
+  const wtList = await call(
+    'GET',
+    '/mini/admin/water-tickets/list?stationId=' + encodeURIComponent(wtStation.station_id),
+    null,
+    adminToken
+  );
+  assert(wtList.code === 200 && Array.isArray(wtList.data.list), `21.2 水票明细 200（${wtList.code}）`);
+  const wtRowA = (wtList.data.list || []).find(t => t.ticketId === wtTicketA);
+  assert(
+    wtRowA && wtRowA.status === 1 && wtRowA.statusName && wtRowA.canCancel === true,
+    `21.2 明细行带状态中文名与 canCancel（实得 ${JSON.stringify(wtRowA || null)}）`
+  );
+  const wtRowB = (wtList.data.list || []).find(t => t.ticketId === wtTicketB);
+  assert(wtRowB && wtRowB.canCancel === false, '21.2 已核销的票 canCancel=false');
+  const wtIss = await call('GET', '/mini/admin/water-tickets/issuances', null, adminToken);
+  assert(wtIss.code === 200 && Array.isArray(wtIss.data.list), `21.2 发行记录 200（${wtIss.code}）`);
+  assert(
+    typeof wtIss.data.notice === 'string' && wtIss.data.notice.length > 0,
+    '21.2 ★ 发行记录页带「发行仍在 Web」的说明（范围决定要说清）'
+  );
+
+  // ── 21.3 作废单张（幂等 + 审计 + 状态守卫）───────────────────────────────
+  const wtNoIdem = await call('POST', '/mini/admin/water-tickets/' + wtTicketA + '/cancel', null, adminToken);
+  assert(
+    wtNoIdem.code === 400 && /clientRequestId/.test(String(wtNoIdem.message)),
+    `21.3 缺幂等键被拒（${wtNoIdem.message}）`
+  );
+  const wtGhost = await call(
+    'POST',
+    '/mini/admin/water-tickets/SMKNOWT/cancel?clientRequestId=' + encodeURIComponent('smkwt_' + TS + '_g'),
+    null,
+    adminToken
+  );
+  assert(wtGhost.code === 404, `21.3 不存在的水票 → 404（实得 ${wtGhost.code}）`);
+
+  const wtCancelKey = 'smkwt_' + TS + '_c1';
+  const wtCancel = await call(
+    'POST',
+    '/mini/admin/water-tickets/' + wtTicketA + '/cancel',
+    { clientRequestId: wtCancelKey },
+    adminToken
+  );
+  assert(wtCancel.code === 200, `21.3 作废成功（${wtCancel.code} ${wtCancel.message || ''}）`);
+  const wtAfter = (await pool.query('SELECT status FROM water_tickets WHERE ticket_id = ?', [wtTicketA]))[0];
+  assert(Number(wtAfter[0].status) === 3, `21.3 ★ 状态变为「作废」=3（实得 ${wtAfter[0].status}）`);
+  const wtAudit = await auditActions();
+  assert(wtAudit.includes('CANCEL_TICKET_ADMIN'), '21.3 审计含 CANCEL_TICKET_ADMIN');
+  const wtReplay = await call(
+    'POST',
+    '/mini/admin/water-tickets/' + wtTicketA + '/cancel',
+    { clientRequestId: wtCancelKey },
+    adminToken
+  );
+  assert(
+    wtReplay.code === 200 && wtReplay.data.replayed === true,
+    `21.3 幂等重放 replayed=true（${JSON.stringify(wtReplay.data || wtReplay.message)}）`
+  );
+
+  // ★ 状态守卫：已核销的票不能作废（守卫在 SQL 的 status 条件上，并发下也成立）
+  const wtCancelUsed = await call(
+    'POST',
+    '/mini/admin/water-tickets/' + wtTicketB + '/cancel?clientRequestId=' + encodeURIComponent('smkwt_' + TS + '_c2'),
+    null,
+    adminToken
+  );
+  assert(
+    wtCancelUsed.code === 400 && /不可作废/.test(String(wtCancelUsed.message)),
+    `21.3 ★ 已核销的水票作废被拒（${wtCancelUsed.message}）`
+  );
+  const wtAfterB = (await pool.query('SELECT status FROM water_tickets WHERE ticket_id = ?', [wtTicketB]))[0];
+  assert(Number(wtAfterB[0].status) === 2, `21.3 ★ 被拒后状态未变（仍 2，实得 ${wtAfterB[0].status}）`);
+
+  // ── 21.4 ★ 范围反向断言：发行类接口不得存在 ──────────────────────────────
+  // ⚠️ 这条断言的价值在于「防止将来顺手加上」：发行要落 distribution_delivery_fee，
+  //    而 §12.10 要求它由服务端从商品档案重取 —— 现发行逻辑信任客户端传入值。
+  //    手机端一旦开放，就等于把「公司欠水站多少积分」的定价权交给公网客户端。
+  for (const p of ['issue', 'adjust-balance', 'adjust-delivery-fee']) {
+    const hit = await call('POST', '/mini/admin/water-tickets/' + p, { clientRequestId: 'x' }, adminToken);
+    assert(hit.code === 404, `21.4 ★ 发行类接口 /admin/water-tickets/${p} 不存在（实得 ${hit.code}）`);
+  }
+  const wtBatchDel = await call(
+    'DELETE',
+    '/mini/admin/water-tickets/issuances/batch/SMKNOBATCH?clientRequestId=' + encodeURIComponent('smkwt_' + TS + '_b'),
+    null,
+    adminToken
+  );
+  assert(wtBatchDel.code === 404, `21.4 ★ 批次删除接口不存在（实得 ${wtBatchDel.code}）`);
+
   // ── 18.5 各域声明可用的区间都真的通 ─────────────────────────────────────
   for (const [p, ranges] of [
     ['revenue', ['month', 'year', 'all']],
@@ -3309,6 +3460,8 @@ main()
         await pool.query(`DELETE FROM salary_payments WHERE worker_id IN (${ph})`, slWorkerIds);
         await pool.query(`DELETE FROM salary_advances WHERE worker_id IN (${ph})`, slWorkerIds);
       }
+      // 水票域（第 15 域）：删冒烟插入的水票（它们引用 products/sub_stations）
+      await pool.query("DELETE FROM water_tickets WHERE ticket_id LIKE 'SMKWT%' AND remark LIKE '冒烟%'");
       // 回桶域（第 16 域）：先删押金流水与押金记录，再删桶型配置
       //（顺序受业务约束：有押金流水的桶型不允许删除 —— 服务端就是这么判的）
       await pool.query(
@@ -3411,12 +3564,15 @@ main()
         )
       )[0][0];
       const bcTotal = Number(bcLeft.c) + Number(bcLeft.d);
+      // 水票域残留（冒烟插入的票）
+      const wtLeft = (await pool.query("SELECT COUNT(*) AS n FROM water_tickets WHERE ticket_id LIKE 'SMKWT%'"))[0][0];
+      const wtTotal = Number(wtLeft.n) || 0;
       const [pmLeftRows] = await pool.query(
         "SELECT setting_value FROM system_settings WHERE setting_key = 'print_manager_worker_id'"
       );
       const pmRestored = (pmLeftRows.length ? pmLeftRows[0].setting_value : null) === pmSnapshot;
       if (!pmRestored) console.log('⚠️ 打印店长配置未还原到原值！');
-      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n) + Number(accLeft[0].n) + slTotal + bcTotal;
+      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n) + Number(accLeft[0].n) + slTotal + bcTotal + wtTotal;
       const clean =
         Number(left[0].n) === 0 &&
         Number(leftInc[0].n) === 0 &&
@@ -3426,8 +3582,8 @@ main()
         ordTotal === 0 &&
         pmRestored;
       console.log(
-        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条 / 订单+账户+工资+回桶域 ${ordTotal} 条（其中工资域 ${slTotal}、回桶域 ${bcTotal}）/ 打印店长配置已还原 ${pmRestored ? '✓' : '✗'}` +
-          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal, ordTotal, slTotal, bcTotal, pmRestored })}`
+        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条 / 订单+账户+工资+回桶域 ${ordTotal} 条（其中工资域 ${slTotal}、回桶域 ${bcTotal}、水票域 ${wtTotal}）/ 打印店长配置已还原 ${pmRestored ? '✓' : '✗'}` +
+          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal, ordTotal, slTotal, bcTotal, wtTotal, pmRestored })}`
       );
     } catch (e) {
       console.log('清理失败：' + e.message);

@@ -244,6 +244,11 @@
           <text class="t-strong">销售单打印店长 ›</text>
         </view>
         <view class="divider"></view>
+        <view class="kv-row" bindtap="goAdminTickets">
+          <text class="t-sub">水票</text>
+          <text class="t-strong">水站库存 / 明细 / 作废 ›</text>
+        </view>
+        <view class="divider"></view>
         <view class="kv-row" bindtap="goAdminInventory">
           <text class="t-sub">库存</text>
           <text class="t-strong">入库 / 出库 / 作废 ›</text>

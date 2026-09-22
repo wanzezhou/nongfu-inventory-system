@@ -40,7 +40,8 @@
     "pages/admin-barrels/index",
     "pages/admin-barrel-deposit/index",
     "pages/admin-barrel-configs/index",
-    "pages/admin-settings/index"
+    "pages/admin-settings/index",
+    "pages/admin-tickets/index"
   ],
   "window": {
     "backgroundTextStyle": "light",
