@@ -1,0 +1,64 @@
+<!-- 经营报表（营收 / 成本 / 利润 · 管理员 · Phase 8b 第 12~14 域）
+     ⚠️ 只读报表：页面不提供任何写入口 —— 营收由订单与机台销量产生、成本由进货价与配送费
+        产生，都不该在手机上手工改（改数入口在各自的业务域里，如机台销量录入）。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">报表</text>
+      <text class="t-sm t-sub">{{start}} ~ {{end}}</text>
+    </view>
+    <view class="row-between mt-8">
+      <text
+        wx:for="{{kinds}}"
+        wx:key="key"
+        class="{{kind === item.key ? 't-strong' : 't-sub'}}"
+        data-key="{{item.key}}"
+        bindtap="onTab"
+      >{{item.label}}</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">区间</text>
+      <picker mode="selector" range="{{rangeLabels}}" value="{{rangeIndex}}" bindchange="onRangeChange">
+        <view class="row-between">
+          <text class="t-strong">{{rangeLabels[rangeIndex] || '本月'}}</text>
+          <text class="t-sub">›</text>
+        </view>
+      </picker>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <view class="card">
+      <view wx:for="{{summary}}" wx:key="label" class="row-between mt-8">
+        <text class="t-sub">{{item.label}}</text>
+        <text class="{{item.strong ? 't-strong' : ''}}">{{item.value}}</text>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">按订单类型</view>
+      <view wx:if="{{!rows.length}}" class="t-sub">该区间没有数据</view>
+      <block wx:for="{{rows}}" wx:key="key">
+        <view class="divider"></view>
+        <view class="row-between">
+          <text class="t-strong">{{item.title}}</text>
+          <text class="t-strong">{{item.main}}</text>
+        </view>
+        <view class="t-sm t-sub mt-8">{{item.sub}}</view>
+      </block>
+    </view>
+
+    <view wx:if="{{note}}" class="card card-flat">
+      <view class="section-title">口径说明</view>
+      <view class="t-sub">{{note}}</view>
+    </view>
+  </block>
+  <view class="mt-24"></view>
+</view>

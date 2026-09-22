@@ -35,7 +35,8 @@
     "pages/admin-salary/index",
     "pages/admin-salary-pay/index",
     "pages/admin-advances/index",
-    "pages/admin-advance-edit/index"
+    "pages/admin-advance-edit/index",
+    "pages/admin-reports/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

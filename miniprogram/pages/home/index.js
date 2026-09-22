@@ -141,6 +141,9 @@ Page({
   goAdminSalary() {
     ui.navTo('/pages/admin-salary/index');
   },
+  goAdminReports() {
+    ui.navTo('/pages/admin-reports/index');
+  },
   /** Phase 8b 业务域：库存（入库 / 出库；入库会在同一事务里扣付款账户余额） */
   goAdminInventory() {
     ui.navTo('/pages/admin-inventory/index');

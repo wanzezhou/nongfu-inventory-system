@@ -18,8 +18,15 @@ const { loadCostItemLines } = require('../utils/itemLines');
 const { loadSalarySummary } = require('../services/salarySummary');
 const costExprUtil = require('../utils/costExpr');
 const {
-  ticketQtyExpr, nonTicketQtyExpr, stationCost1Expr, stationCost2Expr,
-  retailCostAExpr, retailCostBExpr, itemCostExpr, costExpr, COST_LABELS
+  ticketQtyExpr,
+  nonTicketQtyExpr,
+  stationCost1Expr,
+  stationCost2Expr,
+  retailCostAExpr,
+  retailCostBExpr,
+  itemCostExpr,
+  costExpr,
+  COST_LABELS
 } = costExprUtil;
 
 // 机台类型 → 订单类型（machine_sales.machine_type: 1=量贩机 / 2=零售机）
@@ -86,20 +93,30 @@ async function loadCostByType(r, wantType) {
   const nameOfStation = {};
   const nameOfMachine = {};
   if (stationIds.length) {
-    const [ss] = await pool.query(`SELECT station_id, station_name FROM sub_stations WHERE station_id IN (${stationIds.map(() => '?').join(',')})`, stationIds);
-    ss.forEach(x => { nameOfStation[x.station_id] = x.station_name; });
+    const [ss] = await pool.query(
+      `SELECT station_id, station_name FROM sub_stations WHERE station_id IN (${stationIds.map(() => '?').join(',')})`,
+      stationIds
+    );
+    ss.forEach(x => {
+      nameOfStation[x.station_id] = x.station_name;
+    });
   }
   if (machineIds.length) {
-    const [ms] = await pool.query(`SELECT machine_id, station_name FROM machine_stations WHERE machine_id IN (${machineIds.map(() => '?').join(',')})`, machineIds);
-    ms.forEach(x => { nameOfMachine[x.machine_id] = x.station_name; });
+    const [ms] = await pool.query(
+      `SELECT machine_id, station_name FROM machine_stations WHERE machine_id IN (${machineIds.map(() => '?').join(',')})`,
+      machineIds
+    );
+    ms.forEach(x => {
+      nameOfMachine[x.machine_id] = x.station_name;
+    });
   }
 
   const list = rows.map(x => ({
     orderId: x.order_id,
     orderNo: x.order_id,
     customerName: x.customer_name || '-',
-    stationName: x.station_id ? (nameOfStation[x.station_id] || x.station_id) : null,
-    machineName: x.machine_station_id ? (nameOfMachine[x.machine_station_id] || x.machine_station_id) : null,
+    stationName: x.station_id ? nameOfStation[x.station_id] || x.station_id : null,
+    machineName: x.machine_station_id ? nameOfMachine[x.machine_station_id] || x.machine_station_id : null,
     totalQty: Number(x.total_qty) || 0,
     ticketQty: Number(x.ticket_qty) || 0,
     nonTicketQty: Number(x.non_ticket_qty) || 0,
@@ -111,7 +128,7 @@ async function loadCostByType(r, wantType) {
     createTime: x.created_at
   }));
 
-  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
   const summary = {
     costTotal: r2(list.reduce((s, x) => s + x.costTotal, 0)),
     cost1: r2(list.reduce((s, x) => s + x.cost1, 0)),
@@ -139,12 +156,14 @@ async function getCostByType(req, res) {
     const { list, summary } = await loadCostByType(r, wantType);
 
     return success(res, {
-      list, summary,
+      list,
+      summary,
       orderType: wantType,
       typeName: ORDER_TYPES[wantType],
       label: COST_LABELS[wantType],
       range: r,
-      start: r.start, end: r.end
+      start: r.start,
+      end: r.end
     });
   } catch (e) {
     console.error('getCostByType error:', e);
@@ -157,12 +176,13 @@ async function getCostByType(req, res) {
  * GET /api/cost/overview?range=month
  * 返回各类型成本 + 员工工资(配送费) + 其他支出，供「成本汇总」页使用
  */
-async function getCostOverview(req, res) {
-  try {
-    const r = resolveRange(req.query);
-    if (!r) {
-      return error(res, RANGE_INVALID_MSG, 400);
-    }
+/**
+ * 成本总览**取数**（Web 成本汇总页与小程序管理端共用 —— 单源，不重写 SQL）
+ * @param {object} r utils/dateRange.resolveRange 结果（非法区间由调用方先拦 400）
+ * @returns {Promise<object>} 原 getCostOverview 的 data
+ */
+async function loadCostOverview(r) {
+  {
     const rw = buildRangeWhere('o.created_at', r);
     const [rows] = await pool.execute(
       `SELECT o.order_type,
@@ -178,7 +198,14 @@ async function getCostOverview(req, res) {
 
     const byType = {};
     VALID_ORDER_TYPES.forEach(t => {
-      byType[t] = { orderType: t, typeName: ORDER_TYPES[t], costTotal: 0, orderCount: 0, totalQty: 0, label: COST_LABELS[t] };
+      byType[t] = {
+        orderType: t,
+        typeName: ORDER_TYPES[t],
+        costTotal: 0,
+        orderCount: 0,
+        totalQty: 0,
+        label: COST_LABELS[t]
+      };
     });
     rows.forEach(x => {
       if (byType[x.order_type]) {
@@ -189,15 +216,19 @@ async function getCostOverview(req, res) {
     });
 
     const list = VALID_ORDER_TYPES.map(t => byType[t]);
-    const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
     const orderCostTotal = r2(list.reduce((s, x) => s + x.costTotal, 0));
 
-    return success(res, {
-      list,
-      orderCostTotal,
-      range: r,
-      start: r.start, end: r.end
-    });
+    return { list, orderCostTotal, range: r, start: r.start, end: r.end };
+  }
+}
+
+/** HTTP 出口（薄封装：只做区间校验与响应信封） */
+async function getCostOverview(req, res) {
+  try {
+    const r = resolveRange(req.query);
+    if (!r) return error(res, RANGE_INVALID_MSG, 400);
+    return success(res, await loadCostOverview(r));
   } catch (e) {
     console.error('getCostOverview error:', e);
     return error(res, '成本总览查询失败', 500);
@@ -241,7 +272,7 @@ async function loadMachineCost(r, machineType) {
     totalQty: Number(x.total_qty) || 0,
     costTotal: Number(x.cost_total) || 0
   }));
-  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
   const summary = {
     costTotal: r2(list.reduce((s, x) => s + x.costTotal, 0)),
     machineCount: list.length,
@@ -261,13 +292,15 @@ async function getMachineCost(req, res) {
     const { list, summary, orderType } = await loadMachineCost(r, machineType);
 
     return success(res, {
-      list, summary,
+      list,
+      summary,
       machineType,
       orderType,
       typeName: ORDER_TYPES[orderType],
       label: COST_LABELS[orderType],
       range: r,
-      start: r.start, end: r.end
+      start: r.start,
+      end: r.end
     });
   } catch (e) {
     console.error('getMachineCost error:', e);
@@ -302,11 +335,16 @@ async function getCostOrderLines(req, res) {
       );
       const list = rows.map(x => {
         const t = Number(x.order_type);
-        const costTotal = t === 2 ? (Number(x.cost1) || 0) + (Number(x.cost2) || 0)
-          : t === 3 ? (Number(x.delivery_type) === 1 ? Number(x.costA) : Number(x.costB)) || 0
-            : t === 1 || t === 5 ? (Number(x.purchase_price) + Number(x.worker_retail_delivery_fee)) * Number(x.quantity)
-              : t === 4 ? (Number(x.purchase_price) + Number(x.worker_machine_delivery_fee)) * Number(x.quantity)
-                : Number(x.purchase_price) * Number(x.quantity);
+        const costTotal =
+          t === 2
+            ? (Number(x.cost1) || 0) + (Number(x.cost2) || 0)
+            : t === 3
+              ? (Number(x.delivery_type) === 1 ? Number(x.costA) : Number(x.costB)) || 0
+              : t === 1 || t === 5
+                ? (Number(x.purchase_price) + Number(x.worker_retail_delivery_fee)) * Number(x.quantity)
+                : t === 4
+                  ? (Number(x.purchase_price) + Number(x.worker_machine_delivery_fee)) * Number(x.quantity)
+                  : Number(x.purchase_price) * Number(x.quantity);
         return {
           orderId: x.order_id,
           productName: x.product_name || '-',
@@ -411,7 +449,7 @@ async function exportCost(req, res) {
 
       sheets.push({
         name: '机台成本汇总',
-        data: list.map((x) => ({
+        data: list.map(x => ({
           机台: x.machineName,
           供货订单数: x.orderCount,
           供货件数: x.totalQty,
@@ -422,7 +460,7 @@ async function exportCost(req, res) {
       const lines = await loadCostItemLines(pool, { orderType, rw });
       sheets.push({
         name: '供货商品明细',
-        data: lines.map((x) => ({
+        data: lines.map(x => ({
           机台: x.machineName || '',
           订单号: x.orderId,
           商品名称: x.productName,
@@ -462,7 +500,7 @@ async function exportCost(req, res) {
 
       sheets.push({
         name: '成本明细',
-        data: list.map((x) => {
+        data: list.map(x => {
           const row = {
             订单号: x.orderId,
             [wantType === 2 ? '水站' : '客户']: (wantType === 2 ? x.stationName : x.customerName) || '-',
@@ -486,7 +524,7 @@ async function exportCost(req, res) {
       const lines = await loadCostItemLines(pool, { orderType: wantType, rw });
       sheets.push({
         name: '商品明细',
-        data: lines.map((x) => {
+        data: lines.map(x => {
           const row = {
             订单号: x.orderId,
             客户或水站: (wantType === 2 ? x.stationName : x.customerName) || '-',
@@ -557,7 +595,7 @@ async function exportCostSummary(req, res) {
       rw.params
     );
     const costByType = {};
-    typeRows.forEach((x) => {
+    typeRows.forEach(x => {
       costByType[Number(x.order_type)] = {
         orderCount: Number(x.order_count) || 0,
         totalQty: Number(x.total_qty) || 0,
@@ -568,9 +606,17 @@ async function exportCostSummary(req, res) {
     // 直营水站成本（类型2）：取订单明细后按水站聚合，口径与页面一致
     const { list: stationOrders } = await loadCostByType(r, 2);
     const stationMap = new Map();
-    stationOrders.forEach((o) => {
+    stationOrders.forEach(o => {
       const key = o.stationName || '未关联水站';
-      const cur = stationMap.get(key) || { stationName: key, orderCount: 0, totalQty: 0, ticketQty: 0, cost1: 0, cost2: 0, costTotal: 0 };
+      const cur = stationMap.get(key) || {
+        stationName: key,
+        orderCount: 0,
+        totalQty: 0,
+        ticketQty: 0,
+        cost1: 0,
+        cost2: 0,
+        costTotal: 0
+      };
       cur.orderCount += 1;
       cur.totalQty += o.totalQty;
       cur.ticketQty += o.ticketQty;
@@ -579,9 +625,9 @@ async function exportCostSummary(req, res) {
       cur.costTotal += o.costTotal;
       stationMap.set(key, cur);
     });
-    const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
     const stationRows = [...stationMap.values()]
-      .map((x) => ({ ...x, cost1: r2(x.cost1), cost2: r2(x.cost2), costTotal: r2(x.costTotal) }))
+      .map(x => ({ ...x, cost1: r2(x.cost1), cost2: r2(x.cost2), costTotal: r2(x.costTotal) }))
       .sort((a, b) => b.costTotal - a.costTotal);
 
     // 其他支出（口径同 /expenses：range 作用于 expense_date）
@@ -612,13 +658,16 @@ async function exportCostSummary(req, res) {
           { 项目: '员工工资（订单配送费）', 数值: salary.summary.totalDeliveryFee },
           { 项目: '其他支出', 数值: otherExpense },
           { 项目: '成本合计', 数值: totalCost },
-          { 项目: '口径说明', 数值: '成本合计 = 直营水站成本（成本1 水票抵扣商品 + 成本2 未抵扣商品） + 员工工资（订单配送费） + 其他支出' }
+          {
+            项目: '口径说明',
+            数值: '成本合计 = 直营水站成本（成本1 水票抵扣商品 + 成本2 未抵扣商品） + 员工工资（订单配送费） + 其他支出'
+          }
         ],
         widths: [24, 66]
       },
       {
         name: '各类型成本对比',
-        data: VALID_ORDER_TYPES.map((t) => {
+        data: VALID_ORDER_TYPES.map(t => {
           const c = costByType[t] || { orderCount: 0, totalQty: 0, costTotal: 0 };
           return {
             订单类型: ORDER_TYPES[t],
@@ -631,7 +680,7 @@ async function exportCostSummary(req, res) {
       },
       {
         name: '直营水站成本明细',
-        data: stationRows.map((x) => ({
+        data: stationRows.map(x => ({
           水站名称: x.stationName,
           订单数: x.orderCount,
           商品件数: x.totalQty,
@@ -643,7 +692,7 @@ async function exportCostSummary(req, res) {
       },
       {
         name: '其他支出明细',
-        data: expenseRows.map((x) => ({
+        data: expenseRows.map(x => ({
           支出名称: x.expense_name,
           支出类别: x.category,
           金额: Number(x.amount) || 0,
@@ -655,7 +704,7 @@ async function exportCostSummary(req, res) {
       },
       {
         name: '员工工资明细',
-        data: salary.list.map((x) => ({
+        data: salary.list.map(x => ({
           员工姓名: x.workerName,
           联系电话: x.phone,
           配送订单数: x.orderCount,
@@ -681,6 +730,12 @@ async function exportCostSummary(req, res) {
 }
 
 module.exports = {
-  getCostByType, getCostOverview, getMachineCost, getCostOrderLines,
-  exportCost, exportCostSummary
+  getCostByType,
+  getCostOverview,
+  getMachineCost,
+  getCostOrderLines,
+  exportCost,
+  exportCostSummary,
+  // 取数函数（小程序管理端复用）
+  loadCostOverview
 };

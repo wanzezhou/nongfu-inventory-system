@@ -270,10 +270,13 @@ async function loadMachineProfit(r, orderType) {
 }
 
 // 利润总览（全部类型横向对比）：供「利润汇总」页使用
-async function getProfitOverview(req, res) {
-  try {
-    const r = resolveRange(req.query);
-    if (!r) return error(res, RANGE_INVALID_MSG, 400);
+/**
+ * 利润总览**取数**（Web 利润页与小程序管理端共用 —— 单源，不重写 SQL）
+ * @param {object} r utils/dateRange.resolveRange 结果（非法区间由调用方先拦 400）
+ * @returns {Promise<object>} 原 getProfitOverview 的 data
+ */
+async function loadProfitOverview(r) {
+  {
     const rw = buildRangeWhere('o.created_at', r);
 
     // 订单类 1/2/3/5：按订单聚合再按类型汇总
@@ -402,7 +405,16 @@ async function getProfitOverview(req, res) {
     };
     overall.margin = overall.revenue > 0 ? Math.round((overall.profit / overall.revenue) * 10000) / 100 : 0;
 
-    return success(res, { list, overall, range: r, start: r.start, end: r.end });
+    return { list, overall, range: r, start: r.start, end: r.end };
+  }
+}
+
+/** HTTP 出口（薄封装：只做区间校验与响应信封） */
+async function getProfitOverview(req, res) {
+  try {
+    const r = resolveRange(req.query);
+    if (!r) return error(res, RANGE_INVALID_MSG, 400);
+    return success(res, await loadProfitOverview(r));
   } catch (e) {
     console.error('getProfitOverview error:', e);
     return error(res, '利润总览查询失败', 500);
@@ -604,4 +616,11 @@ async function exportProfit(req, res) {
   }
 }
 
-module.exports = { getProfitByType, getProfitOverview, exportProfit, PROFIT_LABELS };
+module.exports = {
+  getProfitByType,
+  getProfitOverview,
+  exportProfit,
+  PROFIT_LABELS,
+  // 取数函数（小程序管理端复用）
+  loadProfitOverview
+};

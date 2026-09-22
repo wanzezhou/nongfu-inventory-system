@@ -157,9 +157,16 @@ function ticketValueExpr() {
 }
 
 // 营收汇总：订单类 1/2/3/5 + 机台类 4/6；可选 orderType 只聚合该类型（前端二级菜单）
-async function getFinanceSummary(req, res) {
-  try {
-    const { range = 'month', startDate, endDate, orderType } = req.query;
+/**
+ * 营收汇总**取数**（Web 财务管理页与小程序管理端共用 —— 单源，不重写 SQL）
+ * ⚠️ 本函数用自带的 resolveDateRange（start 含、end **含**），与 dateRange.buildRangeWhere
+ *    的 end **不含** 不同 —— 这也正是它必须单源的理由：两端各抄一遍极可能挑错那一套，
+ *    而表现只是「今天录入的收入不计入」，很难被发现。
+ * @param {object} query { range, startDate, endDate, orderType }
+ */
+async function loadFinanceSummary(query = {}) {
+  {
+    const { range = 'month', startDate, endDate, orderType } = query;
     const { start, end } = resolveDateRange(range, startDate, endDate);
     const expr = itemRevenueExpr();
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
@@ -279,7 +286,14 @@ async function getFinanceSummary(req, res) {
       otherIncome
     };
 
-    return success(res, { list, overall, start, end });
+    return { list, overall, start, end };
+  }
+}
+
+/** HTTP 出口（薄封装：只做响应信封；resolveDateRange 自带默认值，无 400 分支） */
+async function getFinanceSummary(req, res) {
+  try {
+    return success(res, await loadFinanceSummary(req.query));
   } catch (e) {
     console.error('getFinanceSummary error:', e);
     return error(res, '营收汇总查询失败', 500);
@@ -544,6 +558,8 @@ async function exportFinance(req, res) {
 
 module.exports = {
   getFinanceSummary,
+  // 取数函数（小程序管理端复用）
+  loadFinanceSummary,
   getFinanceOrders,
   getMachineSales,
   createMachineSale,

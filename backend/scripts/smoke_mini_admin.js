@@ -31,6 +31,12 @@
  *     另含余额不足「被拒后余额未变 + 不留半张发放单」与**个人信息红线**
  *     （汇总列表不得出现 phone —— loadSalarySummary 会带出，必须逐字段挡掉）。
  *     核心用 Web 端抽出的 services/salaryLedger 四个原语（两端共用）。
+ *   · 第 12~14 域 营收 / 成本 / 利润 —— 第 18 节。**只读报表**，三个域共用一个页面。
+ *     本节的断言重点不是「接口通不通」，而是 ★★ **跨端逐行一致**：
+ *     同一区间下小程序与 Web 的同一个数必须逐位相等（这是「取数单源」唯一的可验证证明；
+ *     只验 200 的话，两边各写一套 SQL 也能全绿）。另含 ★ **区间白名单**：
+ *     营收实现里的 resolveDateRange 对未知 key 会静默退化成「今天」——小程序侧必须 400，
+ *     冒烟同时把 Web 的该行为断言下来，让这个既有陷阱长期可见（见第 18 节 18.4）。
  *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
  *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
@@ -2622,6 +2628,160 @@ async function main() {
   );
   const salBadRange = await call('GET', '/mini/admin/salary/summary?range=bogus', null, adminToken);
   assert(salBadRange.code === 400, `17.11 非法区间 → 400（不得静默降级为「不限区间」，实得 ${salBadRange.code}）`);
+
+  // ═════════════ 18. 报表三域（Phase 8b 第 12~14 域：营收 / 成本 / 利润）══════
+  // ⚠️ 报表域的风险面只有一条：**数字与 Web 端不一致**。所以本节的核心不是「接口通不通」，
+  //    而是「同一区间下小程序与 Web 的同一个数必须逐位相等」—— 这是「取数单源」这件事
+  //    唯一的可验证证明（只验接口 200 的话，两边各写一套 SQL 也能全绿）。
+  // ⚠️ 另一条硬断言：**区间白名单**。营收用的 financialController.resolveDateRange 对未知 key
+  //    会走 default 分支**静默退化成「今天」**（不报错、数字还像模像样）——小程序侧必须 400。
+  //    本节把「Web 的该行为」也一并断言下来，让这个既有陷阱在冒烟里长期可见（见 18.4）。
+  section('18. 报表三域：取数单源跨端一致 + 区间白名单（不做静默退化）');
+
+  // 跨端比对需要 Web 令牌（Web 侧报表接口挂的是 Web 鉴权）
+  const webLogin = await call('POST', '/auth/login', { username: 'admin', password: 'admin123' });
+  assert(
+    webLogin.code === 200 && !!(webLogin.data && webLogin.data.token),
+    `18.0 取 Web 管理员令牌（${webLogin.code}）`
+  );
+  const webToken = webLogin.data && webLogin.data.token;
+  const web = async p => {
+    const r = await fetch('http://localhost:3000/api' + p, { headers: { Authorization: 'Bearer ' + webToken } });
+    return r.json().catch(() => ({}));
+  };
+
+  // ── 18.1 权限（只读报表同样只给管理员）─────────────────────────────────
+  const repNoToken = await call('GET', '/mini/admin/reports/revenue');
+  assert(
+    repNoToken._status === 401 || repNoToken.code === 401,
+    `18.1 无令牌读报表被拒 401（实得 ${repNoToken._status}）`
+  );
+  for (const p of ['revenue', 'cost', 'profit']) {
+    const denied = await call('GET', '/mini/admin/reports/' + p, null, ordSalesmanToken);
+    assert(
+      denied.code === 403 && /管理员角色/.test(String(denied.message)),
+      `18.1 业务员读 ${p} 被拒 403（实得 ${denied.code} ${denied.message || ''}）`
+    );
+  }
+
+  // ── 18.2 三域 200 + 形状与选项 ──────────────────────────────────────────
+  const repRev = await call('GET', '/mini/admin/reports/revenue?range=month', null, adminToken);
+  const repCost = await call('GET', '/mini/admin/reports/cost?range=month', null, adminToken);
+  const repProfit = await call('GET', '/mini/admin/reports/profit?range=month', null, adminToken);
+  assert(
+    repRev.code === 200 && Array.isArray(repRev.data.list),
+    `18.2 营收概览 200（${repRev.code} ${repRev.message || ''}）`
+  );
+  assert(
+    repCost.code === 200 && Array.isArray(repCost.data.list),
+    `18.2 成本概览 200（${repCost.code} ${repCost.message || ''}）`
+  );
+  assert(
+    repProfit.code === 200 && Array.isArray(repProfit.data.list),
+    `18.2 利润概览 200（${repProfit.code} ${repProfit.message || ''}）`
+  );
+  assert(
+    [repRev, repCost, repProfit].every(x => x.code === 200 && (x.data.list || []).length === 6),
+    '18.2 三域明细均恰好 6 行（6 个订单类型维度；其他收入只进总额、不进 list）'
+  );
+  assert(
+    (repRev.data.rangeOptions || []).some(o => o.value === 'all') &&
+      !(repRev.data.rangeOptions || []).some(o => o.value === 'quarter'),
+    '18.2 ★ 营收下发 month/year/all 且**不含 quarter**（与其实现的分支一致）'
+  );
+  assert(
+    (repCost.data.rangeOptions || []).some(o => o.value === 'quarter') &&
+      !(repCost.data.rangeOptions || []).some(o => o.value === 'all'),
+    '18.2 ★ 成本下发含 quarter 且不含 all（dateRange 的 RANGE_KEYS 无 all）'
+  );
+
+  // ── 18.3 ★★ 取数单源：同一区间下小程序与 Web 逐行相等 ─────────────────────
+  const wRev = await web('/finance/summary?range=month');
+  const wCost = await web('/cost/overview?range=month');
+  const wProfit = await web('/profit/overview?range=month');
+  assert(
+    wRev.code === 200 && wCost.code === 200 && wProfit.code === 200,
+    `18.3 Web 侧三个报表接口可达（比对前提：${wRev.code}/${wCost.code}/${wProfit.code}）`
+  );
+  assert(
+    near(repRev.data.totalRevenue, wRev.data.overall.totalRevenue),
+    `18.3 ★ 营收总额一致（小程序 ${repRev.data.totalRevenue} vs Web ${wRev.data.overall.totalRevenue}）`
+  );
+  assert(
+    near(repRev.data.otherIncome, wRev.data.overall.otherIncome),
+    `18.3 ★ 其他收入一致（${repRev.data.otherIncome} vs ${wRev.data.overall.otherIncome}）`
+  );
+  // 逐行比对 6 个订单类型 —— 只比总额是不够的：总额相等但某一行错位完全可能
+  assert(
+    repRev.data.list.every(x => {
+      const w = (wRev.data.list || []).find(y => y.orderType === x.orderType);
+      return (
+        w && near(x.revenue, w.revenue) && near(x.goodsAmount, w.goodsAmount) && near(x.deliveryFee, w.deliveryFee)
+      );
+    }),
+    '18.3 ★ 营收 6 行逐行一致（货款 / 配送费 / 营收）'
+  );
+  assert(
+    near(repCost.data.orderCostTotal, wCost.data.orderCostTotal),
+    `18.3 ★ 成本合计一致（${repCost.data.orderCostTotal} vs ${wCost.data.orderCostTotal}）`
+  );
+  assert(
+    repCost.data.list.every(x => {
+      const w = (wCost.data.list || []).find(y => y.orderType === x.orderType);
+      return w && near(x.costTotal, w.costTotal);
+    }),
+    '18.3 ★ 成本 6 行逐行一致'
+  );
+  assert(
+    near(repProfit.data.overall.profit, wProfit.data.overall.profit),
+    `18.3 ★ 利润一致（${repProfit.data.overall.profit} vs ${wProfit.data.overall.profit}）`
+  );
+  assert(
+    near(repProfit.data.overall.profit, repProfit.data.overall.revenue - repProfit.data.overall.costTotal),
+    `18.3 ★ 利润恒等式成立：profit === revenue − costTotal（${repProfit.data.overall.profit}）`
+  );
+  assert(
+    repProfit.data.list.every(x => {
+      const w = (wProfit.data.list || []).find(y => y.orderType === x.orderType);
+      return w && near(x.profit, w.profit) && near(x.costTotal, w.costTotal);
+    }),
+    '18.3 ★ 利润 6 行逐行一致'
+  );
+
+  // ── 18.4 ★ 区间白名单：未知区间一律 400，绝不静默退化 ────────────────────
+  const revQuarter = await call('GET', '/mini/admin/reports/revenue?range=quarter', null, adminToken);
+  assert(
+    revQuarter.code === 400,
+    `18.4 ★ 营收 range=quarter → 400（该实现无此分支；静默退化会返回单日数字，实得 ${revQuarter.code}）`
+  );
+  const wRevQuarter = await web('/finance/summary?range=quarter');
+  assert(
+    wRevQuarter.code === 200,
+    `18.4 ⚠️ Web 侧 /finance/summary?range=quarter **不报错**（静默按「今天」算，实得 ${wRevQuarter.code}）—— 故小程序侧必须自己白名单`
+  );
+  const wRevDay = await web('/finance/summary?range=day');
+  assert(
+    near(wRevQuarter.data.overall.totalRevenue, wRevDay.data.overall.totalRevenue),
+    '18.4 ⚠️ 证实 Web 的 quarter 确实等于「今天」（与 range=day 同值）—— 该陷阱已登记为待办；修好后请一并更新本断言'
+  );
+  for (const p of ['revenue', 'cost', 'profit']) {
+    const bogus = await call('GET', '/mini/admin/reports/' + p + '?range=bogus', null, adminToken);
+    assert(bogus.code === 400, `18.4 ${p} range=bogus → 400（实得 ${bogus.code}）`);
+  }
+  const costAll = await call('GET', '/mini/admin/reports/cost?range=all', null, adminToken);
+  assert(costAll.code === 400, `18.4 成本 range=all → 400（dateRange 的 RANGE_KEYS 里没有 all，实得 ${costAll.code}）`);
+
+  // ── 18.5 各域声明可用的区间都真的通 ─────────────────────────────────────
+  for (const [p, ranges] of [
+    ['revenue', ['month', 'year', 'all']],
+    ['cost', ['month', 'quarter', 'year']],
+    ['profit', ['month', 'quarter', 'year']]
+  ]) {
+    for (const rg of ranges) {
+      const one = await call('GET', '/mini/admin/reports/' + p + '?range=' + rg, null, adminToken);
+      assert(one.code === 200, `18.5 ${p} range=${rg} → 200（实得 ${one.code} ${one.message || ''}）`);
+    }
+  }
 
   return {
     accountId,

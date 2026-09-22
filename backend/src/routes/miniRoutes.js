@@ -44,6 +44,7 @@ const adminInventoryCtrl = require('../controllers/mini/admin/inventoryControlle
 const adminOrderCtrl = require('../controllers/mini/admin/orderController');
 const adminCompanyAccountCtrl = require('../controllers/mini/admin/companyAccountController');
 const adminSalaryCtrl = require('../controllers/mini/admin/salaryController');
+const adminReportCtrl = require('../controllers/mini/admin/reportController');
 // 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
 const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
@@ -274,6 +275,16 @@ router.get('/admin/salary/worker/:workerId', requireMiniAdmin, adminSalaryCtrl.g
 router.post('/admin/salary/pay', requireMiniAdmin, requireMiniActive, adminSalaryCtrl.paySalary);
 router.delete('/admin/salary/payments/:id', requireMiniAdmin, requireMiniActive, adminSalaryCtrl.revokePayment);
 router.delete('/admin/salary/advances/:id', requireMiniAdmin, requireMiniActive, adminSalaryCtrl.removeAdvance);
+
+// ── 域 12~14/17：报表三域（营收 / 成本 / 利润）────────────────────────────────
+// ⚠️ 三个都是**只读报表**：不挂 requireMiniActive（读接口不拦禁用），也没有幂等键与审计。
+// ⚠️ 取数**全部复用 Web 控制器抽出的 loadXxx**（小程序侧一行 SQL 都不写）——
+//    报表分叉的表现是「同一区间两个端数字不同」，而那时没人能判断哪个对。
+// ⚠️ 区间白名单在控制器里（营收不支持 quarter，且**不能**把未知区间交给
+//    financialController 的 resolveDateRange —— 它的 default 分支会静默退化成「今天」）。
+router.get('/admin/reports/revenue', requireMiniAdmin, adminReportCtrl.getRevenue);
+router.get('/admin/reports/cost', requireMiniAdmin, adminReportCtrl.getCost);
+router.get('/admin/reports/profit', requireMiniAdmin, adminReportCtrl.getProfit);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，
