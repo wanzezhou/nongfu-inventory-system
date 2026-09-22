@@ -709,9 +709,16 @@ async function deleteIssuanceBatch(req, res) {
     const placeholders = ids.map(() => '?').join(',');
 
     // 检查已核销水票
+    // ⚠️⚠️ 参数顺序必须与 SQL 里的占位符顺序一致：`IN (?)` 在前、`status = ?` 在后。
+    //    2026-09-22 修正前此处传的是 `[TICKET_STATUS.USED, ...ids]` → 实际执行成
+    //    `issuance_id IN (2) AND status = 'WTI...'`，条件**永远不成立**（恒为 0 行），
+    //    于是这个守卫**完全失效**：含已核销票的批次照样能整批删除，
+    //    把订单已抵扣的水票一并删掉 —— 订单还在、抵扣记录却没了，且账面看不出异常。
+    //    该缺陷存活很久未被发现，原因是水票写侧此前**零冒烟覆盖**；
+    //    现由 scripts/smoke_water_ticket.js §6.1 钉死。
     const [usedRows] = await connection.execute(
       `SELECT COUNT(*) AS c FROM water_tickets WHERE issuance_id IN (${placeholders}) AND status = ?`,
-      [TICKET_STATUS.USED, ...ids]
+      [...ids, TICKET_STATUS.USED]
     );
     const usedCount = Number(usedRows[0].c) || 0;
     if (usedCount > 0) {

@@ -45,8 +45,9 @@
  *     本节的断言重点不是「接口通不通」，而是 ★★ **跨端逐行一致**：
  *     同一区间下小程序与 Web 的同一个数必须逐位相等（这是「取数单源」唯一的可验证证明；
  *     只验 200 的话，两边各写一套 SQL 也能全绿）。另含 ★ **区间白名单**：
- *     营收实现里的 resolveDateRange 对未知 key 会静默退化成「今天」——小程序侧必须 400，
- *     冒烟同时把 Web 的该行为断言下来，让这个既有陷阱长期可见（见第 18 节 18.4）。
+ *     营收实现里的 resolveDateRange 曾对未知 key 静默退化成「今天」（2026-09-22 已修为 400）。
+ *     本节对 Web 与小程序**两侧**都断言「非法区间一律 400」—— 修复前后断言方向相反，
+ *     照抄旧写法会变成守着错误行为。
  *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
  *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
@@ -2643,9 +2644,9 @@ async function main() {
   // ⚠️ 报表域的风险面只有一条：**数字与 Web 端不一致**。所以本节的核心不是「接口通不通」，
   //    而是「同一区间下小程序与 Web 的同一个数必须逐位相等」—— 这是「取数单源」这件事
   //    唯一的可验证证明（只验接口 200 的话，两边各写一套 SQL 也能全绿）。
-  // ⚠️ 另一条硬断言：**区间白名单**。营收用的 financialController.resolveDateRange 对未知 key
-  //    会走 default 分支**静默退化成「今天」**（不报错、数字还像模像样）——小程序侧必须 400。
-  //    本节把「Web 的该行为」也一并断言下来，让这个既有陷阱在冒烟里长期可见（见 18.4）。
+  // ⚠️ 另一条硬断言：**区间白名单**。营收用的 financialController.resolveDateRange 曾对未知 key
+  //    走 default 分支**静默退化成「今天」**（不报错、数字还像模像样）；2026-09-22 已修：
+  //    未知区间返回 null → 400。本节对 Web 与小程序**两侧**都断言「非法区间必须 400」。
   section('18. 报表三域：取数单源跨端一致 + 区间白名单（不做静默退化）');
 
   // 跨端比对需要 Web 令牌（Web 侧报表接口挂的是 Web 鉴权）
@@ -2766,13 +2767,20 @@ async function main() {
   );
   const wRevQuarter = await web('/finance/summary?range=quarter');
   assert(
-    wRevQuarter.code === 200,
-    `18.4 ⚠️ Web 侧 /finance/summary?range=quarter **不报错**（静默按「今天」算，实得 ${wRevQuarter.code}）—— 故小程序侧必须自己白名单`
+    wRevQuarter.code === 400,
+    `18.4 ★ Web 侧 /finance/summary?range=quarter → 400（2026-09-22 修复：不再静默按「今天」算，实得 ${wRevQuarter.code}）`
+  );
+  const wRevBogus = await web('/finance/summary?range=bogus');
+  assert(
+    wRevBogus.code === 400,
+    `18.4 ★ Web 侧未知区间一律 400（range=bogus 实得 ${wRevBogus.code}）—— 静默退化的表现是「200 + 一个像正常结果的单日数」`
   );
   const wRevDay = await web('/finance/summary?range=day');
+  assert(wRevDay.code === 200, `18.4 Web 侧合法区间不受影响（range=day 实得 ${wRevDay.code}）`);
+  const wRevCustomLack = await web('/finance/summary?range=custom');
   assert(
-    near(wRevQuarter.data.overall.totalRevenue, wRevDay.data.overall.totalRevenue),
-    '18.4 ⚠️ 证实 Web 的 quarter 确实等于「今天」（与 range=day 同值）—— 该陷阱已登记为待办；修好后请一并更新本断言'
+    wRevCustomLack.code === 400,
+    `18.4 ★ custom 缺起止日期 → 400（给一半不再被静默忽略，实得 ${wRevCustomLack.code}）`
   );
   for (const p of ['revenue', 'cost', 'profit']) {
     const bogus = await call('GET', '/mini/admin/reports/' + p + '?range=bogus', null, adminToken);

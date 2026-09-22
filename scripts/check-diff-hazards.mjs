@@ -132,6 +132,34 @@ const RULES = [
     test: /SELECT\s+\$\{/,
     why: '动态列名需确认来自服务端白名单，且优先显式列出字段',
     onlyIn: [/^backend\//]
+  },
+  {
+    // 出处：2026-09-22 水票批次删除。SQL 是 `... WHERE issuance_id IN (${placeholders}) AND status = ?`，
+    //       参数却写成 `[TICKET_STATUS.USED, ...ids]` —— 绑定错位成
+    //       `issuance_id IN (2) AND status = 'WTI...'`，条件**恒不成立**（恒 0 行）。
+    //       于是「批次内有已核销票则拒绝删除」这条守卫**完全失效**且长期无人发现：
+    //       它不报错、不抛异常，只是永远放行 —— 属最难发现的一类缺陷（守卫写了却没生效）。
+    //       行内单规则覆盖不到（SQL 与参数数组经常分作两行），故用 multi 同时看下一行。
+    id: 'R11',
+    level: 'error',
+    name: 'SQL 占位符与参数数组顺序错位（会导致守卫恒不生效）',
+    multi: (text, nextText) => {
+      // 只认这个形态：同一句 SQL 里 `IN (${...})` 在**前**，且其后还有别的 `?`
+      const m = /IN\s*\(\s*\$\{[^}]+\}\s*\)/.exec(text);
+      if (!m || text.indexOf('?', m.index + m[0].length) === -1) return false;
+      // 参数数组：优先取本行 SQL 之后的 `[...]`，否则取下一行行首的 `[...]`
+      const inline = text.slice(m.index).match(/,\s*\[([^\]]*)\]/);
+      const nextArr = nextText && nextText.match(/^\s*\[([^\]]*)\]/);
+      const body = inline ? inline[1] : nextArr ? nextArr[1] : null;
+      if (body === null) return false;
+      // 数组首位必须是展开（...ids），否则说明标量排在了 IN 的参数前面 → 顺序错位
+      const first = body.split(',')[0].trim();
+      return first !== '' && !first.startsWith('...');
+    },
+    why:
+      'SQL 里 ? 的先后顺序决定参数绑定：`IN (${...})` 在前却把标量排在参数数组首位，' +
+      '会绑定成 `IN (标量) AND x = 字符串`，条件恒不成立 → 守卫静默失效',
+    onlyIn: [/^backend\//]
   }
 ];
 
@@ -207,7 +235,7 @@ function scanWorktree() {
   return map;
 }
 
-function checkLine(rule, file, text, prevText = '') {
+function checkLine(rule, file, text, prevText = '', nextText = '') {
   if (rule.onlyIn && !rule.onlyIn.some(r => r.test(file))) return false;
   if (rule.veto && rule.veto.test(text)) return false;
   // 豁免注释可在**本行或紧邻的上一行**。
@@ -219,6 +247,8 @@ function checkLine(rule, file, text, prevText = '') {
   // 跳过纯注释行：注释里出现的示例/历史说明不构成违规
   // （例：ProductList.vue:396 用注释记录"http://localhost:3000..."这类历史脏数据）
   if (/^\s*(\/\/|\/\*|\*|<!--)/.test(text)) return false;
+  // R11 这类需要跨行判断的规则走 multi（SQL 与参数数组常分作两行）
+  if (rule.multi) return Boolean(rule.multi(text, nextText));
   return rule.test.test(text);
 }
 
@@ -273,10 +303,23 @@ function main() {
     return arr[lineNo - 2] || '';
   }
 
+  /** 取某文件的下一行（R11 这类跨行规则用；同样读**工作区**文件） */
+  function nextLineOf(file, lineNo) {
+    if (!lineCache.has(file)) {
+      try {
+        lineCache.set(file, readFileSync(path.join(process.cwd(), file), 'utf8').split(/\r?\n/));
+      } catch {
+        lineCache.set(file, []);
+      }
+    }
+    const arr = lineCache.get(file);
+    return arr[lineNo] || '';
+  }
+
   for (const [file, lines] of added) {
     for (const { line, text } of lines) {
       for (const rule of RULES) {
-        if (checkLine(rule, file, text, prevLineOf(file, line))) {
+        if (checkLine(rule, file, text, prevLineOf(file, line), nextLineOf(file, line))) {
           violations.push({ rule, file, line, text: text.trim() });
           const key = `${rule.id} ${rule.level}`;
           stats.set(key, (stats.get(key) || 0) + 1);

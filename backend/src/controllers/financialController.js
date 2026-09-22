@@ -14,6 +14,11 @@ const MACHINE_TYPES = { 1: '量贩机', 2: '零售机' };
 // 订单类型 SQL 片段（全部合法类型，含 5-水公社；由常量派生，避免各处硬编码漂移）
 const ORDER_TYPE_IN = `o.order_type IN (${VALID_ORDER_TYPES.join(',')})`;
 
+// 营收侧**自己的**时间范围白名单（与 utils/dateRange.RANGE_KEYS 不是同一套：那边有
+// lastMonth/quarter，营收没有；营收有 all，那边没有）。文案由白名单派生，避免增删后漂移。
+const FINANCE_RANGE_KEYS = ['all', 'day', 'week', 'month', 'year', 'custom'];
+const FINANCE_RANGE_INVALID_MSG = `时间范围不合法：range 支持 ${FINANCE_RANGE_KEYS.join('/')}，自定义需同时给出 startDate 与 endDate`;
+
 // ---------------------------------------------------------------------------
 // 营收口径说明（2026-08-27 晚更新，总包配送费改为按商品算）：
 //   订单类（orders + order_items，排除已取消订单 canceled_at IS NULL）：
@@ -34,6 +39,14 @@ const ORDER_TYPE_IN = `o.order_type IN (${VALID_ORDER_TYPES.join(',')})`;
 // ---------------------------------------------------------------------------
 
 // 财务版时间范围（闭区间 [start, end]，end 含当天）
+/**
+ * ⚠️ 非法/未知 range 一律返回 **null**（由调用方回 400），**不得**静默退化成某个预设。
+ *    2026-09-22 修正前的 default 分支把未知 key（quarter / lastMonth / bogus…）当成 custom，
+ *    在没有 startDate/endDate 时落到 today/today —— 接口照样 **200**，数字还与「今日」完全相同。
+ *    这类缺陷不报错、不抛异常，只是「用错区间却看着像正常结果」，报表页尤其不能容忍。
+ *    顺带收紧 custom：给了一半日期同样返回 null（原来那一半会被静默忽略）。
+ * @returns {{start:string|null,end:string|null}|null} null = 非法区间
+ */
 function resolveDateRange(range, startDate, endDate) {
   const now = new Date();
   const fmt = d => {
@@ -60,8 +73,11 @@ function resolveDateRange(range, startDate, endDate) {
     case 'year':
       return { start: fmt(new Date(now.getFullYear(), 0, 1)), end: today };
     case 'custom':
+      // 自定义必须给出**完整**起止：给一半就当成「今天」同样是静默降级
+      return startDate && endDate ? { start: startDate, end: endDate } : null;
     default:
-      return { start: startDate || today, end: endDate || today };
+      // 未知 key：不猜测、不兜底 —— 返回 null 交调用方 400
+      return null;
   }
 }
 
@@ -71,7 +87,10 @@ function resolveDateRange(range, startDate, endDate) {
 async function getFinanceOrders(req, res) {
   try {
     const { range = 'month', startDate, endDate, orderType, page = 1, pageSize = 10 } = req.query;
-    const { start, end } = resolveDateRange(range, startDate, endDate);
+    const dr = resolveDateRange(range, startDate, endDate);
+    // 非法区间直接 400：宁可报错，也不能给用户一个「看起来正常」的错数
+    if (!dr) return error(res, FINANCE_RANGE_INVALID_MSG, 400);
+    const { start, end } = dr;
     const { page: p, size, offset } = parsePage({ page, pageSize }, { maxSize: 100 });
 
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
@@ -167,7 +186,10 @@ function ticketValueExpr() {
 async function loadFinanceSummary(query = {}) {
   {
     const { range = 'month', startDate, endDate, orderType } = query;
-    const { start, end } = resolveDateRange(range, startDate, endDate);
+    const dr = resolveDateRange(range, startDate, endDate);
+    // 取数函数不直接回响应：非法区间返回 null，由 HTTP 出口转 400（见 getFinanceSummary）
+    if (!dr) return null;
+    const { start, end } = dr;
     const expr = itemRevenueExpr();
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
     const isOrderType = wantType !== null && VALID_ORDER_TYPES.includes(wantType);
@@ -290,10 +312,13 @@ async function loadFinanceSummary(query = {}) {
   }
 }
 
-/** HTTP 出口（薄封装：只做响应信封；resolveDateRange 自带默认值，无 400 分支） */
+/** HTTP 出口（薄封装：只做响应信封；非法区间由 loadFinanceSummary 返回 null 表达） */
 async function getFinanceSummary(req, res) {
   try {
-    return success(res, await loadFinanceSummary(req.query));
+    const data = await loadFinanceSummary(req.query);
+    // ⚠️ 必须在这里拦：不能把 null 当成功返回，更不能静默换成默认区间
+    if (!data) return error(res, FINANCE_RANGE_INVALID_MSG, 400);
+    return success(res, data);
   } catch (e) {
     console.error('getFinanceSummary error:', e);
     return error(res, '营收汇总查询失败', 500);
@@ -304,7 +329,10 @@ async function getFinanceSummary(req, res) {
 async function getMachineSales(req, res) {
   try {
     const { range = 'month', startDate, endDate, machineType, page = 1, pageSize = 10 } = req.query;
-    const { start, end } = resolveDateRange(range, startDate, endDate);
+    const dr = resolveDateRange(range, startDate, endDate);
+    // 非法区间直接 400：宁可报错，也不能给用户一个「看起来正常」的错数
+    if (!dr) return error(res, FINANCE_RANGE_INVALID_MSG, 400);
+    const { start, end } = dr;
     const { page: p, size, offset } = parsePage({ page, pageSize }, { maxSize: 100 });
 
     const parts = [];
@@ -453,7 +481,10 @@ async function deleteMachineSale(req, res) {
 async function exportFinance(req, res) {
   try {
     const { range = 'month', startDate, endDate, orderType } = req.query;
-    const { start, end } = resolveDateRange(range, startDate, endDate);
+    const dr = resolveDateRange(range, startDate, endDate);
+    // 非法区间直接 400：宁可报错，也不能给用户一个「看起来正常」的错数
+    if (!dr) return error(res, FINANCE_RANGE_INVALID_MSG, 400);
+    const { start, end } = dr;
     const expr = itemRevenueExpr();
     const wantType = orderType !== undefined && orderType !== '' ? Number(orderType) : null;
     const isOrderType = wantType !== null && VALID_ORDER_TYPES.includes(wantType);
@@ -558,6 +589,8 @@ async function exportFinance(req, res) {
 
 module.exports = {
   getFinanceSummary,
+  // 区间白名单提示文案（小程序管理端复用同一句，避免两端文案漂移）
+  FINANCE_RANGE_INVALID_MSG,
   // 取数函数（小程序管理端复用）
   loadFinanceSummary,
   getFinanceOrders,

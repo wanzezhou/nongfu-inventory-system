@@ -24,7 +24,7 @@
 // ===========================================================================
 const { success, error } = require('../../../utils/response');
 const { resolveRange, RANGE_INVALID_MSG } = require('../../../utils/dateRange');
-const { loadFinanceSummary } = require('../../financialController');
+const { loadFinanceSummary, FINANCE_RANGE_INVALID_MSG } = require('../../financialController');
 const { loadCostOverview } = require('../../costController');
 const { loadProfitOverview } = require('../../profitController');
 
@@ -33,10 +33,11 @@ const { loadProfitOverview } = require('../../profitController');
  *   · financialController.resolveDateRange: all / day / week / month / year（+ custom）
  *   · utils/dateRange.resolveRange:        day / week / month / lastMonth / quarter / year（+ custom）
  *   两边都支持的只有 month / year；quarter 只有成本/利润有；all 只有营收有。
- * ⚠️ 这就是必须逐域白名单的原因：把两套预设当成同一套，会出现
- *    ① 营收 `?range=quarter` → 掉进 default 分支**静默变成「今天」**（不报错、数字还像模像样）；
- *    ② 成本 `?range=all` → dateRange 返 null → 400，文案却是通用的「时间范围不合法」。
- *    两条都属「看起来正常/看起来合理但不准」的形态，报表域尤其不能容忍。
+ * ⚠️ 这就是必须逐域白名单的原因：把两套预设当成同一套，就会出现跨界键。
+ *    ✅ 2026-09-22 已修：营收侧未知 range 现在返回 null → **400**（不再静默变成「今天」）；
+ *       修复前 `?range=quarter` 返回 200 且数值与 `range=day` 完全相同 —— 不报错、还像模像样。
+ *    ⚠️ 白名单仍必须保留：它在进入取数函数**之前**就拦下跨界键（文案也更准确），
+ *       且成本 `?range=all` 依然依赖它（utils/dateRange 的 RANGE_KEYS 里没有 all）。
  * ⚠️ 只暴露两边都有语义的 month/year + 各域独有键；custom 需要起止日期，
  *    手机端本期不给（Web 上可用）—— 这是有意的范围决定，不是遗漏。
  */
@@ -71,6 +72,8 @@ async function getRevenue(req, res) {
   if (picked.error) return error(res, picked.error, 400);
   try {
     const data = await loadFinanceSummary({ range: picked.range });
+    // 白名单已在上方拦过一轮；这里兜底，防止将来放宽白名单时把 null 当成功返回
+    if (!data) return error(res, FINANCE_RANGE_INVALID_MSG, 400);
     return success(res, {
       kind: 'revenue',
       range: picked.range,
