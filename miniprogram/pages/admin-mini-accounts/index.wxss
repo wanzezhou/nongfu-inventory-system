@@ -1,3 +1,3 @@
 /* 小程序账号管理（管理员 · 运维域）
-   样式沿用 app.wxss 全局类（.page/.card/.row-between/.divider/.form-input/.btn/.banner*/.empty*），
+   样式沿用 app.wxss 全局类（.page、.card、.row-between、.divider、.form-input、.btn、.banner、.empty 系列），
    这里不重复定义，避免与全局类两处各改一半。 */

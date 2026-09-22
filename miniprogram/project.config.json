@@ -3,7 +3,6 @@
   "appid": "wx2bc2000113966507",
   "projectname": "nongfu-mini-program",
   "compileType": "miniprogram",
-  "libVersion": "3.5.5",
   "miniprogramRoot": "./",
   "setting": {
     "urlCheck": false,

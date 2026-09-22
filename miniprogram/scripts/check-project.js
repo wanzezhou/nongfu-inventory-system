@@ -18,6 +18,9 @@
  *   7. JS 文件语法（交给 node --check 的等价实现：new Function / vm 编译）
  *   8. 是否误把密钥类变量写进小程序（文档 §26 的安全红线）
  *   9. WXML 标签闭合错位（**硬错误**）、幂等键 acquireKey 的入参契约（第 9 项见函数注释）
+ *   10. WXSS 注释完整性 —— 注释内若出现「星号紧邻斜杠」会把注释提前闭合，
+ *       其后的中文注释文本落到代码位 → WXSS 编译失败 → **整个小程序白屏**
+ *       （2026-09-22 实测：admin-mini-accounts 首注释里的类名清单正好包含这组字符）
  *
  * 用法：node miniprogram/scripts/check-project.js
  */
@@ -214,6 +217,53 @@ function checkIdemKeyContract(files) {
   if (!hits) ok();
 }
 
+/**
+ * 10. WXSS 注释完整性（2026-09-22 实测白屏事故）
+ * ---------------------------------------------------------------------------
+ * 头注释里写类名清单时出现了「星号紧邻斜杠」（如 `.banner` 后面直接跟闭合符），
+ * 注释在中间被炸开 → 其后的中文注释文本被当成 CSS 代码 →
+ * 微信 WXSS 编译器报 `unexpected character` → **整个小程序编译失败 → 模拟器白屏**。
+ * 工程结构校验（当时 483 项）全部测不到它，因为这是「WXSS 编译器」这一层的错误。
+ *
+ * 规则：剥掉注释与字符串后，代码位上出现中日韩文字 / 全角标点 → 判错。
+ * WXSS 里合法的中文只会出现在注释或字符串（content / font-family）里。
+ */
+function checkWxssCommentIntegrity(files) {
+  let hits = 0;
+  for (const f of files) {
+    const full = path.join(ROOT, f);
+    if (!fs.existsSync(full)) continue;
+    const src = fs.readFileSync(full, 'utf8');
+    let code = '';
+    let i = 0;
+    while (i < src.length) {
+      if (src[i] === '/' && src[i + 1] === '*') {
+        const end = src.indexOf('*/', i + 2);
+        if (end === -1) {
+          fail(`${f}: 注释只有开头没有闭合（WXSS 编译必失败）`);
+          hits++;
+          i = src.length;
+          continue;
+        }
+        i = end + 2;
+        continue;
+      }
+      code += src[i];
+      i++;
+    }
+    // 字符串里的中文（content / font-family）是合法的，先剥掉再判
+    const noStr = code.replace(/"[^"\n]*"/g, '""').replace(/'[^'\n]*'/g, "''");
+    const badLine = noStr.split('\n').findIndex(l => /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(l));
+    if (badLine !== -1) {
+      fail(
+        `${f}:${badLine + 1}: 注释外出现中文 —— 极可能是注释里写了「星号紧邻斜杠」被提前闭合（同 2026-09-22 白屏事故形态）`
+      );
+      hits++;
+    }
+  }
+  if (!hits) ok();
+}
+
 function walk(dir, out) {
   const full = path.join(ROOT, dir);
   if (!fs.existsSync(full)) return out;
@@ -285,6 +335,9 @@ for (const f of all) {
 
 // 9. 幂等键契约（页面也一起查 —— 误用恰恰都发生在页面里）
 checkIdemKeyContract(all);
+
+// 10. WXSS 注释完整性（注释被提前闭合 → 编译失败 → 白屏）
+checkWxssCommentIntegrity(walk('.', []).filter(f => f.endsWith('.wxss')));
 
 // config 常量导出检查（页面大量依赖，漏导出会运行时报 undefined）
 try {
