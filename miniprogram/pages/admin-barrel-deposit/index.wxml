@@ -1,0 +1,92 @@
+<!-- 登记押金（回桶 · 管理员 · Phase 8b 第 16 域）
+     ⚠️ 方向必须让人一眼看到：收取 = 账户增加，退回 = 账户减少。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+  <view wx:if="{{formError}}" class="banner banner-danger">{{formError}}</view>
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <view class="card">
+      <view class="form-row">
+        <text class="form-label">类型</text>
+        <picker mode="selector" range="{{typeLabels}}" value="{{typeIndex}}" bindchange="onTypeChange">
+          <view class="row-between">
+            <text class="t-strong">{{typeLabels[typeIndex]}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="form-label">对象</text>
+        <picker mode="selector" range="{{partyLabels}}" value="{{partyIndex}}" bindchange="onPartyChange">
+          <view class="row-between">
+            <text class="t-strong">{{partyLabels[partyIndex]}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view wx:if="{{partyIndex === 0}}" class="form-row">
+        <text class="form-label">水站</text>
+        <picker mode="selector" range="{{stationLabels}}" value="{{stationIndex}}" bindchange="onStationChange">
+          <view class="row-between">
+            <text class="t-strong">{{stationLabels[stationIndex] || '请选择'}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <block wx:if="{{partyIndex === 1}}">
+        <view class="form-row">
+          <text class="form-label">客户姓名</text>
+          <input class="form-input" placeholder="必填" value="{{customerName}}" bindinput="onNameInput" />
+        </view>
+        <view class="form-row">
+          <text class="form-label">客户电话</text>
+          <input class="form-input" type="number" placeholder="选填" value="{{customerPhone}}" bindinput="onPhoneInput" />
+        </view>
+      </block>
+      <view class="form-row">
+        <text class="form-label">桶型</text>
+        <picker mode="selector" range="{{barrelLabels}}" value="{{barrelIndex}}" bindchange="onBarrelChange">
+          <view class="row-between">
+            <text class="t-strong">{{barrelLabels[barrelIndex] || '请先在桶型配置新增'}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="form-label">数量（桶）</text>
+        <input class="form-input" type="number" value="{{quantity}}" bindinput="onQuantityInput" />
+      </view>
+      <view class="form-row">
+        <text class="form-label">押金单价</text>
+        <input class="form-input" type="digit" value="{{unitPrice}}" bindinput="onPriceInput" />
+      </view>
+      <view class="form-row">
+        <text class="form-label">资金账户</text>
+        <picker mode="selector" range="{{accLabels}}" value="{{accIndex}}" bindchange="onAccChange">
+          <view class="row-between">
+            <text class="t-strong">{{accLabels[accIndex] || '请选择'}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="form-label">备注</text>
+        <input class="form-input" placeholder="选填" value="{{remark}}" bindinput="onRemarkInput" />
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="row-between">
+        <text class="t-strong">{{typeLabels[typeIndex]}}合计</text>
+        <text class="t-strong">¥{{amountText}}</text>
+      </view>
+      <view class="t-sub mt-8">
+        单价默认取桶型的配置价，可手动改 —— 历史押金价与现价不同时，按**当时**的价格登记。
+      </view>
+    </view>
+
+    <view class="btn" bindtap="onSubmit">{{submitting ? '提交中…' : '确认登记'}}</view>
+    <view class="mt-24"></view>
+  </block>
+</view>

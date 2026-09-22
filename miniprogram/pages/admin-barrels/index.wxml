@@ -1,0 +1,72 @@
+<!-- 押金台账（回桶 · 管理员 · Phase 8b 第 16 域）
+     ⚠️ 只读页：押金记错要开反向流水，不提供改/删（与「入库单只能作废」同一原则）。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">对象</text>
+      <text class="t-sm t-sub">{{total}} 笔押金流水</text>
+    </view>
+    <view class="row-between mt-8">
+      <text
+        wx:for="{{tabs}}"
+        wx:key="key"
+        class="{{partyType === item.key ? 't-strong' : 't-sub'}}"
+        data-key="{{item.key}}"
+        bindtap="onTab"
+      >{{item.label}}</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">登记押金（收 / 退）</text>
+      <text class="t-primary" bindtap="goDeposit">进入 ›</text>
+    </view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sub">桶型配置（押金单价）</text>
+      <text class="t-primary" bindtap="goConfigs">进入 ›</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">在押汇总（按对象 × 桶型）</view>
+    <view wx:if="{{!summary.length}}" class="t-sub">当前没有在押桶</view>
+    <block wx:for="{{summary}}" wx:key="index">
+      <view class="divider"></view>
+      <view class="row-between">
+        <text class="t-strong">{{item.partyName}}</text>
+        <text class="t-strong">{{item.pendingQty}} 桶</text>
+      </view>
+      <view class="t-sm t-sub mt-8">
+        {{item.barrelType}} · 押金 ¥{{item.pendingAmountText}}（单价 ¥{{item.unitPriceText}}）
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <view class="card">
+      <view class="section-title">押金流水</view>
+      <view wx:if="{{!list.length}}" class="t-sub">暂无记录</view>
+      <block wx:for="{{list}}" wx:key="id">
+        <view class="divider"></view>
+        <view class="row-between">
+          <text class="t-strong">{{item.partyName}}</text>
+          <text class="{{item.isCollect ? 't-primary' : 't-strong'}}">
+            {{item.isCollect ? '+' : '−'}}¥{{item.amountText}}
+          </text>
+        </view>
+        <view class="row-between mt-8">
+          <text class="t-sm t-sub">{{item.depositTypeLabel}} · {{item.barrelType}} × {{item.quantity}}</text>
+          <text class="t-sm t-sub">{{item.accountName}}</text>
+        </view>
+        <view class="t-sm t-sub mt-8">{{item.depositNo}} · {{item.createdAt}}</view>
+      </block>
+    </view>
+  </block>
+  <view class="mt-24"></view>
+</view>

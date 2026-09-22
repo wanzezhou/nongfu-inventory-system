@@ -31,6 +31,12 @@
  *     另含余额不足「被拒后余额未变 + 不留半张发放单」与**个人信息红线**
  *     （汇总列表不得出现 phone —— loadSalarySummary 会带出，必须逐字段挡掉）。
  *     核心用 Web 端抽出的 services/salaryLedger 四个原语（两端共用）。
+ *   · 第 16 域 回桶 —— 第 19 节。押金是**资金动作**（收取=账户 + / 退回=账户 −），
+ *     且与桶型配置**跨端联动**：配置停用/删除后，押金登记必须被拒（定式 ⑫ 的联动断言）。
+ *     ⚠️ 押金**没有编辑/删除接口**：记错要开反向流水，不能改历史（同「入库单只能作废」）。
+ *   · 第 17 域 系统设置 —— 第 20 节。目前只有「销售单打印店长」一项。
+ *     ⚠️ 这是**全局配置**：冒烟会把原值快照下来并在清理时还原（否则会污染真实打印配置）；
+ *     另断言「配置指向已停用员工时**不静默换人**，只把状态透出」这条业务口径。
  *   · 第 12~14 域 营收 / 成本 / 利润 —— 第 18 节。**只读报表**，三个域共用一个页面。
  *     本节的断言重点不是「接口通不通」，而是 ★★ **跨端逐行一致**：
  *     同一区间下小程序与 Web 的同一个数必须逐位相等（这是「取数单源」唯一的可验证证明；
@@ -2771,6 +2777,420 @@ async function main() {
   const costAll = await call('GET', '/mini/admin/reports/cost?range=all', null, adminToken);
   assert(costAll.code === 400, `18.4 成本 range=all → 400（dateRange 的 RANGE_KEYS 里没有 all，实得 ${costAll.code}）`);
 
+  // ═════════════ 19. 回桶域（Phase 8b 第 16 域：押金台账 + 桶型配置）═════════
+  // ⚠️ 两个断言重点：
+  //    ① **方向**：收取押金 = 账户 **+** / 退回押金 = 账户 **−**；抄反了台账照样能对上
+  //       （两类流水都在 barrel_deposit 下），只有余额会错。
+  //    ② **跨端联动**（定式 ⑫）：桶型配置停用后，押金登记必须被拒 ——
+  //       「配置改对了」不等于「下游看见了」，配置类写操作只验自己等于没验。
+  section('19. 回桶域：押金方向 / 桶型配置跨端联动 / 不可编辑历史');
+
+  const bcBarrelType = 'SMKBC' + TS;
+  const bcBarrelType2 = 'SMKBC2' + TS;
+  const barrelCfgKey = 'smkbc_' + TS + '_c1';
+  const bcAudit = () => auditActions();
+
+  // ── 19.1 权限 ────────────────────────────────────────────────────────────
+  const bcNoToken = await call('GET', '/mini/admin/barrels/summary');
+  assert(
+    bcNoToken._status === 401 || bcNoToken.code === 401,
+    `19.1 无令牌读押金台账被拒 401（实得 ${bcNoToken._status}）`
+  );
+  const bcDenied = await call('GET', '/mini/admin/barrels/summary', null, ordSalesmanToken);
+  assert(
+    bcDenied.code === 403 && /管理员角色/.test(String(bcDenied.message)),
+    `19.1 业务员读押金台账被拒 403（实得 ${bcDenied.code}）`
+  );
+  const bcWriteDenied = await call(
+    'POST',
+    '/mini/admin/barrels/deposits',
+    { clientRequestId: 'x', accountId: accountId, barrelType: bcBarrelType, quantity: 1, unitPrice: 30 },
+    ordSalesmanToken
+  );
+  assert(bcWriteDenied.code === 403, `19.1 业务员登记押金被拒 403（实得 ${bcWriteDenied.code}）`);
+
+  // ── 19.2 选项 ────────────────────────────────────────────────────────────
+  const bcOpts = await call('GET', '/mini/admin/barrels/options', null, adminToken);
+  assert(bcOpts.code === 200, `19.2 回桶选项 200（${bcOpts.code} ${bcOpts.message || ''}）`);
+  assert(
+    Array.isArray(bcOpts.data.barrelTypes) &&
+      Array.isArray(bcOpts.data.stations) &&
+      Array.isArray(bcOpts.data.activeAccounts),
+    '19.2 选项含 桶型/水站/启用账户'
+  );
+
+  // ── 19.3 桶型配置：新增 / 幂等 / 重名 / 改价（含审计）────────────────────
+  const bcNoIdem = await call(
+    'POST',
+    '/mini/admin/barrels/configs',
+    { barrelType: bcBarrelType, depositPrice: 30 },
+    adminToken
+  );
+  assert(
+    bcNoIdem.code === 400 && /clientRequestId/.test(String(bcNoIdem.message)),
+    `19.3 缺幂等键被拒（${bcNoIdem.message}）`
+  );
+  const bcCreate = await call(
+    'POST',
+    '/mini/admin/barrels/configs',
+    { clientRequestId: barrelCfgKey, barrelType: bcBarrelType, depositPrice: 30, sortOrder: 900 },
+    adminToken
+  );
+  assert(bcCreate.code === 200 && bcCreate.data.id, `19.3 新增桶型成功（${bcCreate.code} ${bcCreate.message || ''}）`);
+  const bcId = bcCreate.data.id;
+  const bcReplay = await call(
+    'POST',
+    '/mini/admin/barrels/configs',
+    { clientRequestId: barrelCfgKey, barrelType: bcBarrelType, depositPrice: 30, sortOrder: 900 },
+    adminToken
+  );
+  assert(bcReplay.code === 200 && bcReplay.data.replayed === true, '19.3 新增幂等重放 replayed=true');
+  const bcDup = await call(
+    'POST',
+    '/mini/admin/barrels/configs',
+    { clientRequestId: 'smkbc_' + TS + '_dup', barrelType: bcBarrelType, depositPrice: 30 },
+    adminToken
+  );
+  assert(bcDup.code === 400 && /已存在/.test(String(bcDup.message)), `19.3 重名被拒（${bcDup.message}）`);
+  const bcList1 = await call('GET', '/mini/admin/barrels/configs', null, adminToken);
+  assert(
+    (bcList1.data.list || []).some(c => c.id === bcId && Number(c.depositPrice) === 30 && c.status === true),
+    '19.3 列表含新桶型且押金价 30'
+  );
+  const bcPriceUp = await call(
+    'PUT',
+    '/mini/admin/barrels/configs/' + bcId,
+    { clientRequestId: 'smkbc_' + TS + '_up1', barrelType: bcBarrelType, depositPrice: 50, status: 1, sortOrder: 900 },
+    adminToken
+  );
+  assert(bcPriceUp.code === 200, `19.3 改押金价成功（${bcPriceUp.code} ${bcPriceUp.message || ''}）`);
+  const bcList2 = await call('GET', '/mini/admin/barrels/configs', null, adminToken);
+  assert(
+    (bcList2.data.list || []).some(c => c.id === bcId && Number(c.depositPrice) === 50),
+    '19.3 列表反映新价 50'
+  );
+  const bcAudit1 = await bcAudit();
+  assert(
+    bcAudit1.includes('CREATE_BARREL_CONFIG') && bcAudit1.includes('UPDATE_BARREL_CONFIG'),
+    '19.3 审计含 CREATE_BARREL_CONFIG / UPDATE_BARREL_CONFIG'
+  );
+
+  // ── 19.4 ★ 押金登记（资金动作）：收取 = 账户 + ─────────────────────────────
+  const bcAccBefore = await balanceOf();
+  const bcDepKey = 'smkbc_' + TS + '_d1';
+  const bcDepBody = {
+    clientRequestId: bcDepKey,
+    depositType: 'collect',
+    partyType: 'customer',
+    customerName: '冒烟零售客户' + TS,
+    // 留一个**能精确搜索的**手机号：断言响应里搜不到它（比正则猜数字更可靠 ——
+    // 测试数据本身带时间戳数字，用 /\d{7,}/ 判定会误报）
+    customerPhone: '13900008888',
+    barrelType: bcBarrelType,
+    quantity: 2,
+    unitPrice: 50,
+    accountId,
+    remark: '冒烟-收押金'
+  };
+  const bcDep = await call('POST', '/mini/admin/barrels/deposits', bcDepBody, adminToken);
+  assert(bcDep.code === 200 && bcDep.data.depositNo, `19.4 押金收取成功（${bcDep.code} ${bcDep.message || ''}）`);
+  const bcDepNo = bcDep.data.depositNo;
+  assert(near(bcDep.data.amount, 100), `19.4 金额 = 2 × 50 = 100（实得 ${bcDep.data.amount}）`);
+  assert(near(await balanceOf(), bcAccBefore + 100), `19.4 ★ **账户 +**100（${bcAccBefore} → ${await balanceOf()}）`);
+  const bcTx = (
+    await pool.query(
+      "SELECT tx_type, tx_category, amount FROM finance_transactions WHERE related_module = 'barrel_deposit' AND related_id = ?",
+      [bcDepNo]
+    )
+  )[0];
+  assert(
+    bcTx.length === 1 &&
+      Number(bcTx[0].tx_type) === 1 &&
+      bcTx[0].tx_category === '押金收取' &&
+      near(bcTx[0].amount, 100),
+    `19.4 收入流水（tx_type=1 / 押金收取 / 100）：${JSON.stringify(bcTx[0] || null)}`
+  );
+  const bcAudit2 = await bcAudit();
+  assert(bcAudit2.includes('CREATE_BARREL_DEPOSIT'), '19.4 审计含 CREATE_BARREL_DEPOSIT');
+
+  // 幂等重放：不得收两次
+  const bcDepReplay = await call('POST', '/mini/admin/barrels/deposits', bcDepBody, adminToken);
+  assert(
+    bcDepReplay.code === 200 && bcDepReplay.data.replayed === true,
+    `19.4 ★ 押金幂等重放 replayed=true（${JSON.stringify(bcDepReplay.data || bcDepReplay.message)}）`
+  );
+  assert(near(await balanceOf(), bcAccBefore + 100), '19.4 ★ 重放后账户未再增加（押金没有天然唯一约束，全靠幂等键）');
+  const bcDepRows = (
+    await pool.query('SELECT COUNT(*) AS n FROM barrel_deposits WHERE barrel_type = ?', [bcBarrelType])
+  )[0];
+  assert(Number(bcDepRows[0].n) === 1, `19.4 押金记录仍为 1 条（实得 ${bcDepRows[0].n}）`);
+
+  // 汇总：在押 2 桶 / 100 元
+  const bcSum = await call(
+    'GET',
+    '/mini/admin/barrels/summary?barrelType=' + encodeURIComponent(bcBarrelType),
+    null,
+    adminToken
+  );
+  const bcSumRow = (bcSum.data.list || []).find(x => x.barrelType === bcBarrelType);
+  assert(
+    bcSumRow && bcSumRow.pendingQty === 2 && near(bcSumRow.pendingAmount, 100),
+    `19.4 在押汇总 2 桶 / 100 元（实得 ${JSON.stringify(bcSumRow || null)}）`
+  );
+  assert(bcSumRow && bcSumRow.partyName === '冒烟零售客户' + TS, '19.4 汇总对象名为客户姓名');
+
+  // ── 19.5 ★ 退回 = 账户 − / 超额拒绝 ──────────────────────────────────────
+  const bcRetKey = 'smkbc_' + TS + '_r1';
+  const bcRetBody = Object.assign({}, bcDepBody, {
+    clientRequestId: bcRetKey,
+    depositType: 'return',
+    quantity: 1
+  });
+  const bcRet = await call('POST', '/mini/admin/barrels/deposits', bcRetBody, adminToken);
+  assert(bcRet.code === 200, `19.5 押金退回成功（${bcRet.code} ${bcRet.message || ''}）`);
+  assert(near(await balanceOf(), bcAccBefore + 50), `19.5 ★ **账户 −**50（实得 ${await balanceOf()}）`);
+  const bcRetTx = (
+    await pool.query(
+      "SELECT tx_type, tx_category FROM finance_transactions WHERE related_module = 'barrel_deposit' AND related_id = ?",
+      [bcRet.data.depositNo]
+    )
+  )[0];
+  assert(
+    bcRetTx.length === 1 && Number(bcRetTx[0].tx_type) === 2 && bcRetTx[0].tx_category === '押金退回',
+    `19.5 支出流水（tx_type=2 / 押金退回）：${JSON.stringify(bcRetTx[0] || null)}`
+  );
+  const bcOver = await call(
+    'POST',
+    '/mini/admin/barrels/deposits',
+    Object.assign({}, bcDepBody, { clientRequestId: 'smkbc_' + TS + '_ov', depositType: 'return', quantity: 99 }),
+    adminToken
+  );
+  assert(
+    bcOver.code === 400 && /超过在押桶数/.test(String(bcOver.message)),
+    `19.5 退回超过在押桶数被拒（${bcOver.message}）`
+  );
+  assert(near(await balanceOf(), bcAccBefore + 50), '19.5 ★ 被拒后账户未变（校验在动账之前）');
+
+  // ── 19.6 ★ 跨端联动：停用桶型 → 押金登记被拒 ─────────────────────────────
+  const bcDisable = await call(
+    'PUT',
+    '/mini/admin/barrels/configs/' + bcId,
+    { clientRequestId: 'smkbc_' + TS + '_off', barrelType: bcBarrelType, depositPrice: 50, status: 0, sortOrder: 900 },
+    adminToken
+  );
+  assert(bcDisable.code === 200, `19.6 停用桶型成功（${bcDisable.code}）`);
+  const bcAfterDisable = await call('GET', '/mini/admin/barrels/options', null, adminToken);
+  assert(
+    !(bcAfterDisable.data.barrelTypes || []).some(b => b.barrelType === bcBarrelType),
+    '19.6 ★ 联动：停用后**不再出现**在登记表单可选桶型里'
+  );
+  const bcDisabledWrite = await call(
+    'POST',
+    '/mini/admin/barrels/deposits',
+    Object.assign({}, bcDepBody, { clientRequestId: 'smkbc_' + TS + '_cw' }),
+    adminToken
+  );
+  assert(
+    bcDisabledWrite.code === 400 && /桶型不存在或已停用/.test(String(bcDisabledWrite.message)),
+    `19.6 ★ 联动：停用后直接调接口登记被拒（${bcDisabledWrite.message}）`
+  );
+  // 删除有流水的桶型 → 拒绝并提示停用
+  const bcDelUsed = await call(
+    'DELETE',
+    '/mini/admin/barrels/configs/' + bcId + '?clientRequestId=' + encodeURIComponent('smkbc_' + TS + '_du'),
+    null,
+    adminToken
+  );
+  assert(
+    bcDelUsed.code === 400 && /改为停用/.test(String(bcDelUsed.message)),
+    `19.6 有流水的桶型删除被拒并提示停用（${bcDelUsed.message}）`
+  );
+  // 无流水的桶型可删
+  const bcCreate2 = await call(
+    'POST',
+    '/mini/admin/barrels/configs',
+    { clientRequestId: 'smkbc_' + TS + '_c2', barrelType: bcBarrelType2, depositPrice: 10 },
+    adminToken
+  );
+  const bcId2 = bcCreate2.data.id;
+  const bcDel2 = await call(
+    'DELETE',
+    '/mini/admin/barrels/configs/' + bcId2 + '?clientRequestId=' + encodeURIComponent('smkbc_' + TS + '_d2'),
+    null,
+    adminToken
+  );
+  assert(bcDel2.code === 200, `19.6 无流水桶型物理删除成功（${bcDel2.code} ${bcDel2.message || ''}）`);
+  const bcAudit3 = await bcAudit();
+  assert(bcAudit3.includes('DELETE_BARREL_CONFIG'), '19.6 审计含 DELETE_BARREL_CONFIG');
+  const bcDelReplay = await call(
+    'DELETE',
+    '/mini/admin/barrels/configs/' + bcId2 + '?clientRequestId=' + encodeURIComponent('smkbc_' + TS + '_d2'),
+    null,
+    adminToken
+  );
+  assert(bcDelReplay.code === 200 && bcDelReplay.data.replayed === true, '19.6 删除幂等重放 replayed=true');
+
+  // ── 19.7 个人信息：不发明文手机号 ────────────────────────────────────────
+  const bcListDep = await call(
+    'GET',
+    '/mini/admin/barrels/deposits?barrelType=' + encodeURIComponent(bcBarrelType),
+    null,
+    adminToken
+  );
+  assert(bcListDep.code === 200 && (bcListDep.data.list || []).length === 2, `19.7 押金流水 2 条（收+退）`);
+  assert(
+    (bcListDep.data.list || []).every(d => d.customerPhone === undefined),
+    '19.7 流水不返回 customerPhone 字段'
+  );
+  assert(
+    !JSON.stringify(bcListDep.data).includes('13900008888'),
+    '19.7 ★ 押金流水不含明文手机号（登记时填的号码在响应里搜不到，partyName 已重建）'
+  );
+  assert(!JSON.stringify(bcSum.data).includes('13900008888'), '19.7 ★ 押金汇总不含明文手机号');
+
+  // ═════════════ 20. 系统设置域（Phase 8b 第 17 域：销售单打印店长）═══════════
+  // ⚠️ 这是**全局配置**：本节的清理段会把原值还原（否则跑一次冒烟就改掉了真实的打印配置）。
+  section('20. 系统设置域：打印店长（全局配置，冒烟后原值还原）');
+
+  const [pmSnapshotRows] = await pool.query(
+    "SELECT setting_value FROM system_settings WHERE setting_key = 'print_manager_worker_id'"
+  );
+  // ⚠️ 赋值给**模块级**变量：清理段在 main() 之外的 finally 里，读不到函数内的 const
+  pmSnapshot = pmSnapshotRows.length ? pmSnapshotRows[0].setting_value : null;
+
+  // 测试用店长（employee_type = 1 才会出现在「在职店长」下拉里）
+  const pmWorkerId = 'SMKSLR' + TS + 'PM';
+  await pool.query(
+    'INSERT INTO workers (worker_id, worker_name, phone, employee_type, status, created_at, updated_at) VALUES (?, ?, ?, 1, 1, NOW(), NOW())',
+    [pmWorkerId, 'SMKSLR店长' + TS, '13900002222']
+  );
+
+  // ── 20.1 权限 ────────────────────────────────────────────────────────────
+  const pmNoToken = await call('GET', '/mini/admin/settings/print-manager');
+  assert(pmNoToken._status === 401 || pmNoToken.code === 401, `20.1 无令牌读配置被拒 401（实得 ${pmNoToken._status}）`);
+  const pmDenied = await call(
+    'PUT',
+    '/mini/admin/settings/print-manager',
+    { clientRequestId: 'x', workerId: pmWorkerId },
+    ordSalesmanToken
+  );
+  assert(pmDenied.code === 403, `20.1 业务员改配置被拒 403（实得 ${pmDenied.code}）`);
+
+  // ── 20.2 读 + 选项 ───────────────────────────────────────────────────────
+  const pmGet = await call('GET', '/mini/admin/settings/print-manager', null, adminToken);
+  assert(pmGet.code === 200 && pmGet.data.source, `20.2 读取当前打印店长 200（${pmGet.code}）`);
+  const pmOpts = await call('GET', '/mini/admin/settings/options', null, adminToken);
+  assert(pmOpts.code === 200 && Array.isArray(pmOpts.data.storeManagers), '20.2 选项含在职店长列表');
+  assert(
+    (pmOpts.data.storeManagers || []).some(m => m.workerId === pmWorkerId),
+    '20.2 新建的在职店长出现在候选里'
+  );
+
+  // ── 20.3 设置 + 审计 + 幂等 ──────────────────────────────────────────────
+  const pmKey = 'smkpm_' + TS + '_1';
+  const pmSet = await call(
+    'PUT',
+    '/mini/admin/settings/print-manager',
+    { clientRequestId: pmKey, workerId: pmWorkerId },
+    adminToken
+  );
+  assert(
+    pmSet.code === 200 && pmSet.data.workerId === pmWorkerId,
+    `20.3 设置打印店长成功（${pmSet.code} ${pmSet.message || ''}）`
+  );
+  assert(pmSet.data.source === 'setting', `20.3 来源标记为「按配置」（实得 ${pmSet.data.source}）`);
+  const pmGet2 = await call('GET', '/mini/admin/settings/print-manager', null, adminToken);
+  assert(pmGet2.data.workerId === pmWorkerId, '20.3 读回同一人（配置确实落库）');
+  const pmAudit = await auditActions();
+  assert(pmAudit.includes('UPDATE_SETTING'), '20.3 审计含 UPDATE_SETTING');
+  const pmReplay = await call(
+    'PUT',
+    '/mini/admin/settings/print-manager',
+    { clientRequestId: pmKey, workerId: pmWorkerId },
+    adminToken
+  );
+  assert(pmReplay.code === 200 && pmReplay.data.replayed === true, '20.3 幂等重放 replayed=true');
+
+  // ── 20.4 非法入参 ────────────────────────────────────────────────────────
+  const pmNoIdem = await call('PUT', '/mini/admin/settings/print-manager', { workerId: pmWorkerId }, adminToken);
+  assert(
+    pmNoIdem.code === 400 && /clientRequestId/.test(String(pmNoIdem.message)),
+    `20.4 缺幂等键被拒（${pmNoIdem.message}）`
+  );
+  const pmMissing = await call(
+    'PUT',
+    '/mini/admin/settings/print-manager',
+    { clientRequestId: 'smkpm_' + TS + '_m' },
+    adminToken
+  );
+  assert(
+    pmMissing.code === 400 && /workerId/.test(String(pmMissing.message)),
+    `20.4 不传 workerId 被拒（少传字段与「我要清空」是两件事，${pmMissing.message}）`
+  );
+  const pmGhost = await call(
+    'PUT',
+    '/mini/admin/settings/print-manager',
+    { clientRequestId: 'smkpm_' + TS + '_g', workerId: 'SMKNOWORKER' },
+    adminToken
+  );
+  assert(
+    pmGhost.code === 400 && /员工不存在/.test(String(pmGhost.message)),
+    `20.4 不存在的员工被拒（${pmGhost.message}）`
+  );
+  // 停用员工
+  await pool.query('UPDATE workers SET status = 0 WHERE worker_id = ?', [pmWorkerId]);
+  const pmOff = await call(
+    'PUT',
+    '/mini/admin/settings/print-manager',
+    { clientRequestId: 'smkpm_' + TS + '_off', workerId: pmWorkerId },
+    adminToken
+  );
+  assert(pmOff.code === 400 && /离职/.test(String(pmOff.message)), `20.4 停用员工被拒（${pmOff.message}）`);
+  await pool.query('UPDATE workers SET status = 1 WHERE worker_id = ?', [pmWorkerId]);
+
+  // ── 20.5 ★ 清除 → 回退（且不静默换人：配置指向停用员工时仍按配置）───────────
+  const pmClear = await call(
+    'PUT',
+    '/mini/admin/settings/print-manager',
+    { clientRequestId: 'smkpm_' + TS + '_clear', workerId: null },
+    adminToken
+  );
+  assert(
+    pmClear.code === 200 && pmClear.data.source === 'fallback',
+    `20.5 ★ 清除后回退（source 实得 ${pmClear.data.source}）`
+  );
+  // ⚠️ 不能断言「回退到的人 ≠ 刚才那位」：库里若只有这一位在职店长，回退本来就该是他。
+  //    正确判据是与 SQL 口径一致（第一位启用的店长，worker_id 升序）。
+  const [[expectFirstManager]] = await pool.query(
+    'SELECT worker_id FROM workers WHERE employee_type = 1 AND status = 1 ORDER BY worker_id ASC LIMIT 1'
+  );
+  assert(
+    pmClear.data.workerId === expectFirstManager.worker_id,
+    `20.5 回退取到「第一位在职店长」（期望 ${expectFirstManager.worker_id}，实得 ${pmClear.data.workerId}）`
+  );
+
+  // ── 20.6 ★ 个人信息：手机号脱敏 + 无 phone 字段 ─────────────────────────
+  assert(!Object.prototype.hasOwnProperty.call(pmGet2.data, 'phone'), '20.6 ★ 响应不含 phone 字段（文档 §八）');
+  assert(
+    !pmGet2.data.phoneMasked || /^\d{3}\*{4}\d{4}$/.test(pmGet2.data.phoneMasked),
+    `20.6 ★ 手机号已脱敏（实得「${pmGet2.data.phoneMasked}」）`
+  );
+
+  // ── 20.7 ★ 跨端一致：Web 与小程序解析到同一位店长 ────────────────────────
+  const pmSetAgain = await call(
+    'PUT',
+    '/mini/admin/settings/print-manager',
+    { clientRequestId: 'smkpm_' + TS + '_2', workerId: pmWorkerId },
+    adminToken
+  );
+  void pmSetAgain;
+  const pmWeb = await web('/system-settings/print-manager');
+  const pmMini = await call('GET', '/mini/admin/settings/print-manager', null, adminToken);
+  assert(
+    pmWeb.code === 200 && pmMini.code === 200 && pmWeb.data.workerId === pmMini.data.workerId,
+    `20.7 ★ 跨端一致：Web ${pmWeb.data && pmWeb.data.workerId} == 小程序 ${pmMini.data && pmMini.data.workerId}`
+  );
+
   // ── 18.5 各域声明可用的区间都真的通 ─────────────────────────────────────
   for (const [p, ranges] of [
     ['revenue', ['month', 'year', 'all']],
@@ -2800,6 +3220,8 @@ async function main() {
 }
 
 const ctx = { accountId: null, adminAccountId: null, salesmanAccountId: null, uploadedImageName: '' };
+// 打印店长配置的冒烟前快照（清理段按它还原全局配置）
+let pmSnapshot = null;
 
 main()
   .then(r => Object.assign(ctx, r))
@@ -2887,7 +3309,22 @@ main()
         await pool.query(`DELETE FROM salary_payments WHERE worker_id IN (${ph})`, slWorkerIds);
         await pool.query(`DELETE FROM salary_advances WHERE worker_id IN (${ph})`, slWorkerIds);
       }
-      // 员工：主数据四域（SMKWK%）+ 工资域（SMKSLR%）
+      // 回桶域（第 16 域）：先删押金流水与押金记录，再删桶型配置
+      //（顺序受业务约束：有押金流水的桶型不允许删除 —— 服务端就是这么判的）
+      await pool.query(
+        "DELETE FROM finance_transactions WHERE related_module = 'barrel_deposit' AND related_id IN (SELECT deposit_no FROM barrel_deposits WHERE barrel_type LIKE 'SMKBC%')"
+      );
+      await pool.query("DELETE FROM barrel_deposits WHERE barrel_type LIKE 'SMKBC%'");
+      await pool.query("DELETE FROM barrel_config WHERE barrel_type LIKE 'SMKBC%'");
+      // 系统设置域（第 17 域）：**还原全局配置**（不还原就等于每次冒烟都改掉真实打印配置）
+      if (pmSnapshot === null) {
+        await pool.query("DELETE FROM system_settings WHERE setting_key = 'print_manager_worker_id'");
+      } else {
+        await pool.query("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'print_manager_worker_id'", [
+          pmSnapshot
+        ]);
+      }
+      // 员工：主数据四域（SMKWK%）+ 工资域（SMKSLR%，含系统设置域的测试店长）
       await pool.query("DELETE FROM workers WHERE worker_name LIKE 'SMKWK%' OR worker_name LIKE 'SMKSLR%'");
       await pool.query('DELETE FROM sub_stations WHERE station_name LIKE ?', ['SMKST%']);
       if (ctx.uploadedImageName) {
@@ -2967,17 +3404,30 @@ main()
         )
       )[0][0];
       const slTotal = Number(slLeft.w) + Number(slLeft.p) + Number(slLeft.a);
-      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n) + Number(accLeft[0].n) + slTotal;
+      // 回桶域残留（桶型配置 + 押金流水）与系统设置还原核对
+      const bcLeft = (
+        await pool.query(
+          "SELECT (SELECT COUNT(*) FROM barrel_config WHERE barrel_type LIKE 'SMKBC%') AS c, (SELECT COUNT(*) FROM barrel_deposits WHERE barrel_type LIKE 'SMKBC%') AS d"
+        )
+      )[0][0];
+      const bcTotal = Number(bcLeft.c) + Number(bcLeft.d);
+      const [pmLeftRows] = await pool.query(
+        "SELECT setting_value FROM system_settings WHERE setting_key = 'print_manager_worker_id'"
+      );
+      const pmRestored = (pmLeftRows.length ? pmLeftRows[0].setting_value : null) === pmSnapshot;
+      if (!pmRestored) console.log('⚠️ 打印店长配置未还原到原值！');
+      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n) + Number(accLeft[0].n) + slTotal + bcTotal;
       const clean =
         Number(left[0].n) === 0 &&
         Number(leftInc[0].n) === 0 &&
         Number(leftPrd[0].n) === 0 &&
         invTotal === 0 &&
         masterTotal === 0 &&
-        ordTotal === 0;
+        ordTotal === 0 &&
+        pmRestored;
       console.log(
-        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条 / 订单+账户+工资域 ${ordTotal} 条（其中工资域 ${slTotal}）` +
-          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal, ordTotal, slTotal })}`
+        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条 / 订单+账户+工资+回桶域 ${ordTotal} 条（其中工资域 ${slTotal}、回桶域 ${bcTotal}）/ 打印店长配置已还原 ${pmRestored ? '✓' : '✗'}` +
+          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal, ordTotal, slTotal, bcTotal, pmRestored })}`
       );
     } catch (e) {
       console.log('清理失败：' + e.message);

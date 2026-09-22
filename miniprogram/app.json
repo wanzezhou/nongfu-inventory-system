@@ -36,7 +36,11 @@
     "pages/admin-salary-pay/index",
     "pages/admin-advances/index",
     "pages/admin-advance-edit/index",
-    "pages/admin-reports/index"
+    "pages/admin-reports/index",
+    "pages/admin-barrels/index",
+    "pages/admin-barrel-deposit/index",
+    "pages/admin-barrel-configs/index",
+    "pages/admin-settings/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

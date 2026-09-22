@@ -1,0 +1,33 @@
+<!-- 桶型配置（回桶 · 管理员 · Phase 8b 第 16 域）
+     ⚠️ 有押金流水的桶型只能停用不能删：删了会让历史押金指向不存在的桶型（数据悬挂）。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">共 {{list.length}} 个桶型（含停用）</text>
+      <text class="t-primary" bindtap="onAdd">＋ 新增桶型</text>
+    </view>
+    <view class="t-sub mt-8">押金登记时可选**已启用**的桶型；单价可在登记时手动改（历史价格不同）。</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <view wx:for="{{list}}" wx:key="id" class="card">
+    <view class="row-between">
+      <text class="t-strong">{{item.barrelType}}</text>
+      <text class="t-strong">¥{{item.priceText}}</text>
+    </view>
+    <view class="row-between mt-8">
+      <text class="t-sm t-sub">{{item.status ? '启用中' : '已停用'}}</text>
+      <text class="t-sm t-sub">排序 {{item.sortOrder}}</text>
+    </view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-primary" data-item="{{item}}" bindtap="onEditPrice">改押金单价</text>
+      <text class="t-primary" data-item="{{item}}" bindtap="onToggleStatus">{{item.status ? '停用' : '启用'}}</text>
+      <text class="t-primary" data-item="{{item}}" bindtap="onRemove">删除</text>
+    </view>
+  </view>
+  <view class="mt-24"></view>
+</view>

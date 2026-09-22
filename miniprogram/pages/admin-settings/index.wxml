@@ -1,0 +1,44 @@
+<!-- 系统设置（管理员 · Phase 8b 第 17 域）
+     ⚠️ 打印店长的电话是给客户回拨的：这里改错，要等客户打不通才会被发现。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <view class="card">
+      <view class="section-title">销售单打印 · 店长联系电话</view>
+      <view class="row-between">
+        <text class="t-sub">当前生效</text>
+        <text class="t-strong">{{current.workerName || '（无）'}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">电话</text>
+        <text class="t-strong">{{current.phoneMasked || '—'}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">来源</text>
+        <text class="t-sm t-sub">{{current.sourceLabel}}</text>
+      </view>
+      <view wx:if="{{current.workerStatus === 0}}" class="banner banner-warn mt-16">
+        该员工**已离职（停用）**：系统不会静默换人，仍按配置打印 —— 请尽快改成在职店长。
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="form-row">
+        <text class="form-label">改为</text>
+        <picker mode="selector" range="{{managerLabels}}" value="{{managerIndex}}" bindchange="onManagerChange">
+          <view class="row-between">
+            <text class="t-strong">{{managerLabels[managerIndex] || '请选择'}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view class="t-sub">只列**在职店长**（打印店长按业务口径即店长）。</view>
+    </view>
+
+    <view class="btn" bindtap="onSubmit">{{submitting ? '提交中…' : '保存设置'}}</view>
+    <view class="btn btn-ghost mt-16" bindtap="onClear">清除设置（回退为第一位在职店长）</view>
+    <view class="mt-24"></view>
+  </block>
+</view>

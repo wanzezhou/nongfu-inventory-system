@@ -1,13 +1,8 @@
 // 系统配置接口（2026-09-16）
 // 当前仅暴露「销售单打印店长」一项；后续新增配置项时按同样形式追加。
-const { pool } = require('../config/db');
+// ⚠️ 员工校验与写入都在 services/systemSettings（Web 与小程序管理端共用同一套规则）
 const { success, error } = require('../utils/response');
-const {
-  PRINT_MANAGER_KEY,
-  PRINT_MANAGER_REMARK,
-  setSetting,
-  resolvePrintManager
-} = require('../services/systemSettings');
+const { resolvePrintManager, setPrintManager } = require('../services/systemSettings');
 
 /**
  * 销售单打印店长（当前生效值 + 来源）
@@ -34,29 +29,13 @@ async function updatePrintManager(req, res) {
     if (raw === undefined) {
       return error(res, '员工ID不能为空', 400);
     }
-
-    if (raw === null || raw === '') {
-      await setSetting(PRINT_MANAGER_KEY, null, PRINT_MANAGER_REMARK);
-      const manager = await resolvePrintManager();
-      return success(res, manager, '已清除设置，回退为第一位启用的店长');
-    }
-
-    const workerId = String(raw);
-    const [rows] = await pool.execute(
-      'SELECT worker_id, worker_name, status FROM workers WHERE worker_id = ?',
-      [workerId]
-    );
-    if (rows.length === 0) {
-      return error(res, '员工不存在', 400);
-    }
-    if (Number(rows[0].status) !== 1) {
-      return error(res, '该员工已离职（停用），请选择在职员工', 400);
-    }
-
-    await setSetting(PRINT_MANAGER_KEY, workerId, PRINT_MANAGER_REMARK);
-    const manager = await resolvePrintManager();
-    return success(res, manager, '销售单打印店长已更新');
+    const cleared = raw === null || raw === '';
+    // 校验与写入都在服务层（Web 与小程序共用同一套规则，见 services/systemSettings.setPrintManager）
+    const manager = await setPrintManager(cleared ? null : String(raw));
+    return success(res, manager, cleared ? '已清除设置，回退为第一位启用的店长' : '销售单打印店长已更新');
   } catch (e) {
+    // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('updatePrintManager error:', e);
     return error(res, '保存打印店长配置失败', 500);
   }

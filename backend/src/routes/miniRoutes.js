@@ -45,6 +45,8 @@ const adminOrderCtrl = require('../controllers/mini/admin/orderController');
 const adminCompanyAccountCtrl = require('../controllers/mini/admin/companyAccountController');
 const adminSalaryCtrl = require('../controllers/mini/admin/salaryController');
 const adminReportCtrl = require('../controllers/mini/admin/reportController');
+const adminBarrelCtrl = require('../controllers/mini/admin/barrelController');
+const adminSettingsCtrl = require('../controllers/mini/admin/settingsController');
 // 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
 const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
@@ -285,6 +287,27 @@ router.delete('/admin/salary/advances/:id', requireMiniAdmin, requireMiniActive,
 router.get('/admin/reports/revenue', requireMiniAdmin, adminReportCtrl.getRevenue);
 router.get('/admin/reports/cost', requireMiniAdmin, adminReportCtrl.getCost);
 router.get('/admin/reports/profit', requireMiniAdmin, adminReportCtrl.getProfit);
+
+// ── 域 16/17：回桶（押金台账 + 桶型配置）──────────────────────────────────────
+// ⚠️ 静态段（options / summary / configs / deposits）全部写在 `/configs/:id` 之前。
+// ⚠️ 押金**没有编辑/删除接口**：押金是一笔已发生的收付，记错要开反向流水（退回/再收），
+//    不能改历史 —— 与「入库单只能作废」同一原则。
+// ⚠️ 资金动作（押金登记）走 services/barrelService 单源，两端共用同一段账户与流水写法。
+router.get('/admin/barrels/options', requireMiniAdmin, adminBarrelCtrl.getFormOptions);
+router.get('/admin/barrels/summary', requireMiniAdmin, adminBarrelCtrl.getSummary);
+router.get('/admin/barrels/configs', requireMiniAdmin, adminBarrelCtrl.listConfigs);
+router.get('/admin/barrels/deposits', requireMiniAdmin, adminBarrelCtrl.listDeposits);
+router.post('/admin/barrels/configs', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.createConfig);
+router.post('/admin/barrels/deposits', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.createDeposit);
+router.put('/admin/barrels/configs/:id', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.updateConfig);
+router.delete('/admin/barrels/configs/:id', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.removeConfig);
+
+// ── 域 17/17：系统设置（销售单打印店长）──────────────────────────────────────
+// ⚠️ 校验（员工存在 + 在职）与写入都在 services/systemSettings，两端共用一套规则。
+// ⚠️ 响应里的手机号**已脱敏**（文档 §八：小程序接口不下发明文手机号）。
+router.get('/admin/settings/options', requireMiniAdmin, adminSettingsCtrl.getFormOptions);
+router.get('/admin/settings/print-manager', requireMiniAdmin, adminSettingsCtrl.getPrintManager);
+router.put('/admin/settings/print-manager', requireMiniAdmin, requireMiniActive, adminSettingsCtrl.updatePrintManager);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，

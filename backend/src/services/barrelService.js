@@ -8,25 +8,37 @@
 const { pool } = require('../config/db');
 const { DEPOSIT_TYPES } = require('../constants/barrel');
 
-const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+const round2 = n => Math.round(Number(n || 0) * 100) / 100;
 
 // 单号：YJ + YYYYMMDD + 3位序号
 function genDepositNo() {
   const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
+  const p = n => String(n).padStart(2, '0');
   const dateStr = '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
   const seq = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
   return 'YJ' + dateStr + seq;
 }
 
 function genTxId() {
-  return 'TX' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 10000).toString(36).toUpperCase();
+  return (
+    'TX' +
+    Date.now().toString(36).toUpperCase() +
+    Math.floor(Math.random() * 10000)
+      .toString(36)
+      .toUpperCase()
+  );
 }
 
 function genTxNo() {
   const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return 'TX' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+  const p = n => String(n).padStart(2, '0');
+  return (
+    'TX' +
+    d.getFullYear() +
+    p(d.getMonth() + 1) +
+    p(d.getDate()) +
+    String(Math.floor(Math.random() * 100000)).padStart(5, '0')
+  );
 }
 
 // 对象条件：水站按 station_id，零售按 姓名+电话（无电话时用 IS NULL，避免 NULL 恒不匹配）
@@ -49,42 +61,72 @@ async function pendingQty(conn, cond) {
   return Number(rows[0].qty) || 0;
 }
 
-// 登记押金（collect 入账 / return 支出）
-async function createDeposit({ depositType, partyType, stationId, customerName, customerPhone, barrelType, quantity, unitPrice, accountId, remark, operator }) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
+/**
+ * 业务校验失败（`e.business = true`）—— 项目既有约定（同 salaryLedger.bizFail）
+ * 由调用方统一 rollback 并按 e.status 转响应；**不再返回 {code,message} 对象**：
+ * 那种约定下「校验失败」与「成功」走同一条返回路径，调用方漏判 code 就会
+ * 把失败当成功（且事务边界散落在服务层，调用方无法把幂等/审计并进同一事务）。
+ */
+function bizFail(message, status = 400) {
+  const e = new Error(message);
+  e.business = true;
+  e.status = status;
+  return e;
+}
 
+// 登记押金（collect 入账 / return 支出）—— **须在调用方的事务内执行**（自身不开事务）
+async function createDeposit(
+  conn,
+  {
+    depositType,
+    partyType,
+    stationId,
+    customerName,
+    customerPhone,
+    barrelType,
+    quantity,
+    unitPrice,
+    accountId,
+    remark,
+    operator
+  }
+) {
+  {
     const type = depositType === DEPOSIT_TYPES.RETURN ? DEPOSIT_TYPES.RETURN : DEPOSIT_TYPES.COLLECT;
     const qty = parseInt(quantity, 10);
     const price = round2(Number(unitPrice));
-    if (!qty || qty <= 0) { await conn.rollback(); return { code: 400, message: '数量必须大于 0' }; }
-    if (price <= 0) { await conn.rollback(); return { code: 400, message: '押金单价必须大于 0' }; }
+    if (!qty || qty <= 0) throw bizFail('数量必须大于 0');
+    if (price <= 0) throw bizFail('押金单价必须大于 0');
 
     // 对象校验：水站必须存在；零售必须有姓名
     if (partyType === 'customer') {
-      if (!customerName || !String(customerName).trim()) { await conn.rollback(); return { code: 400, message: '零售客户姓名不能为空' }; }
+      if (!customerName || !String(customerName).trim()) throw bizFail('零售客户姓名不能为空');
       customerName = String(customerName).trim();
     } else {
       const [st] = await conn.query('SELECT station_id FROM sub_stations WHERE station_id = ?', [stationId]);
-      if (!st.length) { await conn.rollback(); return { code: 400, message: '水站不存在' }; }
+      if (!st.length) throw bizFail('水站不存在');
     }
 
     // 桶型配置校验
-    const [cfg] = await conn.query('SELECT barrel_type, deposit_price FROM barrel_config WHERE barrel_type = ? AND status = 1', [barrelType]);
-    if (!cfg.length) { await conn.rollback(); return { code: 400, message: '桶型不存在或已停用' }; }
+    const [cfg] = await conn.query(
+      'SELECT barrel_type, deposit_price FROM barrel_config WHERE barrel_type = ? AND status = 1',
+      [barrelType]
+    );
+    if (!cfg.length) throw bizFail('桶型不存在或已停用');
 
     // 退回押金：数量不得超过该对象该桶型在押桶数
     const cond = partyCond(partyType, stationId, customerName, customerPhone);
     const pending = await pendingQty(conn, cond);
     if (type === DEPOSIT_TYPES.RETURN && qty > pending) {
-      await conn.rollback();
-      return { code: 400, message: `退回数量超过在押桶数（当前在押 ${pending} 桶）` };
+      throw bizFail(`退回数量超过在押桶数（当前在押 ${pending} 桶）`);
     }
 
     // 财务账户（FOR UPDATE 锁定，避免并发扣款）
-    const [acc] = await conn.query('SELECT * FROM finance_accounts WHERE account_id = ? FOR UPDATE', [accountId]);
-    if (!acc.length || Number(acc[0].status) !== 1) { await conn.rollback(); return { code: 400, message: '财务账户不存在或已停用' }; }
+    const [acc] = await conn.query(
+      'SELECT account_id, account_name, current_balance, status FROM finance_accounts WHERE account_id = ? FOR UPDATE',
+      [accountId]
+    );
+    if (!acc.length || Number(acc[0].status) !== 1) throw bizFail('财务账户不存在或已停用');
     const balance = Number(acc[0].current_balance);
     const amount = round2(price * qty);
 
@@ -99,26 +141,60 @@ async function createDeposit({ depositType, partyType, stationId, customerName, 
 
     if (type === DEPOSIT_TYPES.COLLECT) {
       // 收取：余额增加 + 收入流水
-      await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [round2(balance + amount), accountId]);
+      await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [
+        round2(balance + amount),
+        accountId
+      ]);
       await conn.query(
         `INSERT INTO finance_transactions
            (tx_id, tx_no, account_id, account_name, tx_type, tx_category, amount, balance_before, balance_after,
             related_module, related_id, tx_date, handler, counterparty, remark, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, NOW())`,
-        [genTxId(), genTxNo(), accountId, accountName, 1, '押金收取', amount, balance, round2(balance + amount),
-         'barrel_deposit', depositNo, operator || null, counterpartyName, remark || null]
+        [
+          genTxId(),
+          genTxNo(),
+          accountId,
+          accountName,
+          1,
+          '押金收取',
+          amount,
+          balance,
+          round2(balance + amount),
+          'barrel_deposit',
+          depositNo,
+          operator || null,
+          counterpartyName,
+          remark || null
+        ]
       );
     } else {
       // 退回：余额充足校验 + 支出流水
-      if (balance < amount) { await conn.rollback(); return { code: 400, message: '财务账户可用余额不足' }; }
-      await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [round2(balance - amount), accountId]);
+      if (balance < amount) throw bizFail('财务账户可用余额不足');
+      await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [
+        round2(balance - amount),
+        accountId
+      ]);
       await conn.query(
         `INSERT INTO finance_transactions
            (tx_id, tx_no, account_id, account_name, tx_type, tx_category, amount, balance_before, balance_after,
             related_module, related_id, tx_date, handler, counterparty, remark, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, NOW())`,
-        [genTxId(), genTxNo(), accountId, accountName, 2, '押金退回', amount, balance, round2(balance - amount),
-         'barrel_deposit', depositNo, operator || null, counterpartyName, remark || null]
+        [
+          genTxId(),
+          genTxNo(),
+          accountId,
+          accountName,
+          2,
+          '押金退回',
+          amount,
+          balance,
+          round2(balance - amount),
+          'barrel_deposit',
+          depositNo,
+          operator || null,
+          counterpartyName,
+          remark || null
+        ]
       );
     }
 
@@ -133,35 +209,68 @@ async function createDeposit({ depositType, partyType, stationId, customerName, 
         partyType === 'customer' ? null : stationId,
         partyType,
         partyType === 'customer' ? customerName : null,
-        partyType === 'customer' ? (customerPhone || null) : null,
-        barrelType, qty, price,
-        accountId, accountName, type,
-        operator || null, remark || null,
+        partyType === 'customer' ? customerPhone || null : null,
+        barrelType,
+        qty,
+        price,
+        accountId,
+        accountName,
+        type,
+        operator || null,
+        remark || null,
         type === DEPOSIT_TYPES.RETURN ? new Date() : null
       ]
     );
 
-    await conn.commit();
-    return { code: 200, data: { depositNo, depositType: type, amount, accountId, accountName }, message: type === DEPOSIT_TYPES.COLLECT ? '押金收取成功' : '押金退回成功' };
-  } catch (e) {
-    await conn.rollback();
-    console.error('createDeposit error:', e);
-    return { code: 500, message: '押金登记失败' };
-  } finally {
-    conn.release();
+    return {
+      depositNo,
+      depositType: type,
+      amount,
+      accountId,
+      accountName,
+      // 文案由服务层给（两端复用同一句，避免「Web 说收取成功、小程序说已入账」这类漂移）
+      message: type === DEPOSIT_TYPES.COLLECT ? '押金收取成功' : '押金退回成功'
+    };
   }
 }
 
 // 押金流水列表（分页 + 筛选）
-async function getDepositList({ page = 1, pageSize = 10, partyType, stationId, customerName, barrelType, startDate, endDate }) {
+async function getDepositList({
+  page = 1,
+  pageSize = 10,
+  partyType,
+  stationId,
+  customerName,
+  barrelType,
+  startDate,
+  endDate
+}) {
   const where = [];
   const params = [];
-  if (partyType) { where.push('d.party_type = ?'); params.push(partyType); }
-  if (stationId) { where.push('d.station_id = ?'); params.push(stationId); }
-  if (customerName) { where.push('d.customer_name LIKE ?'); params.push('%' + customerName + '%'); }
-  if (barrelType) { where.push('d.barrel_type = ?'); params.push(barrelType); }
-  if (startDate) { where.push('DATE(d.created_at) >= ?'); params.push(startDate); }
-  if (endDate) { where.push('DATE(d.created_at) <= ?'); params.push(endDate); }
+  if (partyType) {
+    where.push('d.party_type = ?');
+    params.push(partyType);
+  }
+  if (stationId) {
+    where.push('d.station_id = ?');
+    params.push(stationId);
+  }
+  if (customerName) {
+    where.push('d.customer_name LIKE ?');
+    params.push('%' + customerName + '%');
+  }
+  if (barrelType) {
+    where.push('d.barrel_type = ?');
+    params.push(barrelType);
+  }
+  if (startDate) {
+    where.push('DATE(d.created_at) >= ?');
+    params.push(startDate);
+  }
+  if (endDate) {
+    where.push('DATE(d.created_at) <= ?');
+    params.push(endDate);
+  }
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
   const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM barrel_deposits d ${whereSql}`, params);
@@ -184,7 +293,7 @@ async function getDepositList({ page = 1, pageSize = 10, partyType, stationId, c
   );
 
   return {
-    list: rows.map((r) => ({
+    list: rows.map(r => ({
       id: r.id,
       depositNo: r.deposit_no,
       partyType: r.party_type,
@@ -192,7 +301,10 @@ async function getDepositList({ page = 1, pageSize = 10, partyType, stationId, c
       stationName: r.station_name,
       customerName: r.customer_name,
       customerPhone: r.customer_phone,
-      partyName: r.party_type === 'customer' ? (r.customer_name || '') + (r.customer_phone ? '（' + r.customer_phone + '）' : '') : r.station_name,
+      partyName:
+        r.party_type === 'customer'
+          ? (r.customer_name || '') + (r.customer_phone ? '（' + r.customer_phone + '）' : '')
+          : r.station_name,
       barrelType: r.barrel_type,
       quantity: r.quantity,
       unitPrice: r.unit_price,
@@ -215,10 +327,22 @@ async function getDepositList({ page = 1, pageSize = 10, partyType, stationId, c
 async function getSummary({ partyType, stationId, customerName, barrelType }) {
   const where = [];
   const params = [];
-  if (partyType) { where.push('d.party_type = ?'); params.push(partyType); }
-  if (stationId) { where.push('d.station_id = ?'); params.push(stationId); }
-  if (customerName) { where.push('d.customer_name LIKE ?'); params.push('%' + customerName + '%'); }
-  if (barrelType) { where.push('d.barrel_type = ?'); params.push(barrelType); }
+  if (partyType) {
+    where.push('d.party_type = ?');
+    params.push(partyType);
+  }
+  if (stationId) {
+    where.push('d.station_id = ?');
+    params.push(stationId);
+  }
+  if (customerName) {
+    where.push('d.customer_name LIKE ?');
+    params.push('%' + customerName + '%');
+  }
+  if (barrelType) {
+    where.push('d.barrel_type = ?');
+    params.push(barrelType);
+  }
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
   const [rows] = await pool.query(
@@ -235,13 +359,16 @@ async function getSummary({ partyType, stationId, customerName, barrelType }) {
     params
   );
 
-  return rows.map((r) => ({
+  return rows.map(r => ({
     partyType: r.party_type,
     stationId: r.station_id,
     stationName: r.station_name,
     customerName: r.customer_name,
     customerPhone: r.customer_phone,
-    partyName: r.party_type === 'customer' ? (r.customer_name || '') + (r.customer_phone ? '（' + r.customer_phone + '）' : '') : r.station_name,
+    partyName:
+      r.party_type === 'customer'
+        ? (r.customer_name || '') + (r.customer_phone ? '（' + r.customer_phone + '）' : '')
+        : r.station_name,
     barrelType: r.barrel_type,
     pendingQty: Number(r.pending_qty),
     pendingAmount: round2(Number(r.pending_amount)),
@@ -250,9 +377,12 @@ async function getSummary({ partyType, stationId, customerName, barrelType }) {
 }
 
 // 桶型配置列表（默认含停用，供管理）
-async function listConfigs() {
-  const [rows] = await pool.query('SELECT * FROM barrel_config ORDER BY sort_order, id');
-  return rows.map((r) => ({
+async function listConfigs(conn = pool) {
+  // 显式列（原为 SELECT *：列变更隐式耦合，且新增列会静默进入响应）
+  const [rows] = await conn.query(
+    'SELECT id, barrel_type, deposit_price, status, sort_order, created_at, updated_at FROM barrel_config ORDER BY sort_order, id'
+  );
+  return rows.map(r => ({
     id: r.id,
     barrelType: r.barrel_type,
     depositPrice: r.deposit_price,
@@ -264,57 +394,56 @@ async function listConfigs() {
 }
 
 // 新增桶型配置
-async function createConfig({ barrelType, depositPrice, sortOrder }) {
+async function createConfig(conn, { barrelType, depositPrice, sortOrder }) {
   const type = barrelType && String(barrelType).trim();
   const price = round2(Number(depositPrice));
-  if (!type) return { code: 400, message: '桶型名称不能为空' };
-  if (price < 0) return { code: 400, message: '押金单价不能为负' };
+  if (!type) throw bizFail('桶型名称不能为空');
+  if (price < 0) throw bizFail('押金单价不能为负');
   try {
-    await pool.query(
+    const [r] = await conn.query(
       `INSERT INTO barrel_config (barrel_type, deposit_price, status, sort_order, created_at, updated_at)
        VALUES (?, ?, 1, ?, NOW(), NOW())`,
       [type, price, parseInt(sortOrder, 10) || 0]
     );
-    return { code: 200, message: '新增成功' };
+    return { id: r.insertId, barrelType: type, depositPrice: price };
   } catch (e) {
-    if (/Duplicate|1062/i.test(e.message)) return { code: 400, message: '桶型名称已存在' };
-    console.error('createConfig error:', e);
-    return { code: 500, message: '新增失败' };
+    // 唯一键冲突是**业务可预期**的（桶型名重复），不能漏成 500
+    if (/Duplicate|1062/i.test(e.message)) throw bizFail('桶型名称已存在');
+    throw e;
   }
 }
 
 // 更新桶型配置
-async function updateConfig(id, { barrelType, depositPrice, status, sortOrder }) {
+async function updateConfig(conn, id, { barrelType, depositPrice, status, sortOrder }) {
   try {
-    const [exist] = await pool.query('SELECT id FROM barrel_config WHERE id = ?', [id]);
-    if (!exist.length) return { code: 404, message: '桶型配置不存在' };
+    const [exist] = await conn.query('SELECT id FROM barrel_config WHERE id = ? FOR UPDATE', [id]);
+    if (!exist.length) throw bizFail('桶型配置不存在', 404);
     const price = round2(Number(depositPrice));
-    if (price < 0) return { code: 400, message: '押金单价不能为负' };
-    await pool.query(
+    if (price < 0) throw bizFail('押金单价不能为负');
+    const nextStatus = status === 0 || status === '0' ? 0 : 1;
+    await conn.query(
       `UPDATE barrel_config SET barrel_type = ?, deposit_price = ?, status = ?, sort_order = ?, updated_at = NOW() WHERE id = ?`,
-      [barrelType && String(barrelType).trim(), price, status === 0 || status === '0' ? 0 : 1, parseInt(sortOrder, 10) || 0, id]
+      [barrelType && String(barrelType).trim(), price, nextStatus, parseInt(sortOrder, 10) || 0, id]
     );
-    return { code: 200, message: '更新成功' };
+    return { id: Number(id), status: nextStatus, depositPrice: price };
   } catch (e) {
-    if (/Duplicate|1062/i.test(e.message)) return { code: 400, message: '桶型名称已存在' };
-    console.error('updateConfig error:', e);
-    return { code: 500, message: '更新失败' };
+    if (e.business) throw e;
+    if (/Duplicate|1062/i.test(e.message)) throw bizFail('桶型名称已存在');
+    throw e;
   }
 }
 
 // 删除桶型配置（有押金流水的桶型不允许删除，避免台账数据悬挂）
-async function deleteConfig(id) {
-  try {
-    const [exist] = await pool.query('SELECT barrel_type FROM barrel_config WHERE id = ?', [id]);
-    if (!exist.length) return { code: 404, message: '桶型配置不存在' };
-    const [used] = await pool.query('SELECT COUNT(*) AS cnt FROM barrel_deposits WHERE barrel_type = ?', [exist[0].barrel_type]);
-    if (Number(used[0].cnt) > 0) return { code: 400, message: '该桶型已有押金流水，不能删除，请改为停用' };
-    await pool.query('DELETE FROM barrel_config WHERE id = ?', [id]);
-    return { code: 200, message: '删除成功' };
-  } catch (e) {
-    console.error('deleteConfig error:', e);
-    return { code: 500, message: '删除失败' };
-  }
+async function deleteConfig(conn, id) {
+  const [exist] = await conn.query('SELECT barrel_type FROM barrel_config WHERE id = ? FOR UPDATE', [id]);
+  if (!exist.length) throw bizFail('桶型配置不存在', 404);
+  // 有押金流水的桶型不许删（否则台账里那条押金会指向一个不存在的桶型 = 数据悬挂）
+  const [used] = await conn.query('SELECT COUNT(*) AS cnt FROM barrel_deposits WHERE barrel_type = ?', [
+    exist[0].barrel_type
+  ]);
+  if (Number(used[0].cnt) > 0) throw bizFail('该桶型已有押金流水，不能删除，请改为停用');
+  await conn.query('DELETE FROM barrel_config WHERE id = ?', [id]);
+  return { barrelType: exist[0].barrel_type };
 }
 
 module.exports = {

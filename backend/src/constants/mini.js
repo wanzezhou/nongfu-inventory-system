@@ -202,7 +202,20 @@ const IDEM_SCOPE = {
   PAY_SALARY: 'PAY_SALARY',
   REVOKE_SALARY_PAYMENT: 'REVOKE_SALARY_PAYMENT',
   CREATE_SALARY_ADVANCE: 'CREATE_SALARY_ADVANCE',
-  DELETE_SALARY_ADVANCE: 'DELETE_SALARY_ADVANCE'
+  DELETE_SALARY_ADVANCE: 'DELETE_SALARY_ADVANCE',
+  // ── Phase 8b 第 16 域 回桶（押金登记 / 桶型配置三动作）──
+  //    ⚠️ 押金登记是**资金动作**（收取=账户+ / 退回=账户−），且没有「同单号唯一」之类的
+  //      天然约束 —— 弱网重试一次就是真的再收/再退一笔押金，两笔都合法。必须带幂等键。
+  //    ⚠️ 桶型配置的三个动作同样带键：配置类写操作的重放不会直接动钱，但会让
+  //      「谁在什么时候把押金价从 30 改成 50」出现两条一模一样、却无法区分真假的审计。
+  CREATE_BARREL_DEPOSIT: 'CREATE_BARREL_DEPOSIT',
+  CREATE_BARREL_CONFIG: 'CREATE_BARREL_CONFIG',
+  UPDATE_BARREL_CONFIG: 'UPDATE_BARREL_CONFIG',
+  DELETE_BARREL_CONFIG: 'DELETE_BARREL_CONFIG',
+  // ── Phase 8b 第 17 域 系统设置（打印店长）──
+  //    ⚠️ 只有一个动作、只改一行配置，但它决定「客户回拨的是谁的电话」——
+  //      重放不会造成账面问题，却会让审计里出现两条无法区分的记录。仍按定式带键。
+  UPDATE_SETTING: 'UPDATE_SETTING'
 };
 /** 服务端保留幂等键至少 24h（覆盖「用户离线数小时后重试」，§23.1） */
 const IDEM_TTL_HOURS = 24;
@@ -285,7 +298,18 @@ const AUDIT_ACTION = {
   PAY_SALARY: 'PAY_SALARY',
   REVOKE_SALARY_PAYMENT: 'REVOKE_SALARY_PAYMENT',
   CREATE_SALARY_ADVANCE: 'CREATE_SALARY_ADVANCE',
-  DELETE_SALARY_ADVANCE: 'DELETE_SALARY_ADVANCE'
+  DELETE_SALARY_ADVANCE: 'DELETE_SALARY_ADVANCE',
+  // ── Phase 8b 第 16 域 回桶 ──
+  //    ⚠️ 四个动作都落审计：押金台账是「公司欠客户多少桶、客户欠公司多少押金」的凭据，
+  //      出问题时第一个被问的就是「这笔押金是谁什么时候收的」。
+  CREATE_BARREL_DEPOSIT: 'CREATE_BARREL_DEPOSIT',
+  CREATE_BARREL_CONFIG: 'CREATE_BARREL_CONFIG',
+  UPDATE_BARREL_CONFIG: 'UPDATE_BARREL_CONFIG',
+  DELETE_BARREL_CONFIG: 'DELETE_BARREL_CONFIG',
+  // ── Phase 8b 第 17 域 系统设置 ──
+  //    ⚠️ 审计 detail 里记 before/after 的**人**（不只是 id）：
+  //      打印配置的变更只对「电话是谁的」有意义，光记 id 事后要再查一次员工表才知道换成了谁。
+  UPDATE_SETTING: 'UPDATE_SETTING'
 };
 
 // ── 分页（⚠️ mysql2 不支持 LIMIT ?，必须 parseInt 内联）────────────────────
