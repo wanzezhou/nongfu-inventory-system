@@ -126,6 +126,10 @@ Page({
   goAdminProducts() {
     ui.navTo('/pages/admin-products/index');
   },
+  /** Phase 8b 业务域：公司账户（余额只读；唯一资金动作是账户间转账） */
+  goAdminAccounts() {
+    ui.navTo('/pages/admin-accounts/index');
+  },
   /** Phase 8b 业务域：订单管理（全来源，履约状态推进是全系统唯一入口） */
   goAdminOrders() {
     ui.navTo('/pages/admin-orders/index');

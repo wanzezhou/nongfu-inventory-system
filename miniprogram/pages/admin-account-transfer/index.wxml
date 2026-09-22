@@ -1,0 +1,49 @@
+<!-- 账户间转账（管理员 · Phase 8b 第 10 域）
+     ⚠️ 这是本域唯一开放的资金动作：转出方扣、转入方加，两条流水同批次号。
+        提交前必须让用户看清「从哪个账户扣、到哪个账户加、扣多少」。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+  <view wx:if="{{formError}}" class="banner banner-danger">{{formError}}</view>
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <view class="card">
+      <view class="section-title">转出账户</view>
+      <picker mode="selector" range="{{fromLabels}}" value="{{fromIndex}}" bindchange="onFromChange">
+        <view class="picker-value">{{fromLabels[fromIndex] || '请选择'}} ›</view>
+      </picker>
+
+      <view class="section-title mt-24">转入账户</view>
+      <picker mode="selector" range="{{toLabels}}" value="{{toIndex}}" bindchange="onToChange">
+        <view class="picker-value">{{toLabels[toIndex] || '请选择'}} ›</view>
+      </picker>
+
+      <view class="form-row mt-24">
+        <text class="form-label">转账金额</text>
+        <input class="form-input" type="digit" placeholder="大于 0" value="{{amount}}" bindinput="onAmountInput" />
+      </view>
+      <view class="form-row">
+        <text class="form-label">备注</text>
+        <input class="form-input" placeholder="选填" value="{{remark}}" bindinput="onRemarkInput" />
+      </view>
+    </view>
+
+    <view wx:if="{{fromAccount && toAccount}}" class="card">
+      <view class="t-sub">本次转账：</view>
+      <view class="kv mt-8">
+        <text class="kv-k">{{fromAccount.accountName}}</text>
+        <text class="amt-out">−¥{{amountText}}</text>
+      </view>
+      <view class="kv">
+        <text class="kv-k">{{toAccount.accountName}}</text>
+        <text class="amt-in">+¥{{amountText}}</text>
+      </view>
+      <view wx:if="{{insufficient}}" class="banner banner-warn mt-16">
+        转出账户余额 ¥{{fromAccount.currentBalance}} 不足本次转账，服务端会拒绝。
+      </view>
+    </view>
+
+    <view class="btn save-btn" bindtap="onSubmit" disabled="{{submitting}}">{{submitting ? '提交中…' : '确认转账'}}</view>
+    <view class="bottom-space"></view>
+  </block>
+</view>

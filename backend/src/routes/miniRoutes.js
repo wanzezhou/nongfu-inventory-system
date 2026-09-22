@@ -42,6 +42,7 @@ const adminIncomeCtrl = require('../controllers/mini/admin/incomeController');
 const adminProductCtrl = require('../controllers/mini/admin/productController');
 const adminInventoryCtrl = require('../controllers/mini/admin/inventoryController');
 const adminOrderCtrl = require('../controllers/mini/admin/orderController');
+const adminCompanyAccountCtrl = require('../controllers/mini/admin/companyAccountController');
 // 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
 const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
@@ -244,6 +245,17 @@ router.get('/admin/orders', requireMiniAdmin, adminOrderCtrl.listOrders);
 router.put('/admin/orders/:id/fulfillment', requireMiniAdmin, requireMiniActive, adminOrderCtrl.advance);
 router.post('/admin/orders/:id/cancel', requireMiniAdmin, requireMiniActive, adminOrderCtrl.cancel);
 router.get('/admin/orders/:id', requireMiniAdmin, adminOrderCtrl.getOrderById);
+
+// ── 域 10/17：公司账户（列表 / 选项 / 详情 / 新增 / 编辑 / 删除 / 转账）────────
+// ⚠️ 静态段 `/admin/accounts/transfer` 与 `/admin/accounts/options` 必须早于
+//    `/admin/accounts/:id`（否则被 :id 吞掉，表现是「转账接口 404 或参数错乱」）。
+router.get('/admin/accounts/options', requireMiniAdmin, adminCompanyAccountCtrl.getFormOptions);
+router.post('/admin/accounts/transfer', requireMiniAdmin, requireMiniActive, adminCompanyAccountCtrl.transfer);
+router.get('/admin/accounts', requireMiniAdmin, adminCompanyAccountCtrl.listAccounts);
+router.post('/admin/accounts', requireMiniAdmin, requireMiniActive, adminCompanyAccountCtrl.createAccount);
+router.get('/admin/accounts/:id', requireMiniAdmin, adminCompanyAccountCtrl.getAccountById);
+router.put('/admin/accounts/:id', requireMiniAdmin, requireMiniActive, adminCompanyAccountCtrl.updateAccount);
+router.delete('/admin/accounts/:id', requireMiniAdmin, requireMiniActive, adminCompanyAccountCtrl.removeAccount);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 

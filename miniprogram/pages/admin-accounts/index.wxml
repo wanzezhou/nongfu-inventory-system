@@ -1,0 +1,60 @@
+<!-- 公司账户 · 列表（管理员 · Phase 8b 第 10 域）
+     ⚠️ 余额只读展示 —— 账户余额只能由业务单据或转账变动，本页不提供任何改余额的入口。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">启用账户余额合计</text>
+      <text class="t-strong total">¥{{totalBalanceText}}</text>
+    </view>
+    <view class="t-sub mt-8">共 {{total}} 个账户（停用账户不计入合计）</view>
+  </view>
+
+  <view class="card">
+    <scroll-view scroll-x class="tabs">
+      <view
+        wx:for="{{tabs}}"
+        wx:key="key"
+        class="tab {{status === item.key ? 'is-active' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onTab"
+      >{{item.label}}</view>
+    </scroll-view>
+    <view class="search-row">
+      <input class="search-input" placeholder="账户名 / 编号" value="{{keyword}}" bindinput="onKeywordInput" bindconfirm="onSearch" />
+      <view class="btn btn-sm" bindtap="onSearch">搜索</view>
+    </view>
+  </view>
+
+  <view class="action-bar">
+    <view class="btn action-btn" bindtap="goCreate">＋ 新增账户</view>
+    <view class="btn action-btn btn-ghost" bindtap="goTransfer">账户间转账</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+  <view wx:elif="{{!list.length && !loading}}" class="empty">
+    <text class="empty-icon">🏦</text>
+    <text class="t-sub">没有符合条件的账户</text>
+  </view>
+
+  <view class="acct-list">
+    <view
+      wx:for="{{list}}"
+      wx:key="accountId"
+      class="card acct-item {{item.status ? '' : 'is-off'}}"
+      data-id="{{item.accountId}}"
+      bindtap="goDetail"
+    >
+      <view class="row-between">
+        <text class="t-strong">{{item.accountName}}</text>
+        <text class="t-strong">¥{{item.currentBalanceText}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">{{item.accountTypeName}} · {{item.accountId}}</text>
+        <text wx:if="{{!item.status}}" class="tag-off">已停用</text>
+      </view>
+    </view>
+  </view>
+  <view class="bottom-space"></view>
+</view>

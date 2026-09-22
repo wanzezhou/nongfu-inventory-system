@@ -28,7 +28,10 @@
     "pages/admin-inventory-out/index",
     "pages/admin-purchases/index",
     "pages/admin-orders/index",
-    "pages/admin-order-detail/index"
+    "pages/admin-order-detail/index",
+    "pages/admin-accounts/index",
+    "pages/admin-account-edit/index",
+    "pages/admin-account-transfer/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

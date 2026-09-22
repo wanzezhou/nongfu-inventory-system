@@ -21,6 +21,9 @@
  *   · 第 9 域 订单 —— 第 15 节。履约状态机（**全系统唯一推进入口**，此前下单后
  *     永远停在 PAID）+ 管理员取消（钱包单完整退款 / Web 现金单账务回冲，两条链都验）。
  *     测试订单用业务员令牌走真实下单链路产生（复用第 0 节的 mini 账号 + 新建 worker/钱包）。
+ *   · 第 10 域 公司账户 —— 第 16 节。余额只读（不接受入参改余额）、删除规则
+ *     （余额≠0 或有流水 → 拒绝并提示可停用）、★ 转账双边记账（双边余额 + 双流水同批次
+ *     号 + 总额守恒 + 幂等重放不得转两次）。核心用 Web 端抽出的 applyTransfer 单源。
  *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
  *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
@@ -209,6 +212,9 @@ async function main() {
     await pool.query('DELETE FROM sub_stations WHERE station_name LIKE ?', ['SMKST%']);
     // 订单域（第 9 域）的跨轮残留：明细/营收流水 → 订单 → 业务员钱包
     await cleanupOrderSmokeData();
+    // 账户域（第 10 域）的跨轮残留：流水 → 账户（按 SMKA% 前缀，与收尾同一口径）
+    await pool.query("DELETE FROM finance_transactions WHERE account_id LIKE 'SMKA%'");
+    await pool.query("DELETE FROM finance_accounts WHERE account_id LIKE 'SMKA%'");
   }
 
   let conn = await pool.getConnection();
@@ -1882,6 +1888,320 @@ async function main() {
   assert(ordAudit.includes('ADVANCE_ORDER'), '15.9 审计含 ADVANCE_ORDER');
   assert(ordAudit.includes('CANCEL_ORDER_ADMIN'), '15.9 审计含 CANCEL_ORDER_ADMIN');
 
+  // ═════════════ 16. 公司账户域（Phase 8b 第 10 域）════════════════════════════
+  // ⚠️ 这个域是支出/收入/库存/工资四个域的地基（都靠账户下拉）。两条硬纪律要钉死：
+  //    ① **余额不可直接编辑**（本域刻意不开放 Web 的人工调账）；
+  //    ② 转账是**双边余额 + 双流水同批次**，且必须幂等（弱网重试不得转两次）。
+  section('16. 公司账户域：余额只读 / 删除规则 / ★ 转账双边记账与幂等');
+
+  const accA = 'SMKACCA' + TS;
+  const accB = 'SMKACCB' + TS;
+  const accC = 'SMKACCC' + TS; // 用于「余额 0 无流水 → 可物理删」
+  const accNameA = '冒烟账户甲' + TS;
+  const accNameB = '冒烟账户乙' + TS;
+  const accNameC = '冒烟账户丙' + TS;
+  const accBal = async id => {
+    const [r] = await pool.query('SELECT current_balance b, status s FROM finance_accounts WHERE account_id = ?', [id]);
+    return r.length ? { balance: Number(r[0].b), status: Number(r[0].s) } : null;
+  };
+  const accTx = async id =>
+    (await pool.query('SELECT COUNT(*) n FROM finance_transactions WHERE account_id = ?', [id]))[0][0].n;
+
+  // ── 16.1 权限 ─────────────────────────────────────────────────────────────
+  const accDenied = await call('GET', '/mini/admin/accounts', null, ordSalesmanToken);
+  assert(
+    accDenied.code === 403 && /管理员角色/.test(String(accDenied.message)),
+    `16.1 业务员读账户被拒 403（实得 ${accDenied.code} ${accDenied.message || ''}）`
+  );
+  const accXferDenied = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: 'x', fromId: accA, toId: accB, amount: 1 },
+    ordSalesmanToken
+  );
+  assert(accXferDenied.code === 403, `16.1 业务员转账被拒 403（实得 ${accXferDenied.code}）`);
+
+  // ── 16.2 选项与新增校验 ───────────────────────────────────────────────────
+  const accOpts = await call('GET', '/mini/admin/accounts/options', null, adminToken);
+  assert(accOpts.code === 200, `16.2 账户选项 200（${accOpts.code}）`);
+  if (accOpts.code === 200) {
+    assert(
+      (accOpts.data.types || []).length === 10,
+      `16.2 账户类型 10 类（实得 ${(accOpts.data.types || []).length}）`
+    );
+    assert(
+      (accOpts.data.activeAccounts || []).every(a => a.currentBalance !== undefined),
+      '16.2 转账下拉只列启用账户且带余额'
+    );
+  }
+  const accNoIdem = await call('POST', '/mini/admin/accounts', { accountName: accNameA, accountType: 1 }, adminToken);
+  assert(
+    accNoIdem.code === 400 && /clientRequestId/.test(String(accNoIdem.message)),
+    `16.2 缺幂等键被拒（${accNoIdem.message}）`
+  );
+  const accBadType = await call(
+    'POST',
+    '/mini/admin/accounts',
+    { clientRequestId: 'smkacc_' + TS + '_bt', accountName: accNameA, accountType: 99 },
+    adminToken
+  );
+  assert(
+    accBadType.code === 400 && /类型/.test(String(accBadType.message)),
+    `16.2 非法类型被拒（${accBadType.message}）`
+  );
+  const accNegInit = await call(
+    'POST',
+    '/mini/admin/accounts',
+    { clientRequestId: 'smkacc_' + TS + '_ni', accountName: accNameA, accountType: 1, initialBalance: -1 },
+    adminToken
+  );
+  assert(
+    accNegInit.code === 400 && /期初/.test(String(accNegInit.message)),
+    `16.2 负期初被拒（${accNegInit.message}）`
+  );
+
+  // ── 16.3 新增成功 + 幂等 ──────────────────────────────────────────────────
+  const createAcc = async (id, name, init, key) =>
+    call(
+      'POST',
+      '/mini/admin/accounts',
+      { clientRequestId: key, accountName: name, accountType: 1, initialBalance: init },
+      adminToken
+    );
+  const cA = await createAcc(accA, accNameA, 1000, 'smkacc_' + TS + '_a');
+  assert(cA.code === 200 && cA.data.accountId, `16.3 新增账户甲成功（${cA.code} ${cA.message || ''}）`);
+  assert(String(cA.data.accountId) === accA || cA.data.accountId.length > 3, '16.3 返回 accountId');
+  // ⚠️ 服务端自己生成 accountId（不接受客户端指定），这里用返回的 ID 作为后续操作对象
+  const idA = cA.data.accountId;
+  const aBal = await accBal(idA);
+  assert(
+    aBal && near(aBal.balance, 1000) && aBal.status === 1,
+    `16.3 期初=当前余额=1000 且启用（实得 ${JSON.stringify(aBal)}）`
+  );
+  const cAReplay = await createAcc(accA, accNameA, 1000, 'smkacc_' + TS + '_a');
+  assert(cAReplay.code === 200 && cAReplay.data.replayed === true, '16.3 新增幂等重放 replayed=true');
+  assert(String(cAReplay.data.accountId) === String(idA), '16.3 重放返回同一账户');
+  const cADup = await createAcc(accA, accNameA, 1, 'smkacc_' + TS + '_a2');
+  assert(cADup.code === 400 && /已存在/.test(String(cADup.message)), `16.3 重名被拒（${cADup.message}）`);
+  const auditA1 = await auditActions();
+  assert(auditA1.includes('CREATE_ACCOUNT'), '16.3 审计含 CREATE_ACCOUNT');
+
+  // ── 16.4 编辑：余额不受入参影响 + 停用/启用 ───────────────────────────────
+  const cB = await createAcc(accB, accNameB, 500, 'smkacc_' + TS + '_b');
+  const idB = cB.data.accountId;
+  const cC = await createAcc(accC, accNameC, 0, 'smkacc_' + TS + '_c');
+  const idC = cC.data.accountId;
+  const editA = await call(
+    'PUT',
+    '/mini/admin/accounts/' + idA,
+    // ⚠️ 故意带上余额字段：服务端必须**忽略**它（只改开户信息/备注/状态）
+    {
+      clientRequestId: 'smkacc_' + TS + '_ea',
+      remark: '冒烟备注',
+      bankName: '冒烟银行',
+      currentBalance: 999999,
+      status: 1
+    },
+    adminToken
+  );
+  assert(editA.code === 200, `16.4 编辑账户成功（${editA.code} ${editA.message || ''}）`);
+  const aBal2 = await accBal(idA);
+  assert(
+    near(aBal2.balance, 1000),
+    `16.4 ★ 余额未被入参改动（仍 1000，实得 ${aBal2.balance}）—— 余额只能由业务单据/转账变动`
+  );
+  const editAReplay = await call(
+    'PUT',
+    '/mini/admin/accounts/' + idA,
+    { clientRequestId: 'smkacc_' + TS + '_ea', remark: '冒烟备注', bankName: '冒烟银行', status: 1 },
+    adminToken
+  );
+  assert(editAReplay.code === 200 && editAReplay.data.replayed === true, '16.4 编辑幂等重放 replayed=true');
+  const disableA = await call(
+    'PUT',
+    '/mini/admin/accounts/' + idA,
+    { clientRequestId: 'smkacc_' + TS + '_da', remark: '冒烟备注', bankName: '冒烟银行', status: 0 },
+    adminToken
+  );
+  assert(disableA.code === 200, '16.4 停用账户成功');
+  const aBal3 = await accBal(idA);
+  assert(aBal3.status === 0, '16.4 status 已置 0');
+  const auditA2 = await auditActions();
+  assert(auditA2.includes('UPDATE_ACCOUNT'), '16.4 审计含 UPDATE_ACCOUNT');
+
+  // ── 16.5 删除规则：余额≠0 拒绝 / 有流水拒绝 / 干净账户物理删 ──────────────
+  const delWithBal = await call(
+    'DELETE',
+    '/mini/admin/accounts/' + idB + '?clientRequestId=' + encodeURIComponent('smkacc_' + TS + '_db1'),
+    null,
+    adminToken
+  );
+  assert(
+    delWithBal.code === 400 && /余额不为 0/.test(String(delWithBal.message)),
+    `16.5 余额≠0 拒绝删除并提示可停用（${delWithBal.message}）`
+  );
+  // 丙账户：余额 0，但先转一笔进来再转出去 → 留下流水，验证「有流水也不许删」
+  const xferC = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: 'smkacc_' + TS + '_tc1', fromId: idB, toId: idC, amount: 50 },
+    adminToken
+  );
+  assert(xferC.code === 200, `16.5 先转账给丙账户以制造流水（${xferC.code}）`);
+  const xferCBack = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: 'smkacc_' + TS + '_tc2', fromId: idC, toId: idB, amount: 50 },
+    adminToken
+  );
+  assert(xferCBack.code === 200, '16.5 再转回（丙余额回到 0）');
+  const cBal = await accBal(idC);
+  assert(near(cBal.balance, 0), `16.5 丙账户余额回到 0（实得 ${cBal.balance}）`);
+  assert(Number(await accTx(idC)) === 2, `16.5 丙账户留下 2 条流水（一进一出）—— 这正是它不能删的原因`);
+  const delWithTx = await call(
+    'DELETE',
+    '/mini/admin/accounts/' + idC + '?clientRequestId=' + encodeURIComponent('smkacc_' + TS + '_dc1'),
+    null,
+    adminToken
+  );
+  assert(
+    delWithTx.code === 400 && /流水/.test(String(delWithTx.message)),
+    `16.5 有流水拒绝删除（即使余额为 0）（${delWithTx.message}）`
+  );
+  // 干净账户：丁（新建后无任何流水、余额 0）→ 物理删
+  const cD = await createAcc('SMKACCD' + TS, '冒烟账户丁' + TS, 0, 'smkacc_' + TS + '_d');
+  const idD = cD.data.accountId;
+  const delClean = await call(
+    'DELETE',
+    '/mini/admin/accounts/' + idD + '?clientRequestId=' + encodeURIComponent('smkacc_' + TS + '_dd'),
+    null,
+    adminToken
+  );
+  assert(
+    delClean.code === 200,
+    `16.5 干净账户（余额 0 无流水）物理删除成功（${delClean.code} ${delClean.message || ''}）`
+  );
+  const [goneD] = await pool.query('SELECT account_id FROM finance_accounts WHERE account_id = ?', [idD]);
+  assert(goneD.length === 0, '16.5 账户记录已消失（物理删除）');
+  const accDelReplay = await call(
+    'DELETE',
+    '/mini/admin/accounts/' + idD + '?clientRequestId=' + encodeURIComponent('smkacc_' + TS + '_dd'),
+    null,
+    adminToken
+  );
+  assert(accDelReplay.code === 200 && accDelReplay.data.replayed === true, '16.5 删除幂等重放 replayed=true');
+  const auditA3 = await auditActions();
+  assert(auditA3.includes('DELETE_ACCOUNT'), '16.5 审计含 DELETE_ACCOUNT');
+
+  // ── 16.6 ★ 转账整链：双边余额 + 双流水同批次 + 总额守恒 ───────────────────
+  // 启用甲账户（前面停用了）以便参与转账
+  await call(
+    'PUT',
+    '/mini/admin/accounts/' + idA,
+    { clientRequestId: 'smkacc_' + TS + '_ea2', remark: '冒烟备注', bankName: '冒烟银行', status: 1 },
+    adminToken
+  );
+  const balA0 = (await accBal(idA)).balance;
+  const balB0 = (await accBal(idB)).balance;
+  const xKey = 'smkacc_' + TS + '_x1';
+  const x1 = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: xKey, fromId: idA, toId: idB, amount: 300, remark: '冒烟转账' },
+    adminToken
+  );
+  assert(x1.code === 200 && x1.data.txNo, `16.6 转账成功（${x1.code} ${x1.message || ''}）`);
+  assert(
+    near((await accBal(idA)).balance, balA0 - 300),
+    `16.6 转出方 ${balA0} − 300（实际 ${(await accBal(idA)).balance}）`
+  );
+  assert(
+    near((await accBal(idB)).balance, balB0 + 300),
+    `16.6 转入方 ${balB0} + 300（实际 ${(await accBal(idB)).balance}）`
+  );
+  assert(near((await accBal(idA)).balance + (await accBal(idB)).balance, balA0 + balB0), '16.6 ★ 两账户总额守恒');
+  const xRows = (
+    await pool.query(
+      `SELECT account_id, tx_type, amount FROM finance_transactions
+        WHERE related_module = 'account_transfer' AND related_id = ? AND tx_no = ?`,
+      ['XFER' + x1.data.txNo, x1.data.txNo]
+    )
+  )[0];
+  assert(xRows.length === 2, `16.6 生成 2 条流水（同批次号）（实得 ${xRows.length}）`);
+  if (xRows.length === 2) {
+    const out = xRows.find(r => Number(r.tx_type) === 2);
+    const inn = xRows.find(r => Number(r.tx_type) === 1);
+    assert(!!out && !!inn && near(out.amount, 300) && near(inn.amount, 300), '16.6 一出一进、金额一致');
+  }
+  const auditA4 = await auditActions();
+  assert(auditA4.includes('TRANSFER_ACCOUNT'), '16.6 审计含 TRANSFER_ACCOUNT');
+
+  // ── 16.7 转账幂等：同键重放不得转两次 ─────────────────────────────────────
+  const beforeA = (await accBal(idA)).balance;
+  const beforeB = (await accBal(idB)).balance;
+  const xReplay = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: xKey, fromId: idA, toId: idB, amount: 300, remark: '冒烟转账' },
+    adminToken
+  );
+  assert(xReplay.code === 200 && xReplay.data.replayed === true, '16.7 同键重放 replayed=true');
+  assert(near((await accBal(idA)).balance, beforeA), '16.7 ★ 重放后转出方余额未变（没转第二次）');
+  assert(near((await accBal(idB)).balance, beforeB), '16.7 ★ 重放后转入方余额未变');
+  const xConflict = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: xKey, fromId: idA, toId: idB, amount: 301 },
+    adminToken
+  );
+  assert(xConflict.code === 400, `16.7 同键不同金额被拒（${xConflict.code}）`);
+
+  // ── 16.8 转账拒绝路径 ─────────────────────────────────────────────────────
+  const xSame = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: 'smkacc_' + TS + '_x2', fromId: idA, toId: idA, amount: 10 },
+    adminToken
+  );
+  assert(xSame.code === 400 && /不能相同/.test(String(xSame.message)), `16.8 同账户转账被拒（${xSame.message}）`);
+  const xOver = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: 'smkacc_' + TS + '_x3', fromId: idA, toId: idB, amount: 99999999 },
+    adminToken
+  );
+  assert(xOver.code === 400 && /余额不足/.test(String(xOver.message)), `16.8 余额不足被拒（${xOver.message}）`);
+  assert(near((await accBal(idA)).balance, beforeA), '16.8 ★ 被拒后余额未变（校验在扣款之前）');
+  // 停用账户不能作为转出方
+  const cE = await createAcc('SMKACCE' + TS, '冒烟账户戊' + TS, 100, 'smkacc_' + TS + '_e');
+  const idE = cE.data.accountId;
+  await call(
+    'PUT',
+    '/mini/admin/accounts/' + idE,
+    { clientRequestId: 'smkacc_' + TS + '_de', remark: '', bankName: '', status: 0 },
+    adminToken
+  );
+  const xDisabled = await call(
+    'POST',
+    '/mini/admin/accounts/transfer',
+    { clientRequestId: 'smkacc_' + TS + '_x4', fromId: idE, toId: idB, amount: 10 },
+    adminToken
+  );
+  assert(
+    xDisabled.code === 400 && /停用/.test(String(xDisabled.message)),
+    `16.8 停用账户转出被拒（${xDisabled.message}）`
+  );
+
+  // ── 16.9 详情含近期流水 ───────────────────────────────────────────────────
+  const accDetail = await call('GET', '/mini/admin/accounts/' + idA, null, adminToken);
+  assert(accDetail.code === 200 && accDetail.data.account, `16.9 详情 200（${accDetail.code}）`);
+  assert(
+    Array.isArray(accDetail.data.transactions) && accDetail.data.transactions.length >= 1,
+    `16.9 详情返回近期流水（实得 ${(accDetail.data.transactions || []).length} 条）`
+  );
+  const accMissing = await call('GET', '/mini/admin/accounts/SMKNOACC', null, adminToken);
+  assert(accMissing.code === 404, `16.9 不存在的账户 → 404（实得 ${accMissing.code}）`);
+
   return {
     accountId,
     adminAccountId,
@@ -1974,10 +2294,11 @@ main()
           console.log('清理测试图片失败：' + e.message);
         }
       }
-      if (ctx.accountId) {
-        await pool.query('DELETE FROM finance_transactions WHERE account_id = ?', [ctx.accountId]);
-        await pool.query('DELETE FROM finance_accounts WHERE account_id = ?', [ctx.accountId]);
-      }
+      // 账户域（第 10 域）的账户都用 SMKA% 前缀（含第 0 节的 SMKACC+TS）——
+      // 按前缀清比逐个 ctx 字段可靠：第 16 节自建了甲~戊五个账户。
+      // ⚠️ 不放在 `if (ctx.accountId)` 里：早期异常时 ctx 可能为空，那样账户就漏清了。
+      await pool.query("DELETE FROM finance_transactions WHERE account_id LIKE 'SMKA%'");
+      await pool.query("DELETE FROM finance_accounts WHERE account_id LIKE 'SMKA%'");
       const accIds = [ctx.adminAccountId, ctx.salesmanAccountId].filter(Boolean);
       if (accIds.length) {
         await pool.query('DELETE FROM mini_audit_logs WHERE actor_id IN (?)', [accIds.map(i => `mini:${i}`)]);
@@ -2028,7 +2349,9 @@ main()
           "SELECT COUNT(*) n FROM wallet_accounts WHERE owner_id IN (SELECT worker_id FROM workers WHERE worker_name LIKE 'SMKWKORD%')"
         )
       )[0];
-      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n);
+      // 账户域残留（SMKA% 前缀，含第 0 节账户与第 16 节甲~戊）
+      const accLeft = (await pool.query("SELECT COUNT(*) n FROM finance_accounts WHERE account_id LIKE 'SMKA%'"))[0];
+      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n) + Number(accLeft[0].n);
       const clean =
         Number(left[0].n) === 0 &&
         Number(leftInc[0].n) === 0 &&

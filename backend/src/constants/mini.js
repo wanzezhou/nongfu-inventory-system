@@ -184,7 +184,14 @@ const IDEM_SCOPE = {
   //    ⚠️ 管理员取消与业务员取消（既有 CANCEL_ORDER）分开记：二者可取消范围不同
   //      （任意订单 vs 自己的未发货订单），审计里要能区分是谁在什么范围内操作。
   ADVANCE_ORDER: 'ADVANCE_ORDER',
-  CANCEL_ORDER_ADMIN: 'CANCEL_ORDER_ADMIN'
+  CANCEL_ORDER_ADMIN: 'CANCEL_ORDER_ADMIN',
+  // ── Phase 8b 第 10 域 公司账户（新增/编辑/删除/转账）──
+  //    ⚠️ 转账是**双边余额 + 双流水**动作，单独一个审计动作（不是两个「余额调整」），
+  //      否则审计里看不出「这两笔变动是同一次转账的两条腿」。
+  CREATE_ACCOUNT: 'CREATE_ACCOUNT',
+  UPDATE_ACCOUNT: 'UPDATE_ACCOUNT',
+  DELETE_ACCOUNT: 'DELETE_ACCOUNT',
+  TRANSFER_ACCOUNT: 'TRANSFER_ACCOUNT'
 };
 /** 服务端保留幂等键至少 24h（覆盖「用户离线数小时后重试」，§23.1） */
 const IDEM_TTL_HOURS = 24;
@@ -253,7 +260,14 @@ const AUDIT_ACTION = {
   //    推进用幂等键：同一「目标状态」重放 = 无变化（弱网点两下「开始配送」不该出两条审计）；
   //    管理员取消与业务员取消（CANCEL_ORDER）分开记：二者的可取消范围不同（任意单 vs 自己的未发货单）。
   ADVANCE_ORDER: 'ADVANCE_ORDER',
-  CANCEL_ORDER_ADMIN: 'CANCEL_ORDER_ADMIN'
+  CANCEL_ORDER_ADMIN: 'CANCEL_ORDER_ADMIN',
+  // ── Phase 8b 第 10 域 公司账户（新增/编辑/删除/转账）──
+  //    ⚠️ 转账必须带幂等键：弱网重试一次转账 = 两边各动两次，而每次动作都是合法的、
+  //      总额也守恒 —— 账面看不出异常，只有对手方流水条数会翻倍。
+  CREATE_ACCOUNT: 'CREATE_ACCOUNT',
+  UPDATE_ACCOUNT: 'UPDATE_ACCOUNT',
+  DELETE_ACCOUNT: 'DELETE_ACCOUNT',
+  TRANSFER_ACCOUNT: 'TRANSFER_ACCOUNT'
 };
 
 // ── 分页（⚠️ mysql2 不支持 LIMIT ?，必须 parseInt 内联）────────────────────

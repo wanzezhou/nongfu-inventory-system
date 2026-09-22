@@ -1,0 +1,66 @@
+.section-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.mt-24 {
+  margin-top: 24rpx;
+}
+
+.picker-value {
+  font-size: 28rpx;
+  color: #333a45;
+  padding: 12rpx 0;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid #f2f3f7;
+}
+
+.form-label {
+  font-size: 26rpx;
+  color: #5f6672;
+  width: 180rpx;
+}
+
+.form-input {
+  flex: 1;
+  text-align: right;
+  font-size: 26rpx;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  padding: 8rpx 0;
+}
+
+.kv-k {
+  color: #5f6672;
+  font-size: 26rpx;
+}
+
+.amt-in {
+  color: #c8102e;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.amt-out {
+  color: #0f8a4d;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.save-btn {
+  margin-top: 24rpx;
+}
+
+.bottom-space {
+  height: 60rpx;
+}
