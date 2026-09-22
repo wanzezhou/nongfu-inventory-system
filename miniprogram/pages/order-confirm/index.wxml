@@ -87,16 +87,9 @@
       </view>
     </view>
 
-    <view wx:else class="card">
-      <view class="section-title">提货人信息</view>
-      <view class="form-row">
-        <view class="form-label">联系人<text class="form-required">*</text></view>
-        <input class="form-input" placeholder="请输入联系人姓名" value="{{customerName}}" data-field="customerName" bindinput="onInput" />
-      </view>
-      <view class="form-row">
-        <view class="form-label">联系电话<text class="form-required">*</text></view>
-        <input class="form-input" type="number" placeholder="请输入联系电话" value="{{customerPhone}}" data-field="customerPhone" bindinput="onInput" />
-      </view>
+    <view class="card">
+      <view class="section-title">配送说明</view>
+      <view class="t-sub">下单后由水站安排配送，配送员送达前会电话联系收货人。</view>
     </view>
 
     <!-- 商品明细 -->

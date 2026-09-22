@@ -17,7 +17,8 @@
  *   6. wx:for 是否带 wx:key（缺 key 会导致列表复用错乱，属于典型隐性 bug）
  *   7. JS 文件语法（交给 node --check 的等价实现：new Function / vm 编译）
  *   8. 是否误把密钥类变量写进小程序（文档 §26 的安全红线）
- *   9. WXML 标签闭合错位（**硬错误**）、幂等键 acquireKey 的入参契约（第 9 项见函数注释）
+ *   9. WXML 标签闭合错位（**硬错误**）、wx:if/elif/else 链配对（断链 = 编译失败整包白屏）、
+ *      幂等键 acquireKey 的入参契约（第 9 项见函数注释）
  *   10. WXSS 注释完整性 —— 注释内若出现「星号紧邻斜杠」会把注释提前闭合，
  *       其后的中文注释文本落到代码位 → WXSS 编译失败 → **整个小程序白屏**
  *       （2026-09-22 实测：admin-mini-accounts 首注释里的类名清单正好包含这组字符）
@@ -135,16 +136,37 @@ function checkWxml(pagePath, jsFile) {
   //    正是最该被门禁硬拦的一类问题（对照 docs §5.8 第 ⑭ 条「可静态校验性」）。
   const selfClose = new Set(['input', 'image', 'icon', 'progress', 'slider', 'switch', 'textarea']);
   const tagRe = /<(\/?)([a-zA-Z][\w-]*)([^>]*?)(\/?)>/g;
-  const stack = []; // {name, line}
+  const stack = []; // {name, line, cond}
   const lineAt = idx => wxml.slice(0, idx).split('\n').length;
+  // wx:elif / wx:else 的前一个「完成的元素」必须带 wx:if 或 wx:elif，否则
+  // 编译器报 `wx:if not found` → 整包编译失败 → 模拟器白屏。
+  // 实测（2026-09-22）：order-confirm 自提下线时删了收货卡的 wx:if，漏删提货人卡的
+  // wx:else —— 结构校验当时 483 项全过，只有真编译才暴露。
+  let lastCond = null;
   let t;
   let broken = false;
   while ((t = tagRe.exec(wxml)) !== null) {
     const closing = t[1] === '/';
     const name = t[2];
     const selfClosed = t[4] === '/';
-    if (selfClose.has(name) && !closing) continue;
-    if (selfClosed) continue;
+    const cond = (/\bwx:(if|elif|else)\b/.exec(t[3]) || [])[1] || null;
+    if (!closing && (cond === 'elif' || cond === 'else')) {
+      if (lastCond !== 'if' && lastCond !== 'elif') {
+        fail(
+          `${pagePath}:${lineAt(t.index)}: wx:${cond} 找不到配对的 wx:if —— 上一个完成元素带的是 wx:${lastCond || '(无)'}（整包编译失败白屏）`
+        );
+        broken = true;
+        break;
+      }
+    }
+    if (selfClose.has(name) && !closing) {
+      lastCond = cond;
+      continue;
+    }
+    if (selfClosed) {
+      lastCond = cond;
+      continue;
+    }
     if (closing) {
       const top = stack[stack.length - 1];
       if (!top || top.name !== name) {
@@ -155,9 +177,10 @@ function checkWxml(pagePath, jsFile) {
         broken = true;
         break;
       }
+      lastCond = top.cond;
       stack.pop();
     } else {
-      stack.push({ name, line: lineAt(t.index) });
+      stack.push({ name, line: lineAt(t.index), cond });
     }
   }
   if (!broken && stack.length) {
