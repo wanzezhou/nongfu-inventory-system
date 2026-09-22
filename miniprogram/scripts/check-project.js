@@ -17,6 +17,7 @@
  *   6. wx:for 是否带 wx:key（缺 key 会导致列表复用错乱，属于典型隐性 bug）
  *   7. JS 文件语法（交给 node --check 的等价实现：new Function / vm 编译）
  *   8. 是否误把密钥类变量写进小程序（文档 §26 的安全红线）
+ *   9. WXML 标签闭合错位（**硬错误**）、幂等键 acquireKey 的入参契约（第 9 项见函数注释）
  *
  * 用法：node miniprogram/scripts/check-project.js
  */
@@ -119,11 +120,22 @@ function checkWxml(pagePath, jsFile) {
     ok();
   }
 
-  // WXML 标签闭合粗检：统计成对标签的开闭数量（自闭合与单标签排除）
+  // WXML 标签闭合**硬检**（2026-09-22 由 warn 提升为 fail）
+  // ---------------------------------------------------------------------------
+  // ⚠️ 这里曾经只打警告，代价是被实测抓到一次真实事故：
+  //    `pages/home/index.wxml` 的一次编辑漏了开标签、又多出一个 </view> ——
+  //    后果是「主数据」整行失去 bindtap（点了没反应，该域在手机上完全不可达），
+  //    且其后的卡片被挤出容器、`<block>` 提前闭合（非管理员看到的区块跟着错位）。
+  //    而当时门禁**确实看见了**，却只输出一行警告 + 一句「✅ 结构校验通过」，
+  //    缺陷就这样活过了一整个交付批次。
+  //    WXML 没有编译期检查，闭合错位不会报错、只会静默渲染错乱 ——
+  //    正是最该被门禁硬拦的一类问题（对照 docs §5.8 第 ⑭ 条「可静态校验性」）。
   const selfClose = new Set(['input', 'image', 'icon', 'progress', 'slider', 'switch', 'textarea']);
   const tagRe = /<(\/?)([a-zA-Z][\w-]*)([^>]*?)(\/?)>/g;
-  const stack = [];
+  const stack = []; // {name, line}
+  const lineAt = idx => wxml.slice(0, idx).split('\n').length;
   let t;
+  let broken = false;
   while ((t = tagRe.exec(wxml)) !== null) {
     const closing = t[1] === '/';
     const name = t[2];
@@ -131,20 +143,25 @@ function checkWxml(pagePath, jsFile) {
     if (selfClose.has(name) && !closing) continue;
     if (selfClosed) continue;
     if (closing) {
-      if (!stack.length || stack[stack.length - 1] !== name) {
-        warn(`${pagePath}: 标签闭合可疑 —— 遇到 </${name}>，栈顶为 ${stack[stack.length - 1] || '(空)'}`);
+      const top = stack[stack.length - 1];
+      if (!top || top.name !== name) {
+        fail(
+          `${pagePath}:${lineAt(t.index)}: 标签闭合错位 —— 遇到 </${name}>，期望 </${top ? top.name : '(空)'}>` +
+            `${top ? `（<${top.name}> 开于第 ${top.line} 行）` : ''}`
+        );
+        broken = true;
         break;
       }
       stack.pop();
     } else {
-      stack.push(name);
+      stack.push({ name, line: lineAt(t.index) });
     }
   }
-  if (stack.length) {
-    warn(`${pagePath}: 存在未闭合标签 ${stack.join(', ')}`);
-  } else {
-    ok();
+  if (!broken && stack.length) {
+    fail(`${pagePath}: 存在未闭合标签 ${stack.map(s => `<${s.name}>（第 ${s.line} 行）`).join(', ')}`);
+    broken = true;
   }
+  if (!broken) ok();
 }
 
 /** 8. 密钥红线：小程序包里不得出现任何服务端凭据（文档 §26） */
@@ -160,6 +177,41 @@ function checkNoSecrets(files) {
     }
   }
   ok();
+}
+
+/**
+ * 9. 幂等键契约：`acquireKey()` 的首参必须是**对象**，不能是字符串
+ * ---------------------------------------------------------------------------
+ * 这是一类「只有真机连做两次才会暴露」的错误，实测发生过：
+ *     acquireKey('account-xfer-' + fromId + '-' + toId + '-' + amt)   // ✗
+ * 传字符串时 `utils/idempotency.js` 解构出的 scope / ownerKey 全是 undefined，
+ * 内容指纹退化成常量 `hash({})` —— 于是「内容没变就复用同一个键」这条正常逻辑
+ * 被**永久触发**：同一台设备 24h 内的第二次操作（金额、账户都不同）会复用上一次的键，
+ * 服务端 requestHash 对不上 → 400「重复提交的请求内容不一致，请刷新后重试」。
+ * 用户完全联想不到是幂等键，只会认为「转账坏了」；而接口冒烟（脚本直连 API）
+ * 永远测不到它 —— 因为脚本自己生成键，根本不走页面这段代码。
+ *
+ * 规则：`acquireKey(` 之后若出现引号/模板串，直接判错（对象字面量或变量都放行）。
+ */
+function checkIdemKeyContract(files) {
+  const bad = /acquireKey\s*\(\s*['"`]/;
+  let hits = 0;
+  for (const f of files) {
+    const full = path.join(ROOT, f);
+    if (!fs.existsSync(full)) continue;
+    const src = fs.readFileSync(full, 'utf8');
+    // 注释里出现示例代码不算（本项目已因「注释被当代码」踩过一次构造性误报）
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    code.split('\n').forEach((line, i) => {
+      if (bad.test(line)) {
+        fail(
+          `${f}:${i + 1}: acquireKey() 传了字符串 —— 契约是 {scope, ownerKey, payload}（详见 utils/idempotency.js）`
+        );
+        hits++;
+      }
+    });
+  }
+  if (!hits) ok();
 }
 
 function walk(dir, out) {
@@ -230,6 +282,9 @@ for (const f of all) {
     checkJsSyntax(f);
   }
 }
+
+// 9. 幂等键契约（页面也一起查 —— 误用恰恰都发生在页面里）
+checkIdemKeyContract(all);
 
 // config 常量导出检查（页面大量依赖，漏导出会运行时报 undefined）
 try {

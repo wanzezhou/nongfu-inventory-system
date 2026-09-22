@@ -1,0 +1,79 @@
+<!-- 发放工资（管理员 · Phase 8b 第 11 域）
+     ⚠️ 实发为负时不扣账户：页面上必须讲明，否则用户会以为「少发了钱」。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+  <view wx:if="{{formError}}" class="banner banner-danger">{{formError}}</view>
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <block wx:if="{{!loading && workerName}}">
+    <view class="card">
+      <view class="row-between">
+        <text class="t-strong">{{workerName}}</text>
+        <text class="t-sm t-sub">{{employeeTypeName}} · {{month}}</text>
+      </view>
+      <view wx:if="{{paid}}" class="banner banner-warn mt-16">
+        本月已发放：实发 ¥{{payment.amount}}（{{payment.paidAt}}）。撤销后才能重发。
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="row-between">
+        <text class="t-sub">当月配送费（应发参考）</text>
+        <text class="t-strong">¥{{calcFee}}</text>
+      </view>
+      <view class="divider"></view>
+      <view class="form-row">
+        <text class="form-label">应发金额</text>
+        <input class="form-input" type="digit" placeholder="大于 0，可手动补加其他工资" value="{{due}}" bindinput="onDueInput" />
+      </view>
+      <view class="form-row">
+        <text class="form-label">发放账户</text>
+        <picker mode="selector" range="{{accLabels}}" value="{{accIndex}}" bindchange="onAccChange">
+          <view class="row-between">
+            <text class="t-strong">{{accLabels[accIndex] || '请选择'}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="form-label">备注</text>
+        <input class="form-input" placeholder="选填" value="{{remark}}" bindinput="onRemarkInput" />
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">本次结算</view>
+      <view class="row-between">
+        <text class="t-sub">应发</text>
+        <text class="t-strong">¥{{due}}</text>
+      </view>
+      <view class="row-between mt-8">
+        <text class="t-sub">待扣预支</text>
+        <text class="t-strong">−¥{{pendingAdvance}}</text>
+      </view>
+      <view class="divider"></view>
+      <view class="row-between">
+        <text class="t-strong">实发</text>
+        <text class="t-strong">¥{{netText}}</text>
+      </view>
+      <view wx:if="{{net < 0}}" class="banner banner-warn mt-16">
+        实发为负（预支超过应发）→ 挂账下月继续扣，**本次不动账户、不产生流水**。
+      </view>
+      <view wx:if="{{insufficient}}" class="banner banner-warn mt-16">
+        所选账户余额 ¥{{acc.currentBalance}} 不足本次实发，服务端会拒绝。
+      </view>
+    </view>
+
+    <view wx:if="{{pendingAdvances.length}}" class="card">
+      <view class="section-title">待抵扣预支明细（先日期先扣）</view>
+      <view wx:for="{{pendingAdvances}}" wx:key="advanceId" class="row-between mt-8">
+        <text class="t-sub">{{item.advanceDate || item.advanceId}}</text>
+        <text class="t-sm">¥{{item.amount}}（已抵 ¥{{item.deductedAmount}}，剩 ¥{{item.remaining}}）</text>
+      </view>
+    </view>
+
+    <view class="btn" bindtap="onSubmit">{{submitting ? '提交中…' : (paid ? '本月已发放' : '确认发放')}}</view>
+    <view wx:if="{{paid}}" class="btn btn-ghost mt-16" bindtap="onRevoke">撤销本次发放</view>
+    <view class="mt-24"></view>
+  </block>
+</view>

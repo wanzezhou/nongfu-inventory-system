@@ -3,7 +3,8 @@
 //    幂等键在点提交那一刻生成，失败不释放以便重试复用。
 const ui = require('../../utils/ui');
 const fmt = require('../../utils/format');
-const { acquireKey } = require('../../utils/idempotency');
+const auth = require('../../utils/auth');
+const { acquireKey, releaseKey } = require('../../utils/idempotency');
 
 Page({
   data: {
@@ -124,7 +125,32 @@ Page({
       }
     }
     this.setData({ submitting: true, formError: '' });
-    const key = acquireKey('account-' + (this.data.isEdit ? 'upd-' + this.data.accountId : 'new'));
+    // ⚠️ acquireKey 的契约是**对象**（{scope, ownerKey, payload}），不是字符串。
+    //    传字符串会让 scope / ownerKey / 内容指纹一起退化成 undefined 与常量「{}」，
+    //    于是「键内容没变 → 复用同一个键」这条正常逻辑被永久触发：
+    //    同一台设备 24h 内的**下一次**操作会复用上一次的键，被服务端判成
+    //    「同键不同参数」而 400 —— 用户看到的是「重复提交的请求内容不一致」，
+    //    根本联想不到幂等键。门禁已加静态检查（check-project.js）。
+    const me = auth.me();
+    const ownerKey = `${me.account.role}:${me.account.targetId || 'self'}`;
+    const scope = this.data.isEdit ? 'UPDATE_ACCOUNT' : 'CREATE_ACCOUNT';
+    const keyPayload = this.data.isEdit
+      ? {
+          id: this.data.accountId,
+          bankName: f.bankName,
+          bankAccount: f.bankAccount,
+          remark: f.remark,
+          status: f.status
+        }
+      : {
+          accountName: String(f.accountName).trim(),
+          accountType: f.accountType,
+          initialBalance: Number(f.initialBalance) || 0,
+          bankName: f.bankName,
+          bankAccount: f.bankAccount,
+          remark: f.remark
+        };
+    const key = acquireKey({ scope, ownerKey, payload: keyPayload });
     try {
       if (this.data.isEdit) {
         // 只提交可改字段（名称/类型/余额不在其中）
@@ -154,6 +180,7 @@ Page({
           { silent: true }
         );
       }
+      releaseKey(); // 成功后释放：下一次保存是一次新操作，不能复用本次的键
       wx.showToast({ title: '已保存', icon: 'success' });
       setTimeout(() => ui.navTo('/pages/admin-accounts/index'), 600);
     } catch (e) {
@@ -171,13 +198,16 @@ Page({
       '删除'
     );
     if (!ok) return;
-    const key = acquireKey('account-del-' + this.data.accountId);
+    const me = auth.me();
+    const ownerKey = `${me.account.role}:${me.account.targetId || 'self'}`;
+    const key = acquireKey({ scope: 'DELETE_ACCOUNT', ownerKey, payload: { id: this.data.accountId } });
     try {
       await ui.request.del(
         '/admin/accounts/' + this.data.accountId + '?clientRequestId=' + encodeURIComponent(key),
         null,
         { silent: true }
       );
+      releaseKey();
       wx.showToast({ title: '已删除', icon: 'success' });
       setTimeout(() => ui.navTo('/pages/admin-accounts/index'), 600);
     } catch (e) {

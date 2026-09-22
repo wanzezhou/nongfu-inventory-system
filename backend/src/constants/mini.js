@@ -191,7 +191,18 @@ const IDEM_SCOPE = {
   CREATE_ACCOUNT: 'CREATE_ACCOUNT',
   UPDATE_ACCOUNT: 'UPDATE_ACCOUNT',
   DELETE_ACCOUNT: 'DELETE_ACCOUNT',
-  TRANSFER_ACCOUNT: 'TRANSFER_ACCOUNT'
+  TRANSFER_ACCOUNT: 'TRANSFER_ACCOUNT',
+  // ── Phase 8b 第 11 域 工资（发放/撤销发放/预支/撤销预支）──
+  //    ⚠️ 发放与预支**都要幂等键**，而且理由比转账更硬：
+  //      工资发放对「同一员工同一月」有唯一约束，弱网重试第二次会被业务校验挡下（不会重复发钱）；
+  //      但**预支没有这个约束** —— 重试一次就是真的再预支一笔、账户再扣一次，
+  //      且两笔都合法、账面看不出来。所以两个都必须带键。
+  //    ⚠️ 撤销类（REVOKE/DELETE）同样要键：撤销是「回补余额」的正向资金动作，
+  //      重放一次 = 余额多加一次（这正是本仓库铁律里「撤销方向抄反」的同类风险）。
+  PAY_SALARY: 'PAY_SALARY',
+  REVOKE_SALARY_PAYMENT: 'REVOKE_SALARY_PAYMENT',
+  CREATE_SALARY_ADVANCE: 'CREATE_SALARY_ADVANCE',
+  DELETE_SALARY_ADVANCE: 'DELETE_SALARY_ADVANCE'
 };
 /** 服务端保留幂等键至少 24h（覆盖「用户离线数小时后重试」，§23.1） */
 const IDEM_TTL_HOURS = 24;
@@ -267,7 +278,14 @@ const AUDIT_ACTION = {
   CREATE_ACCOUNT: 'CREATE_ACCOUNT',
   UPDATE_ACCOUNT: 'UPDATE_ACCOUNT',
   DELETE_ACCOUNT: 'DELETE_ACCOUNT',
-  TRANSFER_ACCOUNT: 'TRANSFER_ACCOUNT'
+  TRANSFER_ACCOUNT: 'TRANSFER_ACCOUNT',
+  // ── Phase 8b 第 11 域 工资（发放/撤销发放/预支/撤销预支）──
+  //    ⚠️ 四个动作**都**落审计，`actor_id = mini:<accountId>`：工资是唯一
+  //      「公司对个人」的资金动作，出问题时第一个被问的就是「谁在什么时候发的」。
+  PAY_SALARY: 'PAY_SALARY',
+  REVOKE_SALARY_PAYMENT: 'REVOKE_SALARY_PAYMENT',
+  CREATE_SALARY_ADVANCE: 'CREATE_SALARY_ADVANCE',
+  DELETE_SALARY_ADVANCE: 'DELETE_SALARY_ADVANCE'
 };
 
 // ── 分页（⚠️ mysql2 不支持 LIMIT ?，必须 parseInt 内联）────────────────────

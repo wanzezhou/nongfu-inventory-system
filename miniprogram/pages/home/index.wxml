@@ -219,9 +219,14 @@
           <text class="t-strong">备货 / 配送 / 完成 / 取消 ›</text>
         </view>
         <view class="divider"></view>
-        
+        <view class="kv-row" bindtap="goAdminMaster">
           <text class="t-sub">主数据</text>
           <text class="t-strong">供应商 / 员工 / 水站 / 机台 ›</text>
+        </view>
+        <view class="divider"></view>
+        <view class="kv-row" bindtap="goAdminSalary">
+          <text class="t-sub">工资</text>
+          <text class="t-strong">应发核对 / 发放 / 预支 ›</text>
         </view>
         <view class="divider"></view>
         <view class="kv-row" bindtap="goAdminInventory">

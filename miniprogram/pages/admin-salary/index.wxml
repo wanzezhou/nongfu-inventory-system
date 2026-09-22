@@ -1,0 +1,60 @@
+<!-- 工资发放 · 汇总（管理员 · Phase 8b 第 11 域）
+     ⚠️ 本页不提供「批量发全员」：手机上一键给全员发钱，错一次就是几十个人的账要逐个撤。
+        批量发放仍走 Web（那里有逐行核对与确认弹窗）。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+
+  <view class="card">
+    <view class="section-title">发放月份</view>
+    <picker mode="date" fields="month" value="{{month}}" bindchange="onMonthChange">
+      <view class="row-between">
+        <text class="t-strong">{{month}}</text>
+        <text class="t-sub">点击切换 ›</text>
+      </view>
+    </picker>
+    <view class="t-sub mt-8">应发 = 当月配送费；实发 = 应发 − 待扣预支（可为负 = 挂账下月继续扣）</view>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">应发合计</text>
+      <text class="t-strong">¥{{summaryText.totalDue}}</text>
+    </view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sub">待扣预支合计</text>
+      <text class="t-strong">¥{{summaryText.totalPendingAdvance}}</text>
+    </view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sub">已发放</text>
+      <text class="t-strong">{{summary.paidWorkerCount || 0}} / {{summary.workerCount || 0}} 人</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">预支台账 / 登记预支</text>
+      <text class="t-primary" bindtap="goAdvances">进入 ›</text>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+  <view wx:elif="{{!list.length && !loading}}" class="empty">
+    <text class="empty-icon">💰</text>
+    <text class="t-sub">没有在职员工</text>
+  </view>
+
+  <view wx:for="{{list}}" wx:key="workerId" class="card" data-id="{{item.workerId}}" bindtap="goPay">
+    <view class="row-between">
+      <text class="t-strong">{{item.workerName}}</text>
+      <text class="t-sm t-sub">{{item.employeeTypeName}} · 配送费 ¥{{item.calcFeeText}}</text>
+    </view>
+    <view class="row-between mt-8">
+      <text class="t-sub">应发 ¥{{item.dueText}} · 待扣 ¥{{item.pendingText}}</text>
+      <text wx:if="{{item.paid}}" class="tag tag-primary">已发 ¥{{item.paidText}}</text>
+      <text wx:else class="t-strong">实发 ¥{{item.netText}} ›</text>
+    </view>
+  </view>
+  <view class="mt-24"></view>
+</view>

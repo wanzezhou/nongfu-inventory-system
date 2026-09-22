@@ -43,6 +43,7 @@ const adminProductCtrl = require('../controllers/mini/admin/productController');
 const adminInventoryCtrl = require('../controllers/mini/admin/inventoryController');
 const adminOrderCtrl = require('../controllers/mini/admin/orderController');
 const adminCompanyAccountCtrl = require('../controllers/mini/admin/companyAccountController');
+const adminSalaryCtrl = require('../controllers/mini/admin/salaryController');
 // 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
 const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
@@ -257,8 +258,24 @@ router.get('/admin/accounts/:id', requireMiniAdmin, adminCompanyAccountCtrl.getA
 router.put('/admin/accounts/:id', requireMiniAdmin, requireMiniActive, adminCompanyAccountCtrl.updateAccount);
 router.delete('/admin/accounts/:id', requireMiniAdmin, requireMiniActive, adminCompanyAccountCtrl.removeAccount);
 
-// ── 兜底 404 ─────────────────────────────────────────────────────────────────
+// ── 域 11/17：工资（汇总 / 发放预览 / 发放 / 撤销发放 / 预支台账 / 预支登记 / 撤销预支）──
+// ⚠️ 静态段（`/salary/options`、`/salary/summary`、`/salary/advances`）必须早于
+//    `/salary/worker/:workerId` 与 `/salary/payments|advances/:id`（本仓库既有陷阱：
+//    动态段会吞掉后面的静态段）。
+// ⚠️ 本域是唯一「公司 → 个人」的资金动作域。四个写接口**全部带幂等键**，
+//    理由比转账更硬：发放对「同员工同月」有唯一约束（重试会被业务校验挡下），
+//    但**预支没有** —— 弱网重试一次就是真的再预支一笔、账户再扣一次，两笔都合法。
+// ⚠️ 事务体全部复用 Web 端原语（services/salaryLedger），本端只做编排。
+router.get('/admin/salary/options', requireMiniAdmin, adminSalaryCtrl.getFormOptions);
+router.get('/admin/salary/summary', requireMiniAdmin, adminSalaryCtrl.getSummary);
+router.get('/admin/salary/advances', requireMiniAdmin, adminSalaryCtrl.listAdvances);
+router.post('/admin/salary/advances', requireMiniAdmin, requireMiniActive, adminSalaryCtrl.createAdvance);
+router.get('/admin/salary/worker/:workerId', requireMiniAdmin, adminSalaryCtrl.getWorkerPreview);
+router.post('/admin/salary/pay', requireMiniAdmin, requireMiniActive, adminSalaryCtrl.paySalary);
+router.delete('/admin/salary/payments/:id', requireMiniAdmin, requireMiniActive, adminSalaryCtrl.revokePayment);
+router.delete('/admin/salary/advances/:id', requireMiniAdmin, requireMiniActive, adminSalaryCtrl.removeAdvance);
 
+// ── 兜底 404 ─────────────────────────────────────────────────────────────────
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，
 //    返回「未登录」401 —— 把「接口不存在」伪装成「鉴权失败」，
 //    排障时会往错误方向查（且会让 §22.4 的隔离验证出现假阳性）。

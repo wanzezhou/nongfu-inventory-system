@@ -31,7 +31,11 @@
     "pages/admin-order-detail/index",
     "pages/admin-accounts/index",
     "pages/admin-account-edit/index",
-    "pages/admin-account-transfer/index"
+    "pages/admin-account-transfer/index",
+    "pages/admin-salary/index",
+    "pages/admin-salary-pay/index",
+    "pages/admin-advances/index",
+    "pages/admin-advance-edit/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

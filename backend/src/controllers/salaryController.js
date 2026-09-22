@@ -11,56 +11,31 @@ const { resolveRange, buildRangeWhere, RANGE_INVALID_MSG } = require('../utils/d
 const { writeWorkbook } = require('../utils/excel');
 // 工资口径（配送费表达式 / 订单过滤 / 应发计算 / 员工汇总）单一来源：
 // services/salarySummary.js —— 工资统计页、工资导出、成本汇总导出共用同一套口径
+// ⚠️ 只保留本控制器仍用得上的成员：BASE_ORDER_FILTER / commonWhere 随资金事务体
+//    一起搬去了 salaryLedger（保留会变成未使用导入 → ESLint 告警，基线只降不升）
 const {
-  ORDER_TYPE_IN, deliveryFeeExpr, BASE_ORDER_FILTER,
-  commonWhere, commonWhereRange, calcDue, round2, loadSalarySummary
+  ORDER_TYPE_IN,
+  deliveryFeeExpr,
+  commonWhereRange,
+  calcDue,
+  round2,
+  loadSalarySummary
 } = require('../services/salarySummary');
 
-function genPaymentId() {
-  return 'PAY' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 1000).toString(36).toUpperCase();
-}
-function genAdvanceId() {
-  return 'ADV' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 1000).toString(36).toUpperCase();
-}
-function genTxNo() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return 'TX' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + String(Math.floor(Math.random() * 100000)).padStart(5, '0');
-}
-function genTxId() {
-  return 'TX' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 10000).toString(36).toUpperCase();
-}
-function isMonth(m) {
-  return m && /^\d{4}-\d{2}$/.test(m);
-}
-function isDate(d) {
-  return d && /^\d{4}-\d{2}-\d{2}$/.test(String(d));
-}
-
-// 员工当月实时配送费（共享计算）
-async function calcWorkerFee(conn, workerId, month) {
-  const feeExpr = deliveryFeeExpr();
-  const [rows] = await conn.execute(
-    `SELECT ROUND(SUM(${feeExpr} * oi.quantity), 2) AS calc_fee
-     FROM orders o
-     JOIN order_items oi ON o.order_id = oi.order_id
-     WHERE o.worker_id = ? AND ${commonWhere(month)}`,
-    [workerId, month]
-  );
-  return Number(rows[0].calc_fee) || 0;
-}
-
-// 员工未结清预支列表（按预支日期/ID 顺序，供结算抵扣）与待扣总额
-async function loadPendingAdvances(conn, workerId) {
-  const [rows] = await conn.execute(
-    `SELECT advance_id, amount, deducted_amount FROM salary_advances
-     WHERE worker_id = ? AND deducted_amount < amount
-     ORDER BY advance_date ASC, advance_id ASC`,
-    [workerId]
-  );
-  const pending = rows.reduce((s, a) => s + (Number(a.amount) - Number(a.deducted_amount)), 0);
-  return { advances: rows, pending: round2(pending) };
-}
+// ⚠️ 应发口径与**资金原语**已抽到 services/salaryLedger.js（Web 与小程序管理端共用同一段）：
+//    本控制器只做 HTTP 编排（事务边界 / 响应），不再自己写余额与流水的语句
+//    —— 文档 §41 头号禁止项。入参校验随事务体一起进了原语（校验失败抛 bizFail）。
+const {
+  isMonth,
+  EMPLOYEE_TYPE_TEXT,
+  calcWorkerFee,
+  loadPendingAdvances,
+  buildAdvanceListWhere,
+  applySalaryPayment,
+  revertSalaryPaymentById,
+  applySalaryAdvance,
+  revertSalaryAdvanceById
+} = require('../services/salaryLedger');
 
 // 按员工汇总应发（时间范围）—— 口径与取数见 services/salarySummary.js（工资导出共用同一份）
 async function getSalarySummary(req, res) {
@@ -100,7 +75,7 @@ async function getSalaryOrders(req, res) {
     );
 
     // 订单级商品明细（供展开查看：每件商品的配送费 = 费率快照 × 数量）
-    const orderIds = rows.map((r) => r.order_id);
+    const orderIds = rows.map(r => r.order_id);
     let itemsByOrder = {};
     if (orderIds.length > 0) {
       const placeholders = orderIds.map(() => '?').join(',');
@@ -118,7 +93,7 @@ async function getSalaryOrders(req, res) {
         orderIds
       );
       itemsByOrder = {};
-      items.forEach((it) => {
+      items.forEach(it => {
         (itemsByOrder[it.order_id] = itemsByOrder[it.order_id] || []).push({
           productName: it.product_name || '未知商品',
           spec: it.specification || '',
@@ -129,7 +104,7 @@ async function getSalaryOrders(req, res) {
       });
     }
 
-    const list = rows.map((r) => ({
+    const list = rows.map(r => ({
       orderId: r.order_id,
       orderType: Number(r.order_type),
       orderTypeName: ORDER_TYPES[r.order_type] || '未知',
@@ -169,7 +144,7 @@ async function getSalaryOrderItems(req, res) {
       [orderId]
     );
 
-    const list = rows.map((r) => ({
+    const list = rows.map(r => ({
       productId: r.product_id,
       productName: r.product_name || '-',
       spec: r.specification || '',
@@ -221,8 +196,11 @@ async function getWorkerSummary(req, res) {
       payAmount: rec ? Number(rec.amount) || 0 : net,
       payment: rec
         ? {
-            paymentId: rec.payment_id, amount: Number(rec.amount) || 0,
-            accountName: rec.account_name || '', paidAt: rec.paid_at, remark: rec.remark || ''
+            paymentId: rec.payment_id,
+            amount: Number(rec.amount) || 0,
+            accountName: rec.account_name || '',
+            paidAt: rec.paid_at,
+            remark: rec.remark || ''
           }
         : null
     });
@@ -234,140 +212,42 @@ async function getWorkerSummary(req, res) {
 
 // 确认发放：事务——唯一校验 + 应发计算 + 预支抵扣 + 记发放 + 公司账户扣款 + 支出流水
 // 实发 = 应发（全员=配送费，发放时可传 amount 手动覆盖补加其他工资） - 待扣预支；实发可为负（挂账下月扣）
+// 确认发放：事务体在 services/salaryLedger.applySalaryPayment（Web 与小程序共用）
+// 实发 = 应发（可手动覆盖）− 待扣预支；实发为负 = 挂账下月继续扣（不动账户）
 async function paySalary(req, res) {
+  const conn = await pool.getConnection();
   try {
-    const { workerId, month, accountId, amount, remark } = req.body;
-    if (!workerId) return error(res, '请选择员工', 400);
-    if (!isMonth(month)) return error(res, '发放月份格式应为 YYYY-MM', 400);
+    await conn.beginTransaction();
     const user = (req.user && (req.user.username || req.user.id)) || null;
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-      // 员工
-      const [wk] = await conn.query('SELECT worker_id, worker_name, employee_type, monthly_salary FROM workers WHERE worker_id = ? AND status = 1', [workerId]);
-      if (!wk.length) { await conn.rollback(); return error(res, '员工不存在或已离职', 400); }
-      const w = wk[0];
-      // 该月未发放（唯一）
-      const [dup] = await conn.query('SELECT payment_id FROM salary_payments WHERE worker_id = ? AND salary_month = ?', [workerId, month]);
-      if (dup.length) { await conn.rollback(); return error(res, '该员工该月工资已发放，请勿重复操作', 400); }
-      // 应发：显式 amount（全员发放可改，用于补加其他工资）优先，否则=当月配送费
-      const fee = await calcWorkerFee(conn, workerId, month);
-      const autoDue = round2(calcDue(w, fee));
-      const manual = amount !== undefined && amount !== null && amount !== '' ? Number(amount) : null;
-      const due = manual !== null && !isNaN(manual) && manual > 0 ? round2(manual) : autoDue;
-      if (due <= 0) { await conn.rollback(); return error(res, '该员工该月无应发工资，无需发放', 400); }
-      // 待扣预支
-      const { advances, pending } = await loadPendingAdvances(conn, workerId);
-      const net = round2(due - pending); // 实发，可为负
-      // 账户处理（仅实发 > 0 时扣款；负数/0 表示预支已抵扣或倒欠，不涉及本次资金）
-      let accountName = null;
-      let balance = null;
-      if (net > 0) {
-        if (!accountId) { await conn.rollback(); return error(res, '请选择发放账户', 400); }
-        const [acc] = await conn.query('SELECT * FROM finance_accounts WHERE account_id = ? FOR UPDATE', [accountId]);
-        if (!acc.length || Number(acc[0].status) !== 1) { await conn.rollback(); return error(res, '发放账户不存在或已停用', 400); }
-        if (Number(acc[0].current_balance) < net) { await conn.rollback(); return error(res, '发放账户可用余额不足', 400); }
-        balance = Number(acc[0].current_balance);
-        accountName = acc[0].account_name;
-      }
-      // 记发放（amount=实发，可为负）
-      const paymentId = genPaymentId();
-      await conn.query(
-        `INSERT INTO salary_payments (payment_id, worker_id, worker_name, salary_month, amount, account_id, account_name, paid_at, remark, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW(), NOW())`,
-        [paymentId, workerId, w.worker_name, month, net, net > 0 ? accountId : null, accountName, remark || null, user]
-      );
-      // 预支抵扣：用应发逐笔结清（先日期先扣），明细入 salary_payment_advances 供撤销还原
-      let remain = due;
-      if (advances.length > 0) {
-        for (const adv of advances) {
-          if (remain <= 0) break;
-          const left = Number(adv.amount) - Number(adv.deducted_amount);
-          const cut = Math.min(left, remain);
-          const newDeducted = round2(Number(adv.deducted_amount) + cut);
-          await conn.query(
-            'UPDATE salary_advances SET deducted_amount = ?, status = ?, updated_at = NOW() WHERE advance_id = ?',
-            [newDeducted, newDeducted >= Number(adv.amount) ? 1 : 0, adv.advance_id]
-          );
-          await conn.query(
-            'INSERT INTO salary_payment_advances (payment_id, advance_id, deducted_amount) VALUES (?, ?, ?)',
-            [paymentId, adv.advance_id, cut]
-          );
-          remain = round2(remain - cut);
-        }
-      }
-      // 实发 > 0：公司账户扣款 + 支出流水
-      if (net > 0) {
-        await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [balance - net, accountId]);
-        await conn.query(
-          `INSERT INTO finance_transactions
-             (tx_id, tx_no, account_id, account_name, tx_type, tx_category, amount, balance_before, balance_after,
-              related_module, related_id, tx_date, handler, counterparty, remark, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, NOW())`,
-          [
-            genTxId(), genTxNo(), accountId, accountName, 2, '工资发放', net,
-            balance, balance - net, 'salary_payment', paymentId, user || null, w.worker_name, remark || null
-          ]
-        );
-      }
-      await conn.commit();
-      return success(res, { paymentId, amount: net, month, due, pendingAdvance: pending }, '工资发放成功');
-    } catch (e) {
-      await conn.rollback();
-      throw e;
-    } finally {
-      conn.release();
-    }
+    const r = await applySalaryPayment(conn, Object.assign({}, req.body, { user }));
+    await conn.commit();
+    return success(res, r, '工资发放成功');
   } catch (e) {
+    await conn.rollback();
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('paySalary error:', e);
-    return error(res, e.message.includes('余额') || e.message.includes('已发放') || e.message.includes('应发') || e.message.includes('账户') ? e.message : '工资发放失败', 400); // hazard-allow: bizFail 白名单文案（余额/已发放/应发）（设计输出，非内部细节）
+    return error(res, '工资发放失败', 400);
+  } finally {
+    conn.release();
   }
 }
 
 // 撤销发放：回补公司账户 + 删流水 + 删发放记录 + 反向还原预支抵扣
+// 撤销发放：回补公司账户 + 删流水 + 删发放记录 + 反向还原预支抵扣
 async function revokeSalaryPayment(req, res) {
+  const conn = await pool.getConnection();
   try {
-    const { id } = req.params;
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-      const [p] = await conn.query('SELECT * FROM salary_payments WHERE payment_id = ? FOR UPDATE', [id]);
-      if (!p.length) { await conn.rollback(); return error(res, '发放记录不存在', 404); }
-      const rec = p[0];
-      // 撤销关联支出流水并回补余额
-      const [txs] = await conn.query(
-        'SELECT tx_id, account_id, amount FROM finance_transactions WHERE related_module = ? AND related_id = ?',
-        ['salary_payment', id]
-      );
-      for (const tx of txs) {
-        await conn.query('UPDATE finance_accounts SET current_balance = current_balance + ?, updated_at = NOW() WHERE account_id = ?', [tx.amount, tx.account_id]);
-        await conn.query('DELETE FROM finance_transactions WHERE tx_id = ?', [tx.tx_id]);
-      }
-      // 反向还原预支抵扣（该次发放抵扣的预支退回挂账）
-      const [det] = await conn.query('SELECT advance_id, deducted_amount FROM salary_payment_advances WHERE payment_id = ?', [id]);
-      for (const d of det) {
-        await conn.query(
-          `UPDATE salary_advances
-             SET deducted_amount = GREATEST(0, deducted_amount - ?),
-                 status = IF(GREATEST(0, deducted_amount - ?) >= amount, 1, 0),
-                 updated_at = NOW()
-           WHERE advance_id = ?`,
-          [d.deducted_amount, d.deducted_amount, d.advance_id]
-        );
-      }
-      await conn.query('DELETE FROM salary_payment_advances WHERE payment_id = ?', [id]);
-      await conn.query('DELETE FROM salary_payments WHERE payment_id = ?', [id]);
-      await conn.commit();
-      return success(res, null, '已撤销发放，账户余额与预支已还原');
-    } catch (e) {
-      await conn.rollback();
-      throw e;
-    } finally {
-      conn.release();
-    }
+    await conn.beginTransaction();
+    await revertSalaryPaymentById(conn, req.params.id);
+    await conn.commit();
+    return success(res, null, '已撤销发放，账户余额与预支已还原');
   } catch (e) {
+    await conn.rollback();
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('revokeSalaryPayment error:', e);
     return error(res, '撤销发放失败', 500);
+  } finally {
+    conn.release();
   }
 }
 
@@ -376,12 +256,10 @@ async function revokeSalaryPayment(req, res) {
 // 预支列表（筛选：员工/状态，分页）
 async function getAdvances(req, res) {
   try {
-    const { workerId, status, page = 1, pageSize = 20 } = req.query;
-    const where = [];
-    const params = [];
-    if (workerId) { where.push('worker_id = ?'); params.push(workerId); }
-    if (status !== undefined && status !== '' && status !== null) { where.push('status = ?'); params.push(Number(status)); }
-    const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const { page = 1, pageSize = 20 } = req.query;
+    // 筛选条件与小程序管理端**共用同一段构造**（两端对「status 为空串」的理解必须一致，
+    // 否则前端清空筛选会查出空列表 —— 见 salaryLedger.buildAdvanceListWhere）
+    const { clause: w, params } = buildAdvanceListWhere(req.query);
     const [rows] = await pool.execute(
       `SELECT advance_id, worker_id, worker_name, amount, DATE_FORMAT(advance_date, '%Y-%m-%d') AS advance_date,
               account_id, account_name, deducted_amount, status, remark, created_by, created_at
@@ -391,7 +269,7 @@ async function getAdvances(req, res) {
       params
     );
     const [cnt] = await pool.execute(`SELECT COUNT(*) AS n FROM salary_advances ${w}`, params);
-    const list = rows.map((r) => ({
+    const list = rows.map(r => ({
       advanceId: r.advance_id,
       workerId: r.worker_id,
       workerName: r.worker_name,
@@ -414,100 +292,47 @@ async function getAdvances(req, res) {
 }
 
 // 预支登记：事务——写预支记录 + 公司账户扣款 + 支出流水（related_module='salary_advance'）
+// 预支登记：事务体在 services/salaryLedger.applySalaryAdvance
+// ⚠️ 预支是**资金动作**（公司账户先出钱），与「发放时抵扣」是两件事：
+//    预支登记即扣账户；发放时才把挂账抵扣掉。
 async function createAdvance(req, res) {
+  const conn = await pool.getConnection();
   try {
-    const { workerId, amount, advanceDate, accountId, remark } = req.body;
-    if (!workerId) return error(res, '请选择员工', 400);
-    const amt = Number(amount);
-    if (!amount || isNaN(amt) || amt <= 0) return error(res, '预支金额必须为大于 0 的数字', 400);
-    if (!isDate(advanceDate)) return error(res, '预支日期格式应为 YYYY-MM-DD', 400);
-    if (!accountId) return error(res, '请选择付款账户', 400);
+    await conn.beginTransaction();
     const user = (req.user && (req.user.username || req.user.id)) || null;
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-      // 员工
-      const [wk] = await conn.query('SELECT worker_id, worker_name FROM workers WHERE worker_id = ? AND status = 1', [workerId]);
-      if (!wk.length) { await conn.rollback(); return error(res, '员工不存在或已离职', 400); }
-      // 付款账户（启用 + 余额充足，行锁）
-      const [acc] = await conn.query('SELECT * FROM finance_accounts WHERE account_id = ? AND status = 1 FOR UPDATE', [accountId]);
-      if (!acc.length) { await conn.rollback(); return error(res, '付款账户不存在或已停用', 400); }
-      const balance = Number(acc[0].current_balance);
-      if (balance < amt) { await conn.rollback(); return error(res, '付款账户可用余额不足', 400); }
-      // 写预支记录
-      const advanceId = genAdvanceId();
-      await conn.query(
-        `INSERT INTO salary_advances (advance_id, worker_id, worker_name, amount, advance_date, account_id, account_name, deducted_amount, status, remark, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NOW(), NOW())`,
-        [advanceId, workerId, wk[0].worker_name, amt, advanceDate, accountId, acc[0].account_name, remark || null, user]
-      );
-      // 公司账户扣款 + 支出流水
-      await conn.query('UPDATE finance_accounts SET current_balance = ?, updated_at = NOW() WHERE account_id = ?', [balance - amt, accountId]);
-      await conn.query(
-        `INSERT INTO finance_transactions
-           (tx_id, tx_no, account_id, account_name, tx_type, tx_category, amount, balance_before, balance_after,
-            related_module, related_id, tx_date, handler, counterparty, remark, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [
-          genTxId(), genTxNo(), accountId, acc[0].account_name, 2, '工资预支', amt,
-          balance, balance - amt, 'salary_advance', advanceId, advanceDate,
-          user || null, wk[0].worker_name, remark || null
-        ]
-      );
-      await conn.commit();
-      return success(res, { advanceId, amount: amt }, '预支登记成功');
-    } catch (e) {
-      await conn.rollback();
-      throw e;
-    } finally {
-      conn.release();
-    }
+    const r = await applySalaryAdvance(conn, Object.assign({}, req.body, { user }));
+    await conn.commit();
+    return success(res, r, '预支登记成功');
   } catch (e) {
+    await conn.rollback();
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('createAdvance error:', e);
-    return error(res, e.message.includes('余额') || e.message.includes('账户') ? e.message : '预支登记失败', 400); // hazard-allow: bizFail 白名单文案（余额/账户）（设计输出，非内部细节）
+    return error(res, '预支登记失败', 400);
+  } finally {
+    conn.release();
   }
 }
 
 // 撤销预支：仅未参与工资抵扣（deducted_amount=0）可撤销——回补账户 + 删流水 + 删记录
+// 撤销预支：仅未参与工资抵扣（deducted_amount = 0）可撤销
 async function deleteAdvance(req, res) {
+  const conn = await pool.getConnection();
   try {
-    const { id } = req.params;
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-      const [a] = await conn.query('SELECT * FROM salary_advances WHERE advance_id = ? FOR UPDATE', [id]);
-      if (!a.length) { await conn.rollback(); return error(res, '预支记录不存在', 404); }
-      const rec = a[0];
-      if (Number(rec.deducted_amount) > 0) {
-        await conn.rollback();
-        return error(res, '该预支已参与工资结算（已抵扣部分金额），无法撤销；可先撤销对应月份工资发放', 400);
-      }
-      // 回补账户 + 删关联流水
-      const [txs] = await conn.query(
-        'SELECT tx_id, account_id, amount FROM finance_transactions WHERE related_module = ? AND related_id = ?',
-        ['salary_advance', id]
-      );
-      for (const tx of txs) {
-        await conn.query('UPDATE finance_accounts SET current_balance = current_balance + ?, updated_at = NOW() WHERE account_id = ?', [tx.amount, tx.account_id]);
-        await conn.query('DELETE FROM finance_transactions WHERE tx_id = ?', [tx.tx_id]);
-      }
-      await conn.query('DELETE FROM salary_advances WHERE advance_id = ?', [id]);
-      await conn.commit();
-      return success(res, null, '已撤销预支，账户余额已回补');
-    } catch (e) {
-      await conn.rollback();
-      throw e;
-    } finally {
-      conn.release();
-    }
+    await conn.beginTransaction();
+    await revertSalaryAdvanceById(conn, req.params.id);
+    await conn.commit();
+    return success(res, null, '已撤销预支，账户余额已回补');
   } catch (e) {
+    await conn.rollback();
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('deleteAdvance error:', e);
     return error(res, '撤销预支失败', 500);
+  } finally {
+    conn.release();
   }
 }
 
-// 员工类型展示名（与前端 SalaryStatistics.vue 的 employeeTypeLabel 一致）
-const EMPLOYEE_TYPE_TEXT = { 1: '店长', 2: '配送员工', 3: '业务员', 4: '管理员' };
+// 员工类型展示名：已收敛到 services/salaryLedger 的单一来源（小程序端也要下发同名）
 
 /**
  * 工资统计一键导出
@@ -540,11 +365,14 @@ async function exportSalary(req, res) {
           ? '跨月区间：按应发口径（区间内配送费合计），发放状态按 salary_month 落在区间内汇总'
           : '单月：已发放取发放快照金额，未发放取实发金额（应发 − 待扣预支）'
       },
-      { 项目: '配送费规则', 数值: '送水到府/线下零售/水公社=工人零售配送费；直营水站=工人水站配送费；量贩机/零售机=工人零售机配送费' }
+      {
+        项目: '配送费规则',
+        数值: '送水到府/线下零售/水公社=工人零售配送费；直营水站=工人水站配送费；量贩机/零售机=工人零售机配送费'
+      }
     ];
 
     // 2) 员工工资汇总
-    const workerSheet = list.map((x) => ({
+    const workerSheet = list.map(x => ({
       员工姓名: x.workerName,
       员工类型: EMPLOYEE_TYPE_TEXT[x.employeeType] || '未知',
       联系电话: x.phone,
@@ -575,7 +403,7 @@ async function exportSalary(req, res) {
        ORDER BY w.worker_name ASC, o.created_at DESC`,
       rw.params
     );
-    const orderSheet = orderRows.map((x) => ({
+    const orderSheet = orderRows.map(x => ({
       员工姓名: x.worker_name || '',
       订单号: x.order_id,
       订单类型: ORDER_TYPES[x.order_type] || `类型${x.order_type}`,
@@ -601,7 +429,7 @@ async function exportSalary(req, res) {
        ORDER BY w.worker_name ASC, o.created_at DESC, oi.item_id`,
       rw.params
     );
-    const itemSheet = itemRows.map((x) => ({
+    const itemSheet = itemRows.map(x => ({
       员工姓名: x.worker_name || '',
       订单号: x.order_id,
       订单类型: ORDER_TYPES[x.order_type] || `类型${x.order_type}`,
@@ -633,8 +461,14 @@ async function exportSalary(req, res) {
 }
 
 module.exports = {
-  getSalarySummary, getSalaryOrders, getSalaryOrderItems,
-  getWorkerSummary, paySalary, revokeSalaryPayment,
-  getAdvances, createAdvance, deleteAdvance,
+  getSalarySummary,
+  getSalaryOrders,
+  getSalaryOrderItems,
+  getWorkerSummary,
+  paySalary,
+  revokeSalaryPayment,
+  getAdvances,
+  createAdvance,
+  deleteAdvance,
   exportSalary
 };

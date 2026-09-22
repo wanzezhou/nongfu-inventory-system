@@ -24,6 +24,13 @@
  *   · 第 10 域 公司账户 —— 第 16 节。余额只读（不接受入参改余额）、删除规则
  *     （余额≠0 或有流水 → 拒绝并提示可停用）、★ 转账双边记账（双边余额 + 双流水同批次
  *     号 + 总额守恒 + 幂等重放不得转两次）。核心用 Web 端抽出的 applyTransfer 单源。
+ *   · 第 11 域 工资 —— 第 17 节。唯一「公司 → 个人」的资金动作。★ 四个必须钉死的点：
+ *     实发 = 应发 − 待扣预支（按**实发**扣账户，不是应发）；实发为负**不动账户不写流水**；
+ *     撤销发放账户 **+** 回补且预支反向还原；★ 预支**没有同月唯一约束** ——
+ *     所以它才是幂等键最该保护的地方（重试一次 = 真的再预支一笔，两笔都合法）。
+ *     另含余额不足「被拒后余额未变 + 不留半张发放单」与**个人信息红线**
+ *     （汇总列表不得出现 phone —— loadSalarySummary 会带出，必须逐字段挡掉）。
+ *     核心用 Web 端抽出的 services/salaryLedger 四个原语（两端共用）。
  *
  * 为什么需要它：Phase 8b 是「管理员在手机上改资金台账」，这类接口错的代价很实在 ——
  *   ① 没有幂等键 → 弱网连点两次「保存」就记两笔账，两笔都合法、账面看不出异常；
@@ -2202,6 +2209,420 @@ async function main() {
   const accMissing = await call('GET', '/mini/admin/accounts/SMKNOACC', null, adminToken);
   assert(accMissing.code === 404, `16.9 不存在的账户 → 404（实得 ${accMissing.code}）`);
 
+  // ═════════════ 17. 工资域（Phase 8b 第 11 域）════════════════════════════════
+  // ⚠️ 本域是**唯一「公司 → 个人」**的资金动作，也是最容易「静默错账」的一个：
+  //    ① 实发 = 应发 − 待扣预支，**可为负**（挂账下月继续扣）——负的时候不能动账户；
+  //    ② 撤销发放要账户 **+** 回补（支出方向的撤销是加，抄成减 = 撤一次反而再扣一笔，
+  //       而恒等式看起来仍然成立）；
+  //    ③ 预支登记**即扣款**、发放时才抵扣 —— 两件事分开，别混成一个动作；
+  //    ④ ★ 预支**没有「同员工同月唯一」约束**（发放有），所以它才是幂等键最该保护的地方：
+  //       重试一次就是真的再预支一笔、账户再扣一次，两笔都合法、账面看不出来。
+  section('17. 工资域：实发=应发−待扣预支 / 撤销方向 / 负数挂账 / 预支幂等');
+
+  const dl = new Date();
+  const curMonth = `${dl.getFullYear()}-${String(dl.getMonth() + 1).padStart(2, '0')}`;
+
+  // ── 17.1 权限（§22.4：小程序侧必须另设 requireMiniAdmin）────────────────────
+  const salNoToken = await call('GET', '/mini/admin/salary/summary?month=' + curMonth);
+  assert(
+    salNoToken._status === 401 || salNoToken.code === 401,
+    `17.1 无令牌读工资汇总被拒 401（实得 ${salNoToken._status}）`
+  );
+  const salDenied = await call('GET', '/mini/admin/salary/summary?month=' + curMonth, null, ordSalesmanToken);
+  assert(
+    salDenied.code === 403 && /管理员角色/.test(String(salDenied.message)),
+    `17.1 业务员读工资汇总被拒 403（实得 ${salDenied.code} ${salDenied.message || ''}）`
+  );
+  const salPayDenied = await call(
+    'POST',
+    '/mini/admin/salary/pay',
+    { clientRequestId: 'x', workerId: 'w', month: curMonth, amount: 1 },
+    ordSalesmanToken
+  );
+  assert(salPayDenied.code === 403, `17.1 业务员发放工资被拒 403（实得 ${salPayDenied.code}）`);
+
+  // ── 17.2 表单选项与入参校验 ───────────────────────────────────────────────
+  // 测试员工用 SMKSLR 前缀（清理按它识别）。workers.worker_id 无默认值 → 必须显式给。
+  const slWorkerId = 'SMKSLR' + TS;
+  await pool.query(
+    'INSERT INTO workers (worker_id, worker_name, phone, employee_type, status, created_at, updated_at) VALUES (?, ?, ?, 2, 1, NOW(), NOW())',
+    [slWorkerId, slWorkerId, '13900001111']
+  );
+  const salOpts = await call('GET', '/mini/admin/salary/options', null, adminToken);
+  assert(salOpts.code === 200, `17.2 工资表单选项 200（${salOpts.code} ${salOpts.message || ''}）`);
+  if (salOpts.code === 200) {
+    assert(/^\d{4}-\d{2}$/.test(String(salOpts.data.month)), `17.2 下发默认月份（${salOpts.data.month}）`);
+    assert(
+      (salOpts.data.workers || []).some(w => w.workerId === slWorkerId),
+      '17.2 员工下拉含新建的在职员工'
+    );
+    assert(
+      (salOpts.data.activeAccounts || []).every(a => a.currentBalance !== undefined),
+      '17.2 账户下拉只列启用账户且带余额'
+    );
+  }
+  const salNoIdem = await call(
+    'POST',
+    '/mini/admin/salary/pay',
+    { workerId: slWorkerId, month: curMonth, amount: 100 },
+    adminToken
+  );
+  assert(
+    salNoIdem.code === 400 && /clientRequestId/.test(String(salNoIdem.message)),
+    `17.2 缺幂等键被拒（${salNoIdem.message}）`
+  );
+  const salBadMonth = await call(
+    'POST',
+    '/mini/admin/salary/pay',
+    { clientRequestId: 'smksal_' + TS + '_bm', workerId: slWorkerId, month: '2026/09', amount: 100 },
+    adminToken
+  );
+  assert(
+    salBadMonth.code === 400 && /月份/.test(String(salBadMonth.message)),
+    `17.2 月份格式非法被拒（${salBadMonth.message}）`
+  );
+  const salGhost = await call(
+    'POST',
+    '/mini/admin/salary/pay',
+    { clientRequestId: 'smksal_' + TS + '_gw', workerId: 'SMKNOWORKER', month: curMonth, amount: 100 },
+    adminToken
+  );
+  assert(salGhost.code === 400 && /员工/.test(String(salGhost.message)), `17.2 员工不存在被拒（${salGhost.message}）`);
+
+  // ── 17.3 预支登记：**登记即扣账户**（公司先把钱给出去了）──────────────────
+  const balStart = await balanceOf();
+  const adv1Key = 'smksal_' + TS + '_adv1';
+  const adv1Body = { clientRequestId: adv1Key, workerId: slWorkerId, amount: 300, advanceDate: today(), accountId };
+  const slAdv1 = await call('POST', '/mini/admin/salary/advances', adv1Body, adminToken);
+  assert(slAdv1.code === 200 && slAdv1.data.advanceId, `17.3 预支登记成功（${slAdv1.code} ${slAdv1.message || ''}）`);
+  const adv1Id = slAdv1.data.advanceId;
+  assert(near(await balanceOf(), balStart - 300), `17.3 ★ 账户 −300（${balStart} → ${await balanceOf()}）`);
+  const advTx = (
+    await pool.query(
+      "SELECT tx_type, tx_category, amount FROM finance_transactions WHERE related_module = 'salary_advance' AND related_id = ?",
+      [adv1Id]
+    )
+  )[0];
+  assert(
+    advTx.length === 1 && Number(advTx[0].tx_type) === 2 && advTx[0].tx_category === '工资预支',
+    `17.3 支出流水（tx_type=2 / 工资预支）：${JSON.stringify(advTx[0] || null)}`
+  );
+  const salAudit1 = await auditActions();
+  assert(salAudit1.includes('CREATE_SALARY_ADVANCE'), '17.3 审计含 CREATE_SALARY_ADVANCE');
+  const advReplay = await call('POST', '/mini/admin/salary/advances', adv1Body, adminToken);
+  assert(
+    advReplay.code === 200 && advReplay.data.replayed === true,
+    `17.3 ★ 预支幂等重放 replayed=true（${JSON.stringify(advReplay.data || advReplay.message)}）`
+  );
+  assert(
+    near(await balanceOf(), balStart - 300),
+    '17.3 ★ 重放后账户未被再扣一次 —— 预支没有同月唯一约束，全靠幂等键挡'
+  );
+  const advConflict = await call(
+    'POST',
+    '/mini/admin/salary/advances',
+    Object.assign({}, adv1Body, { amount: 301 }),
+    adminToken
+  );
+  assert(advConflict.code === 400, `17.3 同键不同金额被拒（${advConflict.code}）`);
+  const advList = await call('GET', '/mini/admin/salary/advances?workerId=' + slWorkerId, null, adminToken);
+  assert(
+    advList.code === 200 &&
+      (advList.data.list || []).some(a => a.advanceId === adv1Id && near(a.pendingAmount, 300) && a.canRevoke === true),
+    `17.3 台账含该笔：待扣 300 且 canRevoke=true（实得 ${JSON.stringify((advList.data.list || [])[0] || null)}）`
+  );
+
+  // ── 17.4 撤销预支：账户回补（★ 方向 = 加）────────────────────────────────
+  const revAdv1 = await call(
+    'DELETE',
+    '/mini/admin/salary/advances/' + adv1Id + '?clientRequestId=' + encodeURIComponent('smksal_' + TS + '_radv1'),
+    null,
+    adminToken
+  );
+  assert(revAdv1.code === 200, `17.4 撤销预支成功（${revAdv1.code} ${revAdv1.message || ''}）`);
+  assert(near(await balanceOf(), balStart), `17.4 ★ 账户回补 +300（回到 ${balStart}，实得 ${await balanceOf()}）`);
+  const advTxGone = (
+    await pool.query(
+      "SELECT COUNT(*) n FROM finance_transactions WHERE related_module = 'salary_advance' AND related_id = ?",
+      [adv1Id]
+    )
+  )[0];
+  assert(Number(advTxGone[0].n) === 0, '17.4 预支流水已删除');
+  const salAudit2 = await auditActions();
+  assert(salAudit2.includes('DELETE_SALARY_ADVANCE'), '17.4 审计含 DELETE_SALARY_ADVANCE');
+
+  // ── 17.5 预览与「无应发」拒绝路径 ────────────────────────────────────────
+  const prev0 = await call('GET', '/mini/admin/salary/worker/' + slWorkerId + '?month=' + curMonth, null, adminToken);
+  assert(
+    prev0.code === 200 && near(prev0.data.calcFee, 0),
+    `17.5 预览：无订单 → 当月配送费 0（实得 ${prev0.data && prev0.data.calcFee}）`
+  );
+  const payNoDue = await call(
+    'POST',
+    '/mini/admin/salary/pay',
+    { clientRequestId: 'smksal_' + TS + '_nd', workerId: slWorkerId, month: curMonth },
+    adminToken
+  );
+  assert(payNoDue.code === 400 && /应发/.test(String(payNoDue.message)), `17.5 无应发工资被拒（${payNoDue.message}）`);
+  const prevMissing = await call('GET', '/mini/admin/salary/worker/SMKNOWORKER?month=' + curMonth, null, adminToken);
+  assert(prevMissing.code === 404, `17.5 不存在的员工预览 → 404（实得 ${prevMissing.code}）`);
+
+  // ── 17.6 ★ 发放：实发 = 应发（手动 800）− 待扣预支（500）──────────────────
+  const slAdv2 = await call(
+    'POST',
+    '/mini/admin/salary/advances',
+    { clientRequestId: 'smksal_' + TS + '_adv2', workerId: slWorkerId, amount: 500, advanceDate: today(), accountId },
+    adminToken
+  );
+  assert(slAdv2.code === 200, `17.6 再记预支 500（${slAdv2.code} ${slAdv2.message || ''}）`);
+  const adv2Id = slAdv2.data.advanceId;
+  const balBeforePay = await balanceOf();
+  const prev1 = await call('GET', '/mini/admin/salary/worker/' + slWorkerId + '?month=' + curMonth, null, adminToken);
+  assert(
+    prev1.code === 200 && near(prev1.data.pendingAdvance, 500) && near(prev1.data.net, -500),
+    `17.6 预览：待扣 500 / 实发 −500（${prev1.data && prev1.data.pendingAdvance} / ${prev1.data && prev1.data.net}）`
+  );
+  assert(
+    prev1.data.pendingAdvances &&
+      prev1.data.pendingAdvances.length === 1 &&
+      near(prev1.data.pendingAdvances[0].remaining, 500),
+    '17.6 预览给出**逐笔**待抵扣明细（提交前能看清这笔钱抵掉了哪几笔预支）'
+  );
+  const payKey = 'smksal_' + TS + '_pay1';
+  const pay1Body = {
+    clientRequestId: payKey,
+    workerId: slWorkerId,
+    month: curMonth,
+    amount: 800,
+    accountId,
+    remark: '冒烟发放'
+  };
+  const pay1 = await call('POST', '/mini/admin/salary/pay', pay1Body, adminToken);
+  assert(pay1.code === 200 && pay1.data.paymentId, `17.6 ★ 发放成功（${pay1.code} ${pay1.message || ''}）`);
+  const pay1Id = pay1.data.paymentId;
+  assert(
+    near(pay1.data.amount, 300) && near(pay1.data.due, 800) && near(pay1.data.pendingAdvance, 500),
+    `17.6 ★ 实发 = 800 − 500 = 300（实得 ${pay1.data.amount}，应发 ${pay1.data.due}）`
+  );
+  assert(
+    near(await balanceOf(), balBeforePay - 300),
+    `17.6 ★ 账户按**实发**扣款 −300（不是应发 800，实得 ${await balanceOf()}）`
+  );
+  const payTx = (
+    await pool.query(
+      "SELECT tx_type, tx_category, amount FROM finance_transactions WHERE related_module = 'salary_payment' AND related_id = ?",
+      [pay1Id]
+    )
+  )[0];
+  assert(
+    payTx.length === 1 &&
+      Number(payTx[0].tx_type) === 2 &&
+      payTx[0].tx_category === '工资发放' &&
+      near(payTx[0].amount, 300),
+    `17.6 支出流水（tx_type=2 / 工资发放 / 300）：${JSON.stringify(payTx[0] || null)}`
+  );
+  const adv2Row = (
+    await pool.query('SELECT deducted_amount, status FROM salary_advances WHERE advance_id = ?', [adv2Id])
+  )[0];
+  assert(
+    near(adv2Row[0].deducted_amount, 500) && Number(adv2Row[0].status) === 1,
+    `17.6 预支被抵扣并结清（deducted=${adv2Row[0].deducted_amount}, status=${adv2Row[0].status}）`
+  );
+  const link1 = (
+    await pool.query('SELECT deducted_amount FROM salary_payment_advances WHERE payment_id = ?', [pay1Id])
+  )[0];
+  assert(link1.length === 1 && near(link1[0].deducted_amount, 500), '17.6 抵扣明细已落库（撤销时按它还原）');
+  const salAudit3 = await auditActions();
+  assert(salAudit3.includes('PAY_SALARY'), '17.6 审计含 PAY_SALARY');
+  const payReplay = await call('POST', '/mini/admin/salary/pay', pay1Body, adminToken);
+  assert(
+    payReplay.code === 200 && payReplay.data.replayed === true,
+    `17.6 ★ 发放幂等重放 replayed=true（${JSON.stringify(payReplay.data || payReplay.message)}）`
+  );
+  assert(near(await balanceOf(), balBeforePay - 300), '17.6 ★ 重放后账户未再扣款');
+  const payDup = await call(
+    'POST',
+    '/mini/admin/salary/pay',
+    { clientRequestId: 'smksal_' + TS + '_pay2', workerId: slWorkerId, month: curMonth, amount: 800, accountId },
+    adminToken
+  );
+  assert(payDup.code === 400 && /已发放/.test(String(payDup.message)), `17.6 同月重复发放被拒（${payDup.message}）`);
+  const prev2 = await call('GET', '/mini/admin/salary/worker/' + slWorkerId + '?month=' + curMonth, null, adminToken);
+  assert(
+    prev2.data.paid === true && near(prev2.data.payment.amount, 300),
+    `17.6 预览转为已发放态（${JSON.stringify(prev2.data.payment || null)}）`
+  );
+
+  // ── 17.7 ★ 撤销发放：账户 + 回补 / 流水删除 / 预支反向还原 ────────────────
+  const revKey = 'smksal_' + TS + '_rev1';
+  const rev1 = await call(
+    'DELETE',
+    '/mini/admin/salary/payments/' + pay1Id + '?clientRequestId=' + encodeURIComponent(revKey),
+    null,
+    adminToken
+  );
+  assert(rev1.code === 200, `17.7 撤销发放成功（${rev1.code} ${rev1.message || ''}）`);
+  assert(
+    near(await balanceOf(), balBeforePay),
+    `17.7 ★ 账户回补 +300（回到 ${balBeforePay}，实得 ${await balanceOf()}）—— 支出方向的撤销是加`
+  );
+  const payTxGone = (
+    await pool.query(
+      "SELECT COUNT(*) n FROM finance_transactions WHERE related_module = 'salary_payment' AND related_id = ?",
+      [pay1Id]
+    )
+  )[0];
+  assert(Number(payTxGone[0].n) === 0, '17.7 发放流水已删除');
+  const adv2Back = (
+    await pool.query('SELECT deducted_amount, status FROM salary_advances WHERE advance_id = ?', [adv2Id])
+  )[0];
+  assert(
+    near(adv2Back[0].deducted_amount, 0) && Number(adv2Back[0].status) === 0,
+    '17.7 ★ 预支抵扣已反向还原（deducted 回到 0、未结清）'
+  );
+  const revReplay = await call(
+    'DELETE',
+    '/mini/admin/salary/payments/' + pay1Id + '?clientRequestId=' + encodeURIComponent(revKey),
+    null,
+    adminToken
+  );
+  assert(
+    revReplay.code === 200 && revReplay.data.replayed === true,
+    `17.7 撤销幂等重放 replayed=true（${JSON.stringify(revReplay.data || revReplay.message)}）`
+  );
+  assert(near(await balanceOf(), balBeforePay), '17.7 ★ 重放后余额未变 —— 否则就是「撤一次反而再多一笔钱」');
+  const salAudit4 = await auditActions();
+  assert(salAudit4.includes('REVOKE_SALARY_PAYMENT'), '17.7 审计含 REVOKE_SALARY_PAYMENT');
+  const revMissing = await call(
+    'DELETE',
+    '/mini/admin/salary/payments/SMKNOPAY' + TS + '?clientRequestId=' + encodeURIComponent('smksal_' + TS + '_revx'),
+    null,
+    adminToken
+  );
+  assert(revMissing.code === 404, `17.7 撤销不存在的发放 → 404（实得 ${revMissing.code}）`);
+
+  // ── 17.8 ★ 负数挂账：预支 > 应发 → 实发为负，**不动账户、不写流水**─────────
+  const balBeforeNeg = await balanceOf();
+  const payNeg = await call(
+    'POST',
+    '/mini/admin/salary/pay',
+    { clientRequestId: 'smksal_' + TS + '_pn', workerId: slWorkerId, month: curMonth, amount: 200, accountId },
+    adminToken
+  );
+  assert(
+    payNeg.code === 200 && near(payNeg.data.amount, -300),
+    `17.8 ★ 实发 = 200 − 500 = −300（挂账下月继续扣，实得 ${payNeg.data && payNeg.data.amount}）`
+  );
+  const payNegId = payNeg.data.paymentId;
+  assert(near(await balanceOf(), balBeforeNeg), `17.8 ★ 负数发放**不动账户**（仍 ${balBeforeNeg}）`);
+  const negTx = (
+    await pool.query(
+      "SELECT COUNT(*) n FROM finance_transactions WHERE related_module = 'salary_payment' AND related_id = ?",
+      [payNegId]
+    )
+  )[0];
+  assert(Number(negTx[0].n) === 0, '17.8 负数发放不写流水（本次不涉及资金）');
+  const adv2Mid = (
+    await pool.query('SELECT deducted_amount, status FROM salary_advances WHERE advance_id = ?', [adv2Id])
+  )[0];
+  assert(
+    near(adv2Mid[0].deducted_amount, 200) && Number(adv2Mid[0].status) === 0,
+    `17.8 预支部分抵扣（${adv2Mid[0].deducted_amount}/500，未结清）`
+  );
+
+  // ── 17.9 已参与结算的预支不可撤销（★ 必须给出可执行的下一步）──────────────
+  const advDelBlocked = await call(
+    'DELETE',
+    '/mini/admin/salary/advances/' + adv2Id + '?clientRequestId=' + encodeURIComponent('smksal_' + TS + '_radv2'),
+    null,
+    adminToken
+  );
+  assert(
+    advDelBlocked.code === 400 && /撤销对应月份工资发放/.test(String(advDelBlocked.message)),
+    `17.9 已抵扣预支撤销被拒且给出指引（${advDelBlocked.message}）`
+  );
+  const negRev = await call(
+    'DELETE',
+    '/mini/admin/salary/payments/' + payNegId + '?clientRequestId=' + encodeURIComponent('smksal_' + TS + '_revneg'),
+    null,
+    adminToken
+  );
+  assert(negRev.code === 200, `17.9 撤销负数发放成功（${negRev.code}）`);
+  assert(near(await balanceOf(), balBeforeNeg), '17.9 撤销负数发放不动账户');
+  const adv2Full = (
+    await pool.query('SELECT deducted_amount, status FROM salary_advances WHERE advance_id = ?', [adv2Id])
+  )[0];
+  assert(
+    near(adv2Full[0].deducted_amount, 0) && Number(adv2Full[0].status) === 0,
+    '17.9 预支全额还原（可再次参与抵扣）'
+  );
+
+  // ── 17.10 余额不足：被拒且**余额未变**（校验在扣款之前）───────────────────
+  const poorAccId = 'SMKACCQ' + TS;
+  await pool.query(
+    'INSERT INTO finance_accounts (account_id, account_name, account_type, initial_balance, current_balance, status, created_at, updated_at) VALUES (?, ?, 1, 10, 10, 1, NOW(), NOW())',
+    [poorAccId, '冒烟账户穷' + TS]
+  );
+  const payPoor = await call(
+    'POST',
+    '/mini/admin/salary/pay',
+    {
+      clientRequestId: 'smksal_' + TS + '_poor',
+      workerId: slWorkerId,
+      month: curMonth,
+      amount: 1000,
+      accountId: poorAccId
+    },
+    adminToken
+  );
+  assert(
+    payPoor.code === 400 && /余额不足/.test(String(payPoor.message)),
+    `17.10 发放余额不足被拒（${payPoor.message}）`
+  );
+  const poorBal = (
+    await pool.query('SELECT current_balance b FROM finance_accounts WHERE account_id = ?', [poorAccId])
+  )[0];
+  assert(near(poorBal[0].b, 10), `17.10 ★ 被拒后余额未变（仍 10，实得 ${poorBal[0].b}）`);
+  const payLeft = (await pool.query('SELECT COUNT(*) n FROM salary_payments WHERE worker_id = ?', [slWorkerId]))[0];
+  assert(Number(payLeft[0].n) === 0, '17.10 ★ 被拒不留痕：事务整体回滚，没有半张发放单');
+  const advPoor = await call(
+    'POST',
+    '/mini/admin/salary/advances',
+    {
+      clientRequestId: 'smksal_' + TS + '_poora',
+      workerId: slWorkerId,
+      amount: 1000,
+      advanceDate: today(),
+      accountId: poorAccId
+    },
+    adminToken
+  );
+  assert(
+    advPoor.code === 400 && /余额不足/.test(String(advPoor.message)),
+    `17.10 预支余额不足被拒（${advPoor.message}）`
+  );
+
+  // ── 17.11 汇总口径与个人信息红线 ──────────────────────────────────────────
+  const salSum = await call('GET', '/mini/admin/salary/summary?month=' + curMonth, null, adminToken);
+  assert(
+    salSum.code === 200 && Array.isArray(salSum.data.list),
+    `17.11 工资汇总 200（${salSum.code} ${salSum.message || ''}）`
+  );
+  const slRow = (salSum.data.list || []).find(x => x.workerId === slWorkerId);
+  assert(
+    !!slRow && slRow.due !== undefined && slRow.net !== undefined && slRow.paid !== undefined,
+    `17.11 汇总行含 应发/实发/发放状态（${JSON.stringify(slRow || null)}）`
+  );
+  // ★ 个人信息：loadSalarySummary 会带出 w.phone（Web 统计页要用），
+  //   小程序接口必须**逐字段映射**把它挡掉（文档 §八：一律不下发明文手机号）
+  assert(slRow && slRow.phone === undefined, '17.11 ★ 汇总行不含手机号（脱敏）');
+  assert(
+    (salSum.data.list || []).every(x => x.phone === undefined),
+    '17.11 ★ 整个列表均无 phone 字段'
+  );
+  const salBadRange = await call('GET', '/mini/admin/salary/summary?range=bogus', null, adminToken);
+  assert(salBadRange.code === 400, `17.11 非法区间 → 400（不得静默降级为「不限区间」，实得 ${salBadRange.code}）`);
+
   return {
     accountId,
     adminAccountId,
@@ -2281,7 +2702,33 @@ main()
       // 主数据四域：按冒烟前缀清除（软删除是业务语义，冒烟必须把测试数据清干净）
       await pool.query('DELETE FROM machine_stations WHERE station_name LIKE ?', ['SMKM%']);
       await pool.query('DELETE FROM suppliers WHERE supplier_name LIKE ?', ['SMKSUP%']);
-      await pool.query('DELETE FROM workers WHERE worker_name LIKE ?', ['SMKWK%']);
+      // 工资域（第 11 域）：**先删抵扣明细/发放单/预支，再删员工** ——
+      // salary_payments.worker_id 与 salary_advances.worker_id 都外键指向 workers，
+      // 顺序反了会撞外键让整个清理中断（本文件下方那段注释已记过一次同类教训）。
+      const slWorkerIds = (await pool.query("SELECT worker_id FROM workers WHERE worker_name LIKE 'SMKSLR%'"))[0].map(
+        r => r.worker_id
+      );
+      if (slWorkerIds.length) {
+        const ph = slWorkerIds.map(() => '?').join(',');
+        await pool.query(
+          `DELETE FROM finance_transactions WHERE related_module = 'salary_payment'
+             AND related_id IN (SELECT payment_id FROM salary_payments WHERE worker_id IN (${ph}))`,
+          slWorkerIds
+        );
+        await pool.query(
+          `DELETE FROM finance_transactions WHERE related_module = 'salary_advance'
+             AND related_id IN (SELECT advance_id FROM salary_advances WHERE worker_id IN (${ph}))`,
+          slWorkerIds
+        );
+        await pool.query(
+          `DELETE FROM salary_payment_advances WHERE payment_id IN (SELECT payment_id FROM salary_payments WHERE worker_id IN (${ph}))`,
+          slWorkerIds
+        );
+        await pool.query(`DELETE FROM salary_payments WHERE worker_id IN (${ph})`, slWorkerIds);
+        await pool.query(`DELETE FROM salary_advances WHERE worker_id IN (${ph})`, slWorkerIds);
+      }
+      // 员工：主数据四域（SMKWK%）+ 工资域（SMKSLR%）
+      await pool.query("DELETE FROM workers WHERE worker_name LIKE 'SMKWK%' OR worker_name LIKE 'SMKSLR%'");
       await pool.query('DELETE FROM sub_stations WHERE station_name LIKE ?', ['SMKST%']);
       if (ctx.uploadedImageName) {
         try {
@@ -2351,7 +2798,16 @@ main()
       )[0];
       // 账户域残留（SMKA% 前缀，含第 0 节账户与第 16 节甲~戊）
       const accLeft = (await pool.query("SELECT COUNT(*) n FROM finance_accounts WHERE account_id LIKE 'SMKA%'"))[0];
-      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n) + Number(accLeft[0].n);
+      // 工资域残留：员工（SMKSLR%）+ 发放单 + 预支 —— 任何一项非 0 都说明清理没走完
+      const slLeft = (
+        await pool.query(
+          `SELECT (SELECT COUNT(*) FROM workers WHERE worker_name LIKE 'SMKSLR%') AS w,
+                  (SELECT COUNT(*) FROM salary_payments WHERE worker_name LIKE 'SMKSLR%') AS p,
+                  (SELECT COUNT(*) FROM salary_advances WHERE worker_name LIKE 'SMKSLR%') AS a`
+        )
+      )[0][0];
+      const slTotal = Number(slLeft.w) + Number(slLeft.p) + Number(slLeft.a);
+      const ordTotal = Number(ordLeft[0].n) + Number(walLeft[0].n) + Number(accLeft[0].n) + slTotal;
       const clean =
         Number(left[0].n) === 0 &&
         Number(leftInc[0].n) === 0 &&
@@ -2360,8 +2816,8 @@ main()
         masterTotal === 0 &&
         ordTotal === 0;
       console.log(
-        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条 / 订单域 ${ordTotal} 条` +
-          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal, ordTotal })}`
+        `\n清理：残留 支出 ${left[0].n} 行 / 收入 ${leftInc[0].n} 行 / 商品 ${leftPrd[0].n} 条 / 库存域 ${invTotal} 条 / 主数据 ${masterTotal} 条 / 订单+账户+工资域 ${ordTotal} 条（其中工资域 ${slTotal}）` +
+          `${clean ? ' ✓' : ' ✗ ' + JSON.stringify({ masterLeft, invTotal, ordTotal, slTotal })}`
       );
     } catch (e) {
       console.log('清理失败：' + e.message);

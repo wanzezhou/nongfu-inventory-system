@@ -3,7 +3,8 @@
 // 幂等键在提交那一刻生成，失败不释放 —— 弱网重试复用同一个键，服务端合并为一次转账。
 const ui = require('../../utils/ui');
 const fmt = require('../../utils/format');
-const { acquireKey } = require('../../utils/idempotency');
+const auth = require('../../utils/auth');
+const { acquireKey, releaseKey } = require('../../utils/idempotency');
 
 Page({
   data: {
@@ -109,7 +110,18 @@ Page({
     if (!ok) return;
 
     this.setData({ submitting: true, formError: '' });
-    const key = acquireKey('account-xfer-' + from.accountId + '-' + to.accountId + '-' + amt);
+    // ⚠️ acquireKey 的契约是**对象**（{scope, ownerKey, payload}），不是字符串 ——
+    //    传字符串时 scope / ownerKey / 内容指纹一起退化成 undefined 与常量「{}」，
+    //    「内容没变 → 复用同一个键」被永久触发：同一台设备 24h 内的**第二次转账**
+    //    （金额/账户都不同）会复用上一次的键 → 服务端 requestHash 不一致 →
+    //    400「重复提交的请求内容不一致」。门禁已加静态检查。
+    const me = auth.me();
+    const ownerKey = `${me.account.role}:${me.account.targetId || 'self'}`;
+    const key = acquireKey({
+      scope: 'TRANSFER_ACCOUNT',
+      ownerKey,
+      payload: { fromId: from.accountId, toId: to.accountId, amount: amt, remark: this.data.remark }
+    });
     try {
       const r = await ui.request.post(
         '/admin/accounts/transfer',
@@ -122,6 +134,7 @@ Page({
         },
         { silent: true }
       );
+      releaseKey(); // 转账成功 → 释放：下一次转账是一次新操作
       ui.confirm(
         '转账成功',
         `余额已更新：${from.accountName} → ¥${fmt.money(r.fromBalance)}；${to.accountName} → ¥${fmt.money(r.toBalance)}`,

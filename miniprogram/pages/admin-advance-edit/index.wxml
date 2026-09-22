@@ -1,0 +1,55 @@
+<!-- 预支登记（管理员 · Phase 8b 第 11 域）
+     ⚠️ 登记即扣账户 —— 这是一次真实付款，不是「记一笔待办」。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+  <view wx:if="{{formError}}" class="banner banner-danger">{{formError}}</view>
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <view class="card">
+      <view class="form-row">
+        <text class="form-label">员工</text>
+        <picker mode="selector" range="{{workerLabels}}" value="{{workerIndex}}" bindchange="onWorkerChange">
+          <view class="row-between">
+            <text class="t-strong">{{workerLabels[workerIndex] || '请选择'}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="form-label">预支金额</text>
+        <input class="form-input" type="digit" placeholder="大于 0" value="{{amount}}" bindinput="onAmountInput" />
+      </view>
+      <view class="form-row">
+        <text class="form-label">预支日期</text>
+        <picker mode="date" value="{{date}}" bindchange="onDateChange">
+          <view class="row-between">
+            <text class="t-strong">{{date}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="form-label">付款账户</text>
+        <picker mode="selector" range="{{accLabels}}" value="{{accIndex}}" bindchange="onAccChange">
+          <view class="row-between">
+            <text class="t-strong">{{accLabels[accIndex] || '请选择'}}</text>
+            <text class="t-sub">›</text>
+          </view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="form-label">备注</text>
+        <input class="form-input" placeholder="选填" value="{{remark}}" bindinput="onRemarkInput" />
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="t-sub">预支登记后：公司账户**立即扣款**并产生「工资预支」支出流水；</view>
+      <view class="t-sub mt-8">该金额在后续发放该员工工资时自动抵扣（应发不足则挂账下月继续扣）。</view>
+    </view>
+
+    <view class="btn" bindtap="onSubmit">{{submitting ? '提交中…' : '确认登记预支'}}</view>
+    <view class="mt-24"></view>
+  </block>
+</view>

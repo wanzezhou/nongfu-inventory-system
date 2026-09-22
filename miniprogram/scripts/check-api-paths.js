@@ -108,7 +108,15 @@ for (const f of jsFiles) {
   const patterns = [
     // ⚠️ 方法名必须列全：早期只认 get/post，于是 put/del/upload 的调用**完全不被检查**。
     //    实测：主数据四域全部用 put/del，若只认 get/post 会一条都看不到。
-    /\b(?:request|req|ui\.request)\.(?:get|post|put|del|delete|upload)\(\s*['"`]([^'"`]+)['"`]/g,
+    //
+    // ⚠️ `(?!\s*\+)` 负向先行断言是**必须的**（2026-09-22 补）：紧跟 `+` 的字符串字面量
+    //    是「拼接前缀」，不是一条独立调用 —— 它由下面第 5/6 条规则还原成 `/:id` 形态。
+    //    没有它时同一个调用点会**同时**产出两条路径：`/admin/salary/payments`（前缀被去了尾斜杠）
+    //    与 `/admin/salary/payments/:id`（正确还原）；前者在后端没有同长度路由 → 门禁报
+    //    「后端未注册同名路由」，而**代码完全正确**。实测在工资域（payments / worker 两个动态段）
+    //    一次踩出 2 条纯误报 —— 而误报会训练人忽略告警，等于让这条门禁失效。
+    //    （历史上没暴露是因为账户域的拼接前缀 `/admin/accounts` 恰好也是真实存在的列表路由。）
+    /\b(?:request|req|ui\.request)\.(?:get|post|put|del|delete|upload)\(\s*['"`]([^'"`]+)['"`](?!\s*\+)/g,
     /\burl:\s*['"`]([^'"`]+)['"`]/g,
     // 配置驱动的接口路径（如主数据四域共用一套页面，路径写在 config/masterData.js 的 routes 里）。
     // ⚠️ 不认这类写法会让**整个域**的接口在门禁里静默消失 —— 实测发生过，且因为后端侧
