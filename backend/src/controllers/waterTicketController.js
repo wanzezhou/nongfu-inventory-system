@@ -2,6 +2,9 @@ const { pool } = require('../config/db');
 const { success, error } = require('../utils/response');
 const { parsePage } = require('../utils/pagination');
 const { TICKET_STATUS, TICKET_STATUS_NAMES } = require('../constants/waterTicket');
+// 分销配送费积分台账（Phase 7 §12.6/§12.7/§12.10）：单件值取数、入账/回冲原语、
+// 与「某发行记录/批次当前净入账」的聚合查询。Web 与管理端共用同一套。
+const waterTicketLedger = require('../services/waterTicketLedger');
 
 // ---------------------------------------------------------------------------
 // 水站返货管理（水票系统）
@@ -18,105 +21,132 @@ function bizFail(message, status = 400) {
   return e;
 }
 
+// ---------------------------------------------------------------------------
+// 发行核心（Web 与管理端共用**同一段金额逻辑**）
+// ⚠️ 为什么必须抽出来：发行不只是「生成票」，它同时给水站入账积分（单件值 × 数量）。
+//    两端各写一份的结果必然是「一边改了单件值来源、另一边没改」—— 而两边账面都像正常。
+// ⚠️ **必须在调用方事务内执行**（发行记录 + 水票 + 钱包入账同一事务）。
+// @returns {Promise<{issuanceIds:string[], batchId:string, totalTickets:number, totalFee:number}>}
+async function createIssuance(conn, { stationId, month, remark, items, operator }) {
+  const actualMonth = month || new Date().toISOString().slice(0, 7);
+  if (!stationId) throw bizFail('请选择水站');
+  if (!Array.isArray(items) || items.length === 0) throw bizFail('请至少填写一条返货商品');
+
+  // ⚠️ 请求体里的 `distributionDeliveryFee` 一律**不参与入库**（§12.10）：
+  //    单件配送费由服务端从商品档案重取 —— 它现在会变成水站的积分（钱），
+  //    采信客户端值等于把「公司欠水站多少积分」的定价权交给调用方。
+  //    为兼容旧前端仍**接受**该字段（不报错），但只字不用。
+  // 字段名经 normalizeBody 中间件归一为驼峰。
+  const cleanItems = items.map(it => ({ productId: it.productId, quantity: Number(it.quantity) }));
+  if (cleanItems.some(it => !it.productId || isNaN(it.quantity) || it.quantity <= 0)) {
+    throw bizFail('每条需填写商品与数量（>0）');
+  }
+
+  const [stationRows] = await conn.execute('SELECT station_id, station_name FROM sub_stations WHERE station_id = ?', [
+    stationId
+  ]);
+  if (stationRows.length === 0) throw bizFail('水站不存在', 404);
+  const stationName = stationRows[0].station_name;
+
+  // 单件配送费：逐商品从档案取（同一商品多次提报会各生成一条发行记录，各自入账）
+  const unitFeeMap = {};
+  for (const it of cleanItems) {
+    unitFeeMap[it.productId] = await waterTicketLedger.resolveUnitFee(conn, it.productId);
+  }
+
+  const now = new Date();
+  // 同一次录入 = 一个批次（批次号用于列表按批次合并展示）
+  const batchId = `WTB${Date.now()}${Math.floor(Math.random() * 90 + 10)}`;
+  let totalTickets = 0;
+  let totalFee = 0;
+  const issuanceIds = [];
+
+  for (const it of cleanItems) {
+    const issuanceId = `WTI${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
+    const fee = waterTicketLedger.computeFeeCols(unitFeeMap[it.productId], it.quantity);
+
+    // ① 先入账（积分 = 水站可用余额，发行即产生）：金额 = 单件值 × 数量
+    const tx = await waterTicketLedger.creditDistributionFee(conn, {
+      issuanceId,
+      stationId,
+      stationName,
+      amount: fee.total,
+      operator,
+      remark: `返货发行入账（${it.quantity} 件 × ${fee.unit}）`
+    });
+
+    // ② 发行记录落「三列恒等」：unit × quantity === _total === 遗留列（§12.6，遗留列保持兼容）
+    await conn.execute(
+      `INSERT INTO water_ticket_issuance
+         (issuance_id, batch_id, station_id, product_id, quantity, distribution_delivery_fee,
+          month, remark, created_by, distribution_delivery_fee_unit, distribution_delivery_fee_total,
+          wallet_transaction_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        issuanceId,
+        batchId,
+        stationId,
+        it.productId,
+        it.quantity,
+        fee.total,
+        actualMonth,
+        remark || null,
+        operator,
+        fee.unit,
+        fee.total,
+        tx ? tx.transaction_id : null
+      ]
+    );
+    issuanceIds.push(issuanceId);
+
+    // ③ 批量生成等量水票
+    const ticketValues = [];
+    for (let i = 0; i < it.quantity; i++) {
+      ticketValues.push([
+        `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`,
+        it.productId,
+        stationId,
+        TICKET_STATUS.UNUSED,
+        actualMonth,
+        issuanceId,
+        now,
+        operator,
+        null,
+        null,
+        null
+      ]);
+    }
+    if (ticketValues.length) {
+      await conn.query(
+        `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
+        [ticketValues]
+      );
+    }
+    totalTickets += it.quantity;
+    totalFee = waterTicketLedger.round2(totalFee + fee.total);
+  }
+
+  return { issuanceIds, batchId, totalTickets, totalFee };
+}
+
+/** HTTP 出口（薄封装：事务边界在这里，便于并进幂等/审计） */
 async function issueTickets(req, res) {
   let connection;
   try {
     const { stationId, month, remark, items } = req.body || {};
-    const actualStationId = stationId;
-    const actualMonth = month || new Date().toISOString().slice(0, 7);
     const operator = (req.user && (req.user.username || req.user.id)) || null;
 
-    if (!actualStationId) return error(res, '请选择水站', 400);
-    if (!Array.isArray(items) || items.length === 0) return error(res, '请至少填写一条返货商品', 400);
-    // 字段名经 normalizeBody 中间件归一为驼峰
-    const cleanItems = items.map(it => ({
-      productId: it.productId,
-      quantity: Number(it.quantity),
-      distributionDeliveryFee: Number(it.distributionDeliveryFee !== undefined ? it.distributionDeliveryFee : 0)
-    }));
-    const invalid = cleanItems.some(
-      it =>
-        !it.productId ||
-        isNaN(it.quantity) ||
-        it.quantity <= 0 ||
-        isNaN(it.distributionDeliveryFee) ||
-        it.distributionDeliveryFee < 0
-    );
-    if (invalid) return error(res, '每条需填写商品、数量（>0）与返货配送费（≥0）', 400);
-
-    // 校验水站与商品存在
-    const [stationRows] = await pool.execute('SELECT station_id FROM sub_stations WHERE station_id = ?', [
-      actualStationId
-    ]);
-    if (stationRows.length === 0) return error(res, '水站不存在', 404);
-    const productIds = cleanItems.map(it => it.productId);
-    const [productRows] = await pool.execute(
-      `SELECT product_id FROM products WHERE product_id IN (${productIds.map(() => '?').join(',')})`,
-      productIds
-    );
-    const existSet = new Set(productRows.map(p => p.product_id));
-    for (const it of cleanItems) {
-      if (!existSet.has(it.productId)) return error(res, `商品不存在: ${it.productId}`, 400);
-    }
-
-    const now = new Date();
-    // 同一次录入 = 一个批次（批次号用于列表按批次合并展示）
-    const batchId = `WTB${Date.now()}${Math.floor(Math.random() * 90 + 10)}`;
     connection = await pool.getConnection();
     await connection.beginTransaction();
-
-    let totalTickets = 0;
-    const issuanceIds = [];
-    for (const it of cleanItems) {
-      const issuanceId = `WTI${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
-      await connection.execute(
-        `INSERT INTO water_ticket_issuance (issuance_id, batch_id, station_id, product_id, quantity, distribution_delivery_fee, month, remark, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          issuanceId,
-          batchId,
-          actualStationId,
-          it.productId,
-          it.quantity,
-          it.distributionDeliveryFee,
-          actualMonth,
-          remark || null,
-          operator
-        ]
-      );
-      issuanceIds.push(issuanceId);
-
-      // 批量生成水票
-      const ticketValues = [];
-      for (let i = 0; i < it.quantity; i++) {
-        const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
-        ticketValues.push([
-          ticketId,
-          it.productId,
-          actualStationId,
-          TICKET_STATUS.UNUSED,
-          actualMonth,
-          issuanceId,
-          now,
-          operator,
-          null,
-          null,
-          null
-        ]);
-      }
-      if (ticketValues.length) {
-        await connection.query(
-          `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
-          [ticketValues]
-        );
-      }
-      totalTickets += it.quantity;
-    }
-
+    const data = await createIssuance(connection, { stationId, month, remark, items, operator });
     await connection.commit();
-    return success(res, { issuanceIds, batchId, totalTickets }, `发行成功（${totalTickets} 张水票）`);
+    return success(res, data, `发行成功（${data.totalTickets} 张水票）`);
   } catch (e) {
     if (connection) await connection.rollback().catch(() => {});
+    // ⚠️ 钱包原语与业务校验抛的都是**业务错误**（如「积分钱包已停用」「积分不足」「水站不存在」）——
+    //    必须按其自带状态码回（400/404），不能一律 500，否则用户与排障者都读不懂。
+    // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('issueTickets error:', e);
     return error(res, '发行失败', 500);
   } finally {
@@ -267,19 +297,42 @@ async function getTicketList(req, res) {
 // 作废水票（仅未用可作废）
 /**
  * 作废单张水票 —— **须在调用方事务内执行**（Web 与小程序管理端共用同一段）
- * ⚠️ 只改状态，**不动积分/钱包**：票据退还的是「未使用」这个状态，
- *    而分销配送费积分在发行时就已发生，作废一张票不构成积分冲回
- *    （积分冲回是 Phase 7 的独立议题，见 docs §7.2）。
  * ⚠️ 状态守卫在 SQL 里（`AND status = UNUSED`）：并发下两次作废只有一次生效，
  *    第二次 affectedRows=0 → 抛 bizFail，不会把「已使用的票」改成作废。
+ * ⚠️ **Phase 7 起会回冲积分**（§12.7）：作废 1 张 → 按该票所属发行记录的**单件值**回冲
+ *    （方向 OUT）。积分在发行时已入账，作废相当于把这件返货退回去。
+ *    · 账户调整补发的票（`issuance_id IS NULL`）**从未入账** → 不回冲（也不能凭空扣）；
+ *    · 水站已把积分花掉时，回冲会因**余额不足**被拒 → 整个事务回滚，票保持未用。
+ *      这是有意的：宁可拒绝，也不把余额压成负数（那会破坏仓库的余额恒等式）。
  */
-async function cancelTicketById(conn, id) {
+async function cancelTicketById(conn, id, operator = null) {
+  // 先取票与所属发行记录：回冲需要「单件值」与「水站」
+  const [tRows] = await conn.execute(
+    `SELECT t.ticket_id, t.station_id, t.issuance_id, i.distribution_delivery_fee_unit
+       FROM water_tickets t
+       LEFT JOIN water_ticket_issuance i ON t.issuance_id = i.issuance_id
+      WHERE t.ticket_id = ?`,
+    [id]
+  );
+  if (!tRows.length) throw bizFail('水票不存在或已不可作废');
+  const ticket = tRows[0];
+
   const [result] = await conn.execute('UPDATE water_tickets SET status = ? WHERE ticket_id = ? AND status = ?', [
     TICKET_STATUS.VOID,
     id,
     TICKET_STATUS.UNUSED
   ]);
   if (result.affectedRows === 0) throw bizFail('水票不存在或已不可作废');
+
+  if (ticket.issuance_id && ticket.distribution_delivery_fee_unit !== null) {
+    await waterTicketLedger.revertDistributionFee(conn, {
+      issuanceId: ticket.issuance_id,
+      stationId: ticket.station_id,
+      amount: ticket.distribution_delivery_fee_unit,
+      operator,
+      remark: `作废水票回冲（票号 ${id}）`
+    });
+  }
   return { ticketId: id };
 }
 
@@ -288,7 +341,7 @@ async function cancelTicket(req, res) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    const data = await cancelTicketById(conn, req.params.id);
+    const data = await cancelTicketById(conn, req.params.id, (req.user && (req.user.username || req.user.id)) || null);
     await conn.commit();
     return success(res, data, '已作废');
   } catch (e) {
@@ -347,7 +400,7 @@ async function loadIssuanceList(query = {}) {
     if (batchIds.length) {
       [itemsRows] = await pool.execute(
         `SELECT i.batch_id, i.issuance_id, i.product_id, p.product_name, p.specification,
-                i.quantity, i.distribution_delivery_fee, i.remark
+                i.quantity, i.distribution_delivery_fee, i.distribution_delivery_fee_unit, i.remark
          FROM water_ticket_issuance i
          LEFT JOIN products p ON i.product_id = p.product_id
          WHERE i.batch_id IN (${batchIds.map(() => '?').join(',')})
@@ -375,6 +428,8 @@ async function loadIssuanceList(query = {}) {
           productName: x.product_name || x.product_id,
           specification: x.specification || '',
           quantity: Number(x.quantity) || 0,
+          // 单件值（Phase 7 §12.6 落库）：页面据此展示「单件 × 数量」，不再反推
+          unitFee: Number(x.distribution_delivery_fee_unit) || 0,
           distributionDeliveryFee: Number(x.distribution_delivery_fee) || 0,
           remark: x.remark || ''
         }))
@@ -393,82 +448,129 @@ async function getIssuanceList(req, res) {
   }
 }
 
-// 编辑发行记录（管理员）：可改数量/分销配送费/备注
-// 数量变化联动水票：增加→补发未用票；减少→作废未核销票（不足则提示）
+// ---------------------------------------------------------------------------
+// 编辑发行记录核心（Web 与管理端共用）
+// ⚠️ 分销配送费**不可编辑**（§12.9/§12.10）：单件值来自商品档案，
+//    总额 = 单件值 × 数量（随数量自动重算）。请求体里若带 `distributionDeliveryFee` 一律忽略 ——
+//    改金额等于直接改历史入账金额，而它现在是水站的**积分**（钱），只能走反向流水。
+// ⚠️ 数量变化联动水票与积分：增加→补发未用票 + 按差额入账；减少→作废未核销票 + 按差额回冲。
+// ⚠️ **必须在调用方事务内执行**。
+// @returns {Promise<{issuanceId:string, quantity:number, distributionDeliveryFee:number}>}
+async function updateIssuanceCore(conn, { id, quantity, month, remark, operator }) {
+  const [exist] = await conn.execute(
+    `SELECT issuance_id, station_id, product_id, quantity, distribution_delivery_fee,
+            month, remark, distribution_delivery_fee_unit
+       FROM water_ticket_issuance WHERE issuance_id = ? FOR UPDATE`,
+    [id]
+  );
+  if (exist.length === 0) throw bizFail('发行记录不存在', 404);
+  const old = exist[0];
+
+  const newQuantity = quantity !== undefined && quantity !== '' ? Number(quantity) : Number(old.quantity);
+  if (isNaN(newQuantity) || newQuantity <= 0) throw bizFail('数量必须大于0');
+  const newMonth = month || old.month;
+
+  // 单件值：优先用已落库的值；历史行（Phase 7 之前）为空则回源商品档案并补上
+  const oldUnit =
+    old.distribution_delivery_fee_unit !== null && old.distribution_delivery_fee_unit !== undefined
+      ? waterTicketLedger.round2(old.distribution_delivery_fee_unit)
+      : await waterTicketLedger.resolveUnitFee(conn, old.product_id);
+  const fee = waterTicketLedger.computeFeeCols(oldUnit, newQuantity);
+  const oldTotal = waterTicketLedger.round2(old.distribution_delivery_fee);
+  const feeDiff = waterTicketLedger.round2(fee.total - oldTotal);
+
+  // 数量调整：计算差额
+  const diff = newQuantity - Number(old.quantity);
+  if (diff > 0) {
+    // 补发水票
+    const now = new Date();
+    const values = [];
+    for (let i = 0; i < diff; i++) {
+      values.push([
+        `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`,
+        old.product_id,
+        old.station_id,
+        TICKET_STATUS.UNUSED,
+        newMonth,
+        id,
+        now,
+        operator,
+        null,
+        null,
+        null
+      ]);
+    }
+    await conn.query(
+      `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
+      [values]
+    );
+  } else if (diff < 0) {
+    // 作废多余的未核销水票（按票最早优先）
+    const need = -diff;
+    const [tickets] = await conn.execute(
+      `SELECT ticket_id FROM water_tickets WHERE issuance_id = ? AND status = ? ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
+      [id, TICKET_STATUS.UNUSED]
+    );
+    if (tickets.length < need) {
+      throw bizFail(`可作废的未用水票不足：需减 ${need} 张，仅剩 ${tickets.length} 张（部分已核销）`);
+    }
+    const ids = tickets.map(t => t.ticket_id);
+    await conn.execute(`UPDATE water_tickets SET status = ? WHERE ticket_id IN (${ids.map(() => '?').join(',')})`, [
+      TICKET_STATUS.VOID,
+      ...ids
+    ]);
+  }
+
+  // 积分联动：差额正向补入账 / 负向回冲（金额来自「单件值 × 数量」的差额，不是客户端值）
+  if (feeDiff > 0) {
+    await waterTicketLedger.creditDistributionFee(conn, {
+      issuanceId: id,
+      stationId: old.station_id,
+      amount: feeDiff,
+      operator,
+      remark: `改单加量入账（数量 ${old.quantity} → ${newQuantity}）`
+    });
+  } else if (feeDiff < 0) {
+    await waterTicketLedger.revertDistributionFee(conn, {
+      issuanceId: id,
+      stationId: old.station_id,
+      amount: -feeDiff,
+      operator,
+      remark: `改单减量回冲（数量 ${old.quantity} → ${newQuantity}）`
+    });
+  }
+
+  // ⚠️ `wallet_transaction_id` 只在**首次发行**时写入（= 该记录的入账流水），
+  //    编辑产生的补/冲流水由 wallet_transactions 按 related_id 聚合体现 —— 不在这里改写，
+  //    否则这个字段的语义会随编辑在「入账」与「回冲」之间漂移。
+  await conn.execute(
+    `UPDATE water_ticket_issuance
+        SET quantity = ?, distribution_delivery_fee = ?, distribution_delivery_fee_unit = ?,
+            distribution_delivery_fee_total = ?, month = ?, remark = ?
+      WHERE issuance_id = ?`,
+    [newQuantity, fee.total, fee.unit, fee.total, newMonth, remark !== undefined ? remark : old.remark, id]
+  );
+
+  return { issuanceId: id, quantity: newQuantity, distributionDeliveryFee: fee.total };
+}
+
+/** HTTP 出口（薄封装，Web 端） */
 async function updateIssuance(req, res) {
   let connection;
   try {
     const { id } = req.params;
-    const { quantity, distributionDeliveryFee, month, remark } = req.body || {};
+    const { quantity, month, remark } = req.body || {};
     const operator = (req.user && (req.user.username || req.user.id)) || null;
-
-    const [exist] = await pool.execute('SELECT * FROM water_ticket_issuance WHERE issuance_id = ?', [id]);
-    if (exist.length === 0) return error(res, '发行记录不存在', 404);
-    const old = exist[0];
-
-    const newQuantity = quantity !== undefined && quantity !== '' ? Number(quantity) : Number(old.quantity);
-    if (isNaN(newQuantity) || newQuantity <= 0) return error(res, '数量必须大于0', 400);
-    const newFee =
-      distributionDeliveryFee !== undefined ? Number(distributionDeliveryFee) : Number(old.distribution_delivery_fee);
-    if (isNaN(newFee) || newFee < 0) return error(res, '分销配送费必须大于等于0', 400);
-    const newMonth = month || old.month;
 
     connection = await pool.getConnection();
     await connection.beginTransaction();
-
-    // 数量调整：计算差额
-    const diff = newQuantity - Number(old.quantity);
-    if (diff > 0) {
-      // 补发水票
-      const now = new Date();
-      const values = [];
-      for (let i = 0; i < diff; i++) {
-        const ticketId = `WT${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
-        values.push([
-          ticketId,
-          old.product_id,
-          old.station_id,
-          TICKET_STATUS.UNUSED,
-          newMonth,
-          id,
-          now,
-          operator,
-          null,
-          null,
-          null
-        ]);
-      }
-      await connection.query(
-        `INSERT INTO water_tickets (ticket_id, product_id, station_id, status, month, issuance_id, issued_at, issued_by, used_at, order_id, remark) VALUES ?`,
-        [values]
-      );
-    } else if (diff < 0) {
-      // 作废多余的未核销水票（按票最早优先）
-      const need = -diff;
-      const [tickets] = await connection.execute(
-        `SELECT ticket_id FROM water_tickets WHERE issuance_id = ? AND status = ? ORDER BY ticket_id LIMIT ${parseInt(need, 10)}`,
-        [id, TICKET_STATUS.UNUSED]
-      );
-      if (tickets.length < need) {
-        await connection.rollback();
-        return error(res, `可作废的未用水票不足：需减 ${need} 张，仅剩 ${tickets.length} 张（部分已核销）`, 400);
-      }
-      const ids = tickets.map(t => t.ticket_id);
-      await connection.execute(
-        `UPDATE water_tickets SET status = ? WHERE ticket_id IN (${ids.map(() => '?').join(',')})`,
-        [TICKET_STATUS.VOID, ...ids]
-      );
-    }
-
-    await connection.execute(
-      `UPDATE water_ticket_issuance SET quantity = ?, distribution_delivery_fee = ?, month = ?, remark = ? WHERE issuance_id = ?`,
-      [newQuantity, newFee, newMonth, remark !== undefined ? remark : old.remark, id]
-    );
-
+    const data = await updateIssuanceCore(connection, { id, quantity, month, remark, operator });
     await connection.commit();
-    return success(res, { issuanceId: id, quantity: newQuantity }, '修改成功');
+    return success(res, data, '修改成功');
   } catch (e) {
     if (connection) await connection.rollback().catch(() => {});
+    // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('updateIssuance error:', e);
     return error(res, '修改失败', 500);
   } finally {
@@ -569,121 +671,22 @@ async function adjustBalance(req, res) {
   }
 }
 
-// 分销配送费余额调整（管理员）：将某水站某商品的配送费累计调整为目标金额
-// 差额计入该水站该商品最新一条发行记录，使 SUM 恰好等于目标值
-async function adjustDeliveryFee(req, res) {
-  let connection;
-  try {
-    const { stationId, productId, targetFee } = req.body || {};
-    const actualStationId = stationId;
-    const actualProductId = productId;
-    const target = Number(targetFee);
-    if (!actualStationId) return error(res, '请选择水站', 400);
-    if (!actualProductId) return error(res, '请选择商品', 400);
-    if (isNaN(target) || target < 0) return error(res, '分销配送费必须大于等于0', 400);
+// ── 以下两个端点已于 2026-09-22 **停用**（Phase 7 §12.9）─────────────────────
+// 它们的能力是「把差额直接写进**历史**发行记录」，也就是改历史金额。
+// 在配送费变成水站积分（钱）之后，这条路径会绕过钱包流水去改已入账金额 ——
+// 钱包（账面）与发行记录（单据）会静默错位，而账面上没有任何一笔流水能解释差额从哪来。
+// 正确做法：确需修正时**新增一张对冲发行记录**，不改历史。
+//
+// 保留路由并返回 410（而不是删掉路由）：旧调用方能拿到明确原因，也保留恢复的可能
+// （回滚路径见 docs/小程序开发说明.md §7.2）。
+const DISABLED_ADJUST_MSG = '该功能已停用（配送费由商品档案决定、不可改历史金额）；如需修正请新增一张对冲发行记录';
 
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
-
-    const [sumRows] = await connection.execute(
-      `SELECT ROUND(SUM(distribution_delivery_fee), 2) AS s FROM water_ticket_issuance WHERE station_id = ? AND product_id = ?`,
-      [actualStationId, actualProductId]
-    );
-    const current = Number(sumRows[0].s) || 0;
-    const diff = Math.round((target - current) * 100) / 100;
-
-    if (diff !== 0) {
-      const [rows] = await connection.execute(
-        `SELECT issuance_id, distribution_delivery_fee FROM water_ticket_issuance
-         WHERE station_id = ? AND product_id = ?
-         ORDER BY created_at DESC, issuance_id DESC LIMIT 1`,
-        [actualStationId, actualProductId]
-      );
-      if (rows.length === 0) {
-        await connection.rollback();
-        return error(res, '该水站商品无发行记录，无法调整配送费', 400);
-      }
-      const newFee = Math.round((Number(rows[0].distribution_delivery_fee) + diff) * 100) / 100;
-      if (newFee < 0) {
-        await connection.rollback();
-        return error(res, '调整后单笔配送费为负，无法调整', 400);
-      }
-      await connection.execute(`UPDATE water_ticket_issuance SET distribution_delivery_fee = ? WHERE issuance_id = ?`, [
-        newFee,
-        rows[0].issuance_id
-      ]);
-    }
-
-    await connection.commit();
-    return success(res, { stationId: actualStationId, productId: actualProductId, current, target }, '配送费调整成功');
-  } catch (e) {
-    if (connection) await connection.rollback().catch(() => {});
-    console.error('adjustDeliveryFee error:', e);
-    return error(res, '配送费调整失败', 500);
-  } finally {
-    if (connection) connection.release();
-  }
+function adjustDeliveryFee(req, res) {
+  return error(res, DISABLED_ADJUST_MSG, 410);
 }
 
-// 水站级分销配送费余额调整（管理员）：将某水站全部发行记录配送费总计调整为目标金额
-// 差额计入该水站最新一条发行记录，使水站总计恰好等于目标值
-async function adjustStationDeliveryFee(req, res) {
-  let connection;
-  try {
-    const { stationId, station_id, targetFee } = req.body || {};
-    const actualStationId = stationId || station_id;
-    const target = Number(targetFee);
-    if (!actualStationId) return error(res, '请选择水站', 400);
-    if (isNaN(target) || target < 0) return error(res, '分销配送费必须大于等于0', 400);
-
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
-
-    const [sumRows] = await connection.execute(
-      `SELECT ROUND(SUM(distribution_delivery_fee), 2) AS s FROM water_ticket_issuance WHERE station_id = ?`,
-      [actualStationId]
-    );
-    const current = Number(sumRows[0].s) || 0;
-    const diff = Math.round((target - current) * 100) / 100;
-
-    if (diff !== 0) {
-      const [allRows] = await connection.execute(
-        `SELECT issuance_id, distribution_delivery_fee FROM water_ticket_issuance
-         WHERE station_id = ?
-         ORDER BY created_at DESC, issuance_id DESC`,
-        [actualStationId]
-      );
-      if (allRows.length === 0) {
-        await connection.rollback();
-        return error(res, '该水站无发行记录，无法调整配送费', 400);
-      }
-      // 差额均摊到全部发行记录（首笔吸收余数），避免单笔为负
-      const n = allRows.length;
-      const per = Math.floor((diff * 100) / n) / 100;
-      const remainder = Math.round((diff - per * n) * 100) / 100;
-      for (let i = 0; i < n; i++) {
-        const adj = i === 0 ? Math.round((per + remainder) * 100) / 100 : per;
-        const newFee = Math.round((Number(allRows[i].distribution_delivery_fee) + adj) * 100) / 100;
-        if (newFee < 0) {
-          await connection.rollback();
-          return error(res, '调整后单笔配送费为负，无法调整', 400);
-        }
-        await connection.execute(
-          `UPDATE water_ticket_issuance SET distribution_delivery_fee = ? WHERE issuance_id = ?`,
-          [newFee, allRows[i].issuance_id]
-        );
-      }
-    }
-
-    await connection.commit();
-    return success(res, { stationId: actualStationId, current, target }, '配送费调整成功');
-  } catch (e) {
-    if (connection) await connection.rollback().catch(() => {});
-    console.error('adjustStationDeliveryFee error:', e);
-    return error(res, '配送费调整失败', 500);
-  } finally {
-    if (connection) connection.release();
-  }
+function adjustStationDeliveryFee(req, res) {
+  return error(res, DISABLED_ADJUST_MSG, 410);
 }
 
 // 删除发行批次（管理员）：整批删除
@@ -694,6 +697,7 @@ async function deleteIssuanceBatch(req, res) {
   try {
     const { batchId } = req.params;
     if (!batchId) return error(res, '缺少批次号', 400);
+    const operator = (req.user && (req.user.username || req.user.id)) || null;
 
     connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -727,13 +731,34 @@ async function deleteIssuanceBatch(req, res) {
     }
 
     // 删除水票（未用/作废）与发行记录
+    // ① 先按**当前净入账**逐条回冲积分（§12.7）：发行时入过账，删批次等于取消这次发行。
+    //    ⚠️ 不能用 SUM(distribution_delivery_fee_total) 快照回冲 —— 之前的票级作废与减量
+    //       已经把一部分冲回去了，按快照会**多冲**（且多冲的部分没有业务单据支撑）。
+    //    ⚠️ 水站已把积分花掉时会因余额不足被拒 → 整体回滚、批次不被删除（有意为之）。
+    const credited = await waterTicketLedger.issuancesWithCredit(connection, batchId);
+    for (const row of credited) {
+      await waterTicketLedger.revertDistributionFee(connection, {
+        issuanceId: row.issuance_id,
+        stationId: row.station_id,
+        amount: row.net,
+        operator,
+        remark: `删除发行批次回冲（批次 ${batchId}）`
+      });
+    }
+
     await connection.execute(`DELETE FROM water_tickets WHERE issuance_id IN (${placeholders})`, ids);
     await connection.execute('DELETE FROM water_ticket_issuance WHERE batch_id = ?', [batchId]);
 
     await connection.commit();
-    return success(res, { batchId, removed: issRows.length }, '批次已删除');
+    return success(
+      res,
+      { batchId, removed: issRows.length, revertedFee: credited.reduce((s, r) => s + r.net, 0) },
+      '批次已删除'
+    );
   } catch (e) {
     if (connection) await connection.rollback().catch(() => {});
+    // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
+    if (e.business) return error(res, e.message, e.status || 400); // hazard-allow: bizFail 业务校验文案（设计输出，非内部细节）
     console.error('deleteIssuanceBatch error:', e);
     return error(res, '删除失败', 500);
   } finally {
@@ -743,6 +768,9 @@ async function deleteIssuanceBatch(req, res) {
 
 module.exports = {
   issueTickets,
+  // 核心（Web 与管理端共用；小程序管理端直接调这两个，避免金额逻辑写两遍）
+  createIssuance,
+  updateIssuanceCore,
   getTicketInventory,
   getTicketList,
   cancelTicket,

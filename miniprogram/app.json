@@ -41,7 +41,9 @@
     "pages/admin-barrel-deposit/index",
     "pages/admin-barrel-configs/index",
     "pages/admin-settings/index",
-    "pages/admin-tickets/index"
+    "pages/admin-tickets/index",
+    "pages/admin-ticket-issue/index",
+    "pages/admin-mini-accounts/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

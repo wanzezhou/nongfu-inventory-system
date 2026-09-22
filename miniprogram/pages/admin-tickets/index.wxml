@@ -1,5 +1,6 @@
-<!-- 水票（管理员 · Phase 8b 第 15 域）
-     ⚠️ 只有查 + 作废单张：发行的定价权在服务端尚未收口（§12.10），故不开放手机端发行。 -->
+<!-- 水票（管理员 · Phase 8b 第 15 域 + Phase 7 补齐）
+     ✅ Phase 7 已落地：发行已开放（顶部入口 → 返货发行页），发行记录行可「改数量」。
+     ⚠️ 批次删除仍只在 Web（破坏性操作）。作废与改数量都会回冲水站积分。 -->
 <view class="page">
   <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
 
@@ -24,6 +25,11 @@
       </picker>
     </view>
     <view class="t-sm t-sub mt-8">共 {{total}} 条</view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sm t-sub">按月录返货清单（给水站入账积分）</text>
+      <text class="t-primary" bindtap="goIssue">返货发行</text>
+    </view>
   </view>
 
   <view wx:if="{{notice}}" class="banner banner-info">{{notice}}</view>
@@ -79,9 +85,21 @@
       </view>
       <view class="t-sm t-sub mt-8">{{item.batchId}} · {{item.createdAt}}</view>
       <view class="divider"></view>
-      <view wx:for="{{item.items}}" wx:for-item="it" wx:key="issuanceId" class="row-between mt-8">
-        <text class="t-sm">{{it.productName}} × {{it.quantity}}</text>
-        <text class="t-sm t-sub">配送费 ¥{{it.feeText}}</text>
+      <view wx:for="{{item.items}}" wx:for-item="it" wx:key="issuanceId" class="mt-8">
+        <view class="row-between">
+          <text class="t-sm">{{it.productName}} × {{it.quantity}}</text>
+          <text class="t-sm t-sub">配送费 ¥{{it.feeText}}</text>
+        </view>
+        <view class="row-between mt-8">
+          <text class="t-sm t-sub">单件 ¥{{it.unitFeeText}}（商品档案，不可改）</text>
+          <text
+            class="t-primary"
+            data-id="{{it.issuanceId}}"
+            data-qty="{{it.quantity}}"
+            data-name="{{it.productName}}"
+            bindtap="onEditQuantity"
+          >改数量</text>
+        </view>
       </view>
     </view>
   </block>

@@ -12,23 +12,56 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="所属月份" required>
-                <el-date-picker v-model="issueForm.month" type="month" value-format="YYYY-MM" placeholder="选择月份" style="width: 100%" />
+                <el-date-picker
+                  v-model="issueForm.month"
+                  type="month"
+                  value-format="YYYY-MM"
+                  placeholder="选择月份"
+                  style="width: 100%"
+                />
               </el-form-item>
             </el-form>
             <div class="issue-items">
               <div v-for="(it, idx) in issueForm.items" :key="idx" class="issue-item-row">
                 <span class="item-label">商品</span>
-                <el-select v-model="it.productId" filterable placeholder="请选择商品" style="width: 36%" @change="(pid) => onIssueProductChange(it, pid)">
-                  <el-option v-for="p in productOptions" :key="p.id" :label="`${p.name}（${p.spec || ''}）`" :value="p.id" :disabled="p.stock <= 0" :class="{ 'option-out-of-stock': p.stock <= 0 }">
-                    <span :style="{ color: p.stock <= 0 ? 'var(--text-3)' : '' }">{{ p.name }}（{{ p.spec || '' }}）</span>
-                    <span v-if="p.stock <= 0" style="color: var(--text-3); font-size: 12px; margin-left: 8px;">无库存</span>
-                    <span v-else style="color: var(--el-color-success); font-size: 12px; margin-left: 8px;">库存: {{ p.stock }}</span>
+                <el-select
+                  v-model="it.productId"
+                  filterable
+                  placeholder="请选择商品"
+                  style="width: 36%"
+                  @change="pid => onIssueProductChange(it, pid)"
+                >
+                  <el-option
+                    v-for="p in productOptions"
+                    :key="p.id"
+                    :label="`${p.name}（${p.spec || ''}）`"
+                    :value="p.id"
+                    :disabled="p.stock <= 0"
+                    :class="{ 'option-out-of-stock': p.stock <= 0 }"
+                  >
+                    <span :style="{ color: p.stock <= 0 ? 'var(--text-3)' : '' }"
+                      >{{ p.name }}（{{ p.spec || '' }}）</span
+                    >
+                    <span v-if="p.stock <= 0" style="color: var(--text-3); font-size: 12px; margin-left: 8px"
+                      >无库存</span
+                    >
+                    <span v-else style="color: var(--el-color-success); font-size: 12px; margin-left: 8px"
+                      >库存: {{ p.stock }}</span
+                    >
                   </el-option>
                 </el-select>
                 <span class="item-label">数量</span>
-                <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 20%" @change="(v) => onIssueQuantityChange(it, v)" />
+                <el-input-number
+                  v-model="it.quantity"
+                  :min="1"
+                  :precision="0"
+                  :step="1"
+                  style="width: 20%"
+                  @change="v => onIssueQuantityChange(it, v)"
+                />
                 <span class="item-label">分销配送费</span>
-                <el-input-number v-model="it.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" style="width: 22%" />
+                <!-- ⚠️ 只读：单件值由服务端从商品档案取（§12.10），该金额会作为积分入到水站账户 -->
+                <span class="fee-readonly" style="width: 22%">¥{{ fmtMoney(it.distributionDeliveryFee) }}</span>
                 <el-button link type="danger" :disabled="issueForm.items.length === 1" @click="removeIssueItem(idx)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
@@ -41,7 +74,10 @@
                   <el-icon><DocumentAdd /></el-icon>录入并发行水票
                 </el-button>
               </div>
-              <span class="issue-hint">按每月返货清单录入：商品 × 数量 = 生成等量水票；分销配送费自动带出商品档案（随数量联动，可修改）。</span>
+              <span class="issue-hint"
+                >按每月返货清单录入：商品 × 数量 =
+                生成等量水票；分销配送费按商品档案自动带出（随数量联动，不可手改），该金额会作为积分入到水站账户。</span
+              >
             </div>
           </div>
         </el-tab-pane>
@@ -52,20 +88,24 @@
             <el-select v-model="invFilter.stationId" filterable clearable placeholder="水站" style="width: 200px">
               <el-option v-for="s in stationOptions" :key="s.id" :label="s.name" :value="s.id" />
             </el-select>
-            <el-button type="primary" @click="fetchInventory"><el-icon><Search /></el-icon>查询</el-button>
+            <el-button type="primary" @click="fetchInventory"
+              ><el-icon><Search /></el-icon>查询</el-button
+            >
           </div>
           <el-table :data="inventoryList" v-loading="loading" border stripe size="small" :span-method="invSpanMethod">
             <el-table-column prop="stationName" label="水站" width="140" />
             <el-table-column prop="productName" label="商品" min-width="180" show-overflow-tooltip />
             <el-table-column prop="specification" label="规格" width="110" />
             <el-table-column prop="available" label="水票余额" width="110" align="center">
-              <template #default="{ row }"><el-tag type="success">{{ row.available }} 张</el-tag></template>
+              <template #default="{ row }"
+                ><el-tag type="success">{{ row.available }} 张</el-tag></template
+              >
             </el-table-column>
+            <!-- Phase 7：配送费由商品档案决定，不再提供「调整历史金额」入口（§12.9） -->
             <el-table-column prop="stationDeliveryFee" label="分销配送费余额" width="170" align="right">
               <template #default="{ row }">
                 <div class="fee-cell">
                   <span>¥{{ fmtMoney(row.stationDeliveryFee) }}</span>
-                  <el-button link type="primary" size="small" @click="openAdjustStationFee(row)">调整</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -88,8 +128,16 @@
             <el-select v-model="issFilter.stationId" filterable clearable placeholder="水站" style="width: 150px">
               <el-option v-for="s in stationOptions" :key="s.id" :label="s.name" :value="s.id" />
             </el-select>
-            <el-date-picker v-model="issFilter.month" type="month" value-format="YYYY-MM" placeholder="月份" style="width: 130px" />
-            <el-button type="primary" size="small" @click="searchIssuances"><el-icon><Search /></el-icon>查询</el-button>
+            <el-date-picker
+              v-model="issFilter.month"
+              type="month"
+              value-format="YYYY-MM"
+              placeholder="月份"
+              style="width: 130px"
+            />
+            <el-button type="primary" size="small" @click="searchIssuances"
+              ><el-icon><Search /></el-icon>查询</el-button
+            >
           </div>
         </div>
       </template>
@@ -99,7 +147,9 @@
         <el-table-column prop="productName" label="商品" min-width="180" show-overflow-tooltip />
         <el-table-column prop="quantity" label="数量" width="70" align="center" />
         <el-table-column label="分销配送费" width="120" align="right">
-          <template #default="{ row }"><span class="fee-total">¥{{ fmtMoney(row.batch.totalFee) }}</span></template>
+          <template #default="{ row }"
+            ><span class="fee-total">¥{{ fmtMoney(row.batch.totalFee) }}</span></template
+          >
         </el-table-column>
         <el-table-column prop="createdBy" label="录入人" width="90" />
         <el-table-column prop="createdAt" label="录入时间" width="155">
@@ -120,25 +170,54 @@
           :total="issuanceTotal"
           v-model:page-size="issuancePage.pageSize"
           :current-page="issuancePage.page"
-          @current-change="(p) => { issuancePage.page = p; fetchIssuances() }"
-          @size-change="() => { issuancePage.page = 1; fetchIssuances() }"
+          @current-change="
+            p => {
+              issuancePage.page = p
+              fetchIssuances()
+            }
+          "
+          @size-change="
+            () => {
+              issuancePage.page = 1
+              fetchIssuances()
+            }
+          "
         />
       </div>
     </el-card>
 
     <!-- 编辑发行记录弹窗（批次多行，加宽） -->
-    <el-dialog v-model="editIssuanceVisible" :title="`编辑发行记录 - ${editForm.stationName}（${editForm.month}）`" :width="editDialogWidth" @closed="resetEditForm">
+    <el-dialog
+      v-model="editIssuanceVisible"
+      :title="`编辑发行记录 - ${editForm.stationName}（${editForm.month}）`"
+      :width="editDialogWidth"
+      @closed="resetEditForm"
+    >
       <div class="edit-items">
         <div v-for="(it, idx) in editForm.items" :key="it.issuanceId || idx" class="edit-item-row">
           <span class="item-label">商品</span>
-          <span class="edit-product">{{ it.productName }}<span v-if="it.specification">（{{ it.specification }}）</span></span>
+          <span class="edit-product"
+            >{{ it.productName }}<span v-if="it.specification">（{{ it.specification }}）</span></span
+          >
           <span class="item-label">数量</span>
-          <el-input-number v-model="it.quantity" :min="1" :precision="0" :step="1" style="width: 120px" @change="(v) => onEditItemQuantityChange(it, v)" />
+          <el-input-number
+            v-model="it.quantity"
+            :min="1"
+            :precision="0"
+            :step="1"
+            style="width: 120px"
+            @change="v => onEditItemQuantityChange(it, v)"
+          />
           <span class="item-label">分销配送费</span>
-          <el-input-number v-model="it.distributionDeliveryFee" :min="0" :precision="2" :step="0.5" style="width: 140px" />
+          <span class="fee-readonly"
+            >¥{{ fmtMoney(it.distributionDeliveryFee) }}（单件 ¥{{ fmtMoney(it.unitFee) }}）</span
+          >
         </div>
       </div>
-      <div class="edit-item-hint">数量改大自动补发水票；改小作废未用水票（已核销不可减）；分销配送费随数量自动重算，可再手动调整。</div>
+      <div class="edit-item-hint">
+        数量改大自动补发水票并补入积分；改小作废未用水票（已核销不可减）并回冲积分；分销配送费按商品档案单件值 ×
+        数量自动重算，不可手改。
+      </div>
       <el-form label-width="90px" style="margin-top: 10px">
         <el-form-item label="备注">
           <el-input v-model="editRemark" type="textarea" :rows="2" placeholder="选填" />
@@ -169,25 +248,9 @@
       </template>
     </el-dialog>
 
-    <!-- 水站分销配送费调整弹窗 -->
-    <el-dialog v-model="adjustStationFeeVisible" title="调整水站分销配送费" :width="dialogWidth">
-      <el-form label-width="110px">
-        <el-form-item label="水站">
-          <span>{{ adjustFeeRow.stationName }}</span>
-        </el-form-item>
-        <el-form-item label="当前配送费总计">
-          <span>¥{{ fmtMoney(adjustFeeRow.stationDeliveryFee) }}</span>
-        </el-form-item>
-        <el-form-item label="目标金额">
-          <el-input-number v-model="adjustStationFeeTarget" :min="0" :precision="2" :step="10" style="width: 100%" />
-          <span class="unit-label">差额计入该水站最新发行记录</span>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="adjustStationFeeVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleAdjustStationFee">保存</el-button>
-      </template>
-    </el-dialog>
+    <!-- ⚠️ 「调整水站分销配送费」弹窗已于 2026-09-22 移除（Phase 7 §12.9）：
+         该功能把差额直接写进**历史**发行记录，在配送费变成水站积分后会绕过钱包流水改已入账金额。
+         如需修正，请新增一张对冲发行记录。 -->
   </div>
 </template>
 
@@ -196,8 +259,12 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Delete, DocumentAdd } from '@element-plus/icons-vue'
 import {
-  issueTickets, getTicketInventory, getIssuanceList,
-  updateIssuance, adjustBalance, adjustStationDeliveryFee, deleteIssuanceBatch
+  issueTickets,
+  getTicketInventory,
+  getIssuanceList,
+  updateIssuance,
+  adjustBalance,
+  deleteIssuanceBatch
 } from '@/api/waterTicket'
 import { getAllStations } from '@/api/station'
 import { getProductOptions } from '@/api/product'
@@ -219,11 +286,14 @@ const issueForm = reactive({
   month: '',
   items: [{ productId: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0 }]
 })
-const addIssueItem = () => issueForm.items.push({ productId: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0 })
-const removeIssueItem = (idx) => { if (issueForm.items.length > 1) issueForm.items.splice(idx, 1) }
+const addIssueItem = () =>
+  issueForm.items.push({ productId: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0 })
+const removeIssueItem = idx => {
+  if (issueForm.items.length > 1) issueForm.items.splice(idx, 1)
+}
 // 选择商品自动带出商品档案的单件分销配送费，并按数量计算总额
 const onIssueProductChange = (it, pid) => {
-  const p = productOptions.value.find((x) => String(x.id) === String(pid))
+  const p = productOptions.value.find(x => String(x.id) === String(pid))
   it.unitDeliveryFee = p ? Number(p.distributionDeliveryFee || p.distribution_delivery_fee || 0) : 0
   it.distributionDeliveryFee = Number((it.unitDeliveryFee * (it.quantity || 1)).toFixed(2))
 }
@@ -233,16 +303,26 @@ const onIssueQuantityChange = (it, v) => {
 }
 
 const handleIssue = async () => {
-  if (!issueForm.stationId) { ElMessage.warning('请选择水站'); return }
-  if (!issueForm.month) { ElMessage.warning('请选择所属月份'); return }
-  const items = issueForm.items.filter((x) => x.productId && x.quantity > 0)
-  if (items.length === 0) { ElMessage.warning('请至少填写一条返货商品'); return }
+  if (!issueForm.stationId) {
+    ElMessage.warning('请选择水站')
+    return
+  }
+  if (!issueForm.month) {
+    ElMessage.warning('请选择所属月份')
+    return
+  }
+  const items = issueForm.items.filter(x => x.productId && x.quantity > 0)
+  if (items.length === 0) {
+    ElMessage.warning('请至少填写一条返货商品')
+    return
+  }
   issuing.value = true
   try {
     const res = await issueTickets({
       stationId: issueForm.stationId,
       month: issueForm.month,
-      items: items.map((x) => ({ productId: x.productId, quantity: x.quantity, distributionDeliveryFee: x.distributionDeliveryFee || 0 }))
+      // ⚠️ 不再提交 distributionDeliveryFee：服务端一律从商品档案重取（§12.10），传了也会被忽略
+      items: items.map(x => ({ productId: x.productId, quantity: x.quantity }))
     })
     ElMessage.success(res.message || '发行成功')
     issueForm.items = [{ productId: '', quantity: 1, distributionDeliveryFee: 0, unitDeliveryFee: 0 }]
@@ -264,7 +344,11 @@ const fetchInventory = async () => {
   try {
     const res = await getTicketInventory({ stationId: invFilter.stationId || undefined })
     inventoryList.value = res.data?.list || []
-  } catch (e) { console.error(e) } finally { loading.value = false }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loading.value = false
+  }
 }
 
 // 水站列(0) 与 分销配送费余额列(4) 按同一水站合并单元格（配送费余额合并后显示水站总计）
@@ -306,7 +390,9 @@ const fetchIssuances = async () => {
     })
     issuanceBatchList.value = res.data?.list || []
     issuanceTotal.value = res.data?.total || 0
-  } catch (e) { console.error(e) }
+  } catch (e) {
+    console.error(e)
+  }
 }
 const searchIssuances = () => {
   issuancePage.page = 1
@@ -315,8 +401,8 @@ const searchIssuances = () => {
 // 批次内明细展开为表格行（合并批次字段到行，供列 prop 直接取值）
 const issuanceRows = computed(() => {
   const out = []
-  issuanceBatchList.value.forEach((b) => {
-    b.items.forEach((it) => out.push({ ...it, ...b, batch: b }))
+  issuanceBatchList.value.forEach(b => {
+    b.items.forEach(it => out.push({ ...it, ...b, batch: b }))
   })
   return out
 })
@@ -349,37 +435,41 @@ const issSpanMethod = ({ rowIndex, columnIndex }) => {
 const editIssuanceVisible = ref(false)
 const editForm = reactive({ batchId: '', stationName: '', month: '', items: [] })
 const editRemark = ref('')
-const openEditIssuance = (batch) => {
+const openEditIssuance = batch => {
   editForm.batchId = batch.batchId
   editForm.stationName = batch.stationName
   editForm.month = batch.month
-  editForm.items = batch.items.map((it) => ({
+  editForm.items = batch.items.map(it => ({
     issuanceId: it.issuanceId,
     productName: it.productName,
     specification: it.specification,
     quantity: it.quantity,
     distributionDeliveryFee: it.distributionDeliveryFee,
-    unitDeliveryFee: it.quantity > 0 ? Number(it.distributionDeliveryFee) / Number(it.quantity) : 0
+    // 单件值直接用后端下发的 unitFee（不要用「总额 ÷ 数量」反推 —— 除不尽会引入误差）
+    unitFee: it.unitFee || 0
   }))
   editRemark.value = batch.remark || ''
   editIssuanceVisible.value = true
 }
 const onEditItemQuantityChange = (it, v) => {
-  it.distributionDeliveryFee = Number((it.unitDeliveryFee * (Number(v) || 1)).toFixed(2))
+  it.distributionDeliveryFee = Number((Number(it.unitFee || 0) * (Number(v) || 1)).toFixed(2))
 }
 const resetEditForm = () => {
   editForm.items = []
   editRemark.value = ''
 }
 const handleSaveIssuance = async () => {
-  const bad = editForm.items.some((it) => !it.quantity || it.quantity <= 0 || it.distributionDeliveryFee < 0)
-  if (bad) { ElMessage.warning('每行数量须大于0，配送费须大于等于0'); return }
+  // 金额由服务端按单件值派生，前端只校验数量
+  const bad = editForm.items.some(it => !it.quantity || it.quantity <= 0)
+  if (bad) {
+    ElMessage.warning('每行数量须大于 0')
+    return
+  }
   saving.value = true
   try {
     for (const it of editForm.items) {
       await updateIssuance(it.issuanceId, {
         quantity: it.quantity,
-        distributionDeliveryFee: it.distributionDeliveryFee,
         remark: editRemark.value
       })
     }
@@ -396,7 +486,7 @@ const handleSaveIssuance = async () => {
 }
 
 // ---- 删除发行批次 ----
-const handleDeleteIssuance = async (batch) => {
+const handleDeleteIssuance = async batch => {
   try {
     await ElMessageBox.confirm(
       `确定删除该批次吗？将同时删除其生成的 ${batch.totalQuantity} 张水票（已核销水票的批次不可删）。`,
@@ -424,7 +514,7 @@ const handleDeleteIssuance = async (batch) => {
 const adjustVisible = ref(false)
 const adjustRow = reactive({ stationId: '', stationName: '', productId: '', productName: '', available: 0 })
 const adjustTarget = ref(0)
-const openAdjust = (row) => {
+const openAdjust = row => {
   adjustRow.stationId = row.stationId
   adjustRow.stationName = row.stationName
   adjustRow.productId = row.productId
@@ -434,7 +524,10 @@ const openAdjust = (row) => {
   adjustVisible.value = true
 }
 const handleAdjust = async () => {
-  if (adjustTarget.value < 0) { ElMessage.warning('水票目标数不能为负数'); return }
+  if (adjustTarget.value < 0) {
+    ElMessage.warning('水票目标数不能为负数')
+    return
+  }
   saving.value = true
   try {
     await adjustBalance({
@@ -454,64 +547,45 @@ const handleAdjust = async () => {
   }
 }
 
-// ---- 水站分销配送费调整（水站级总计）----
-const adjustStationFeeVisible = ref(false)
-const adjustFeeRow = reactive({ stationId: '', stationName: '', stationDeliveryFee: 0 })
-const adjustStationFeeTarget = ref(0)
-const openAdjustStationFee = (row) => {
-  adjustFeeRow.stationId = row.stationId
-  adjustFeeRow.stationName = row.stationName
-  adjustFeeRow.stationDeliveryFee = row.stationDeliveryFee || 0
-  adjustStationFeeTarget.value = row.stationDeliveryFee || 0
-  adjustStationFeeVisible.value = true
-}
-const handleAdjustStationFee = async () => {
-  if (adjustStationFeeTarget.value < 0) { ElMessage.warning('分销配送费不能为负数'); return }
-  saving.value = true
-  try {
-    await adjustStationDeliveryFee({
-      stationId: adjustFeeRow.stationId,
-      targetFee: adjustStationFeeTarget.value
-    })
-    ElMessage.success('调整成功')
-    adjustStationFeeVisible.value = false
-    fetchInventory()
-    fetchIssuances()
-  } catch (e) {
-    console.error('配送费调整失败:', e)
-    ElMessage.error(e.response?.data?.message || '配送费调整失败')
-  } finally {
-    saving.value = false
-  }
-}
+// ---- 水站分销配送费调整：已于 2026-09-22 移除（Phase 7 §12.9）----
+// 该能力是「把差额写进历史发行记录」；配送费变成水站积分后，这条路径会绕过钱包流水改已入账金额。
+// 端点仍在（返回 410 + 说明），前端不再提供入口。
 
-const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fmtDateTime = (v) => {
+const fmtMoney = v => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtDateTime = v => {
   if (!v) return ''
   const d = new Date(v)
   if (isNaN(d.getTime())) return String(v)
-  const pad = (n) => String(n).padStart(2, '0')
+  const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 const loadOptions = async () => {
   try {
-        const s = await getAllStations()
-    stationOptions.value = (s.data?.list || s.data || []).map((x) => ({ id: x.station_id || x.stationId, name: x.station_name || x.stationName }))
-  } catch (e) { console.error('加载水站失败:', e) }
+    const s = await getAllStations()
+    stationOptions.value = (s.data?.list || s.data || []).map(x => ({
+      id: x.station_id || x.stationId,
+      name: x.station_name || x.stationName
+    }))
+  } catch (e) {
+    console.error('加载水站失败:', e)
+  }
   try {
-    const [pRes, invRes] = await Promise.all([
-            getProductOptions({ status: 1 }),
-            getInventoryOptions()
-    ])
+    const [pRes, invRes] = await Promise.all([getProductOptions({ status: 1 }), getInventoryOptions()])
     const products = pRes.data?.list || pRes.data || []
     // 合并库存：无库存商品禁用选择（下拉置灰）
     const stockMap = {}
     const invList = invRes.data?.list || invRes.data || []
-    invList.forEach((item) => { stockMap[item.id] = Number(item.stock) || 0 })
-    products.forEach((p) => { p.stock = stockMap[p.id] ?? 0 })
+    invList.forEach(item => {
+      stockMap[item.id] = Number(item.stock) || 0
+    })
+    products.forEach(p => {
+      p.stock = stockMap[p.id] ?? 0
+    })
     productOptions.value = products
-  } catch (e) { console.error('加载商品失败:', e) }
+  } catch (e) {
+    console.error('加载商品失败:', e)
+  }
 }
 
 onMounted(() => {
@@ -523,31 +597,131 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page-container { display: flex; flex-direction: column; gap: 16px; }
-.filter-card, .detail-card { border-radius: var(--radius-md); }
-.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
-.issue-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
-.issue-items { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-.issue-item-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.item-label { font-size: 12px; color: var(--text-2); white-space: nowrap; }
-.option-out-of-stock { color: var(--text-3); }
-.issue-actions { display: flex; align-items: center; gap: 10px; }
-.issue-hint { font-size: 12px; color: var(--text-2); }
-.unit-label { margin-left: 8px; font-size: 12px; color: var(--text-2); }
-.pager { display: flex; justify-content: flex-end; margin-top: 14px; }
-.iss-filter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
-.iss-title { font-weight: 600; }
-.iss-filter-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.fee-total { color: var(--el-color-warning); font-weight: 600; }
-.fee-cell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.edit-items { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; padding: 2px; }
-.edit-item-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 4px; border-bottom: 1px dashed var(--border); }
-.edit-item-row:last-child { border-bottom: none; }
-.edit-product { font-size: 13px; min-width: 200px; }
-.edit-item-hint { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.page-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.filter-card,
+.detail-card {
+  border-radius: var(--radius-md);
+}
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.issue-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+}
+.issue-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.issue-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.item-label {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.option-out-of-stock {
+  color: var(--text-3);
+}
+.issue-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.issue-hint {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.unit-label {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.iss-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.iss-title {
+  font-weight: 600;
+}
+.iss-filter-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fee-total {
+  color: var(--el-color-warning);
+  font-weight: 600;
+}
+.fee-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.edit-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+.edit-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 4px;
+  border-bottom: 1px dashed var(--border);
+}
+.edit-item-row:last-child {
+  border-bottom: none;
+}
+.edit-product {
+  font-size: 13px;
+  min-width: 200px;
+}
+.edit-item-hint {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
 @media screen and (max-width: 768px) {
-  .issue-form-grid { grid-template-columns: 1fr; }
-  .issue-item-row .el-select, .issue-item-row .el-input-number { width: 100% !important; }
-  .iss-filter { flex-direction: column; align-items: flex-start; }
+  .issue-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .issue-item-row .el-select,
+  .issue-item-row .el-input-number {
+    width: 100% !important;
+  }
+  .iss-filter {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>

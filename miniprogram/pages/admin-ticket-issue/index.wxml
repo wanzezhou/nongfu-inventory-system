@@ -1,0 +1,85 @@
+<!-- 水票 · 返货发行（管理员 · Phase 7 补齐）
+     ⚠️ 这是**资金动作**：提交后会给该水站入账积分（单件配送费 × 数量；1 积分 = 1 元）。
+     页面上的金额只作**展示** —— 服务端会按商品档案重取单件值（§12.10），页面值不参与入库。 -->
+<view class="page">
+  <view wx:if="{{loadError}}" class="banner banner-danger">{{loadError}}</view>
+  <view wx:if="{{loading}}" class="t-sub center">加载中…</view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">水站</text>
+      <picker mode="selector" range="{{stationLabels}}" value="{{stationIndex}}" bindchange="onStationChange">
+        <view class="row-between">
+          <text class="t-strong">{{stationLabels[stationIndex] || '请选择'}}</text>
+          <text class="t-sub">›</text>
+        </view>
+      </picker>
+    </view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sub">月份</text>
+      <input class="form-input" style="width: 180rpx" value="{{month}}" bindinput="onMonthInput" placeholder="YYYY-MM" />
+    </view>
+  </view>
+
+  <view class="card" wx:for="{{rows}}" wx:key="index">
+    <view class="row-between">
+      <text class="t-sub">商品</text>
+      <picker
+        mode="selector"
+        range="{{productLabels}}"
+        value="{{item.productIndex}}"
+        data-index="{{index}}"
+        bindchange="onProductChange"
+      >
+        <view class="row-between">
+          <text class="t-strong">{{item.productName}}</text>
+          <text class="t-sub">›</text>
+        </view>
+      </picker>
+    </view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sub">数量</text>
+      <input
+        class="form-input"
+        style="width: 180rpx"
+        type="number"
+        value="{{item.quantity}}"
+        data-index="{{index}}"
+        bindinput="onQtyInput"
+      />
+    </view>
+    <view class="t-sm t-sub mt-8">单件配送费 ¥{{item.unitFeeText}}（商品档案）· 本行入账 ¥{{item.feeText}}</view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sm t-sub">单价由档案决定，不可手改</text>
+      <text class="t-primary" data-index="{{index}}" bindtap="removeRow">删除本行</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <text class="t-sub">备注</text>
+      <input class="form-input" style="width: 420rpx" value="{{remark}}" bindinput="onRemarkInput" placeholder="选填" />
+    </view>
+    <view class="divider"></view>
+    <view class="row-between">
+      <text class="t-sub">预计入账积分合计</text>
+      <text class="t-strong">¥{{totalText}}</text>
+    </view>
+  </view>
+
+  <view class="banner banner-info">
+    发行后水站积分立即到账（1 积分 = 1 元，下单可直接抵扣）；之后作废或减量会把对应积分回冲。
+  </view>
+  <view wx:if="{{formError}}" class="banner banner-danger">{{formError}}</view>
+
+  <view class="mt-16">
+    <button class="btn btn-ghost" bindtap="addRow">＋ 添加商品</button>
+  </view>
+  <view class="mt-16">
+    <button class="btn save-btn" loading="{{submitting}}" bindtap="onSubmit">确认发行</button>
+  </view>
+  <view class="mt-24"></view>
+</view>

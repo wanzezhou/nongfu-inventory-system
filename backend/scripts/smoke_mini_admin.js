@@ -3203,10 +3203,11 @@ async function main() {
     `20.7 ★ 跨端一致：Web ${pmWeb.data && pmWeb.data.workerId} == 小程序 ${pmMini.data && pmMini.data.workerId}`
   );
 
-  // ═════════════ 21. 水票域（Phase 8b 第 15 域：只读 + 作废单张）═════════════
-  // ⚠️ 本域**刻意没有发行类接口**（见文件头与 docs §7.2）：故本节除了验「有什么」，
-  //    还要验「没有什么」——范围决定同样要被断言。
-  section('21. 水票域：库存/明细/发行记录 + 作废单张 + ★ 发行接口不得存在');
+  // ═════════════ 21. 水票域（第 15 域 + Phase 7 补齐：发行 / 改数量 / 作废）═════════
+  // ⚠️ Phase 7 已落地：发行与改数量**已开放**（两者都会动水站积分），**批次删除仍不开放**。
+  //    故本节两条腿都要走：既验「开放了的能做、且方向与金额正确」，也验「没开放的仍 404」。
+  // ⚠️ 发行/改数量是资金动作 → 必带幂等键，且**重放不得重复入账**（弱网重试的典型场景）。
+  section('21. 水票域：库存/明细/发行记录 + 发行入账 + 改数量 + 作废回冲 + ★ 范围反向断言');
 
   const wtTicketA = 'SMKWT' + TS + 'A'; // 未使用（可作废）
   const wtTicketB = 'SMKWT' + TS + 'B'; // 已核销（作废必须被拒）
@@ -3256,7 +3257,10 @@ async function main() {
       Array.isArray(wtOpts.data.statusOptions),
     '21.2 选项含 水站 / 商品 / 状态'
   );
-  assert(!('activeAccounts' in wtOpts.data), '21.2 ★ 选项**不含账户**（本域没有发行入口，列出来会被当成「可以做」）');
+  assert(
+    !('activeAccounts' in wtOpts.data),
+    '21.2 ★ 选项不含账户（发行入的是**水站钱包**，与公司资金账户无关；列出来会被当成要选账户）'
+  );
   const wtInv = await call('GET', '/mini/admin/water-tickets/inventory', null, adminToken);
   assert(
     wtInv.code === 200 && Array.isArray(wtInv.data.list),
@@ -3279,8 +3283,8 @@ async function main() {
   const wtIss = await call('GET', '/mini/admin/water-tickets/issuances', null, adminToken);
   assert(wtIss.code === 200 && Array.isArray(wtIss.data.list), `21.2 发行记录 200（${wtIss.code}）`);
   assert(
-    typeof wtIss.data.notice === 'string' && wtIss.data.notice.length > 0,
-    '21.2 ★ 发行记录页带「发行仍在 Web」的说明（范围决定要说清）'
+    typeof wtIss.data.notice === 'string' && /删除批次/.test(wtIss.data.notice),
+    `21.2 ★ 发行记录页的说明改为「删除批次仍在 Web」（范围决定要说清，实得「${wtIss.data.notice}」）`
   );
 
   // ── 21.3 作废单张（幂等 + 审计 + 状态守卫）───────────────────────────────
@@ -3334,13 +3338,135 @@ async function main() {
   const wtAfterB = (await pool.query('SELECT status FROM water_tickets WHERE ticket_id = ?', [wtTicketB]))[0];
   assert(Number(wtAfterB[0].status) === 2, `21.3 ★ 被拒后状态未变（仍 2，实得 ${wtAfterB[0].status}）`);
 
-  // ── 21.4 ★ 范围反向断言：发行类接口不得存在 ──────────────────────────────
-  // ⚠️ 这条断言的价值在于「防止将来顺手加上」：发行要落 distribution_delivery_fee，
-  //    而 §12.10 要求它由服务端从商品档案重取 —— 现发行逻辑信任客户端传入值。
-  //    手机端一旦开放，就等于把「公司欠水站多少积分」的定价权交给公网客户端。
-  for (const p of ['issue', 'adjust-balance', 'adjust-delivery-fee']) {
+  // ── 21.4 ★ 发行（Phase 7 开放）：单件值服务端取 + 水站积分入账 + 幂等 ─────
+  // ⚠️ 用**自建**水站与商品：发行会同时写发行记录 / 水票 / 钱包三处，不能拿真实数据当对象。
+  const wtIssueStation = 'SMKSTWT' + TS;
+  const wtIssueProduct = 'SMKWT' + TS + 'P';
+  const wtUnitFee = 3.5;
+  await pool.query(
+    `INSERT INTO sub_stations (station_id, station_name, contact_name, phone, status, created_at, updated_at)
+     VALUES (?, '冒烟-发行水站', '冒烟', '13800000000', 1, NOW(), NOW())`,
+    [wtIssueStation]
+  );
+  await pool.query(
+    `INSERT INTO products (product_id, product_name, product_code, category, purchase_price, wholesale_price,
+       retail_price, machine_price, distribution_delivery_fee, status, created_at, updated_at)
+     VALUES (?, '冒烟-发行测试商品', ?, '冒烟', 10, 12, 15, 10, ?, 1, NOW(), NOW())`,
+    [wtIssueProduct, wtIssueProduct, wtUnitFee]
+  );
+
+  const wtIssueKey = 'smkwt_' + TS + '_i1';
+  const wtIssueBody = {
+    clientRequestId: wtIssueKey,
+    stationId: wtIssueStation,
+    month: wtMonth,
+    remark: '冒烟-小程序发行',
+    // ⚠️ 故意传错金额：必须被忽略（§12.10 单件值一律服务端重取）
+    items: [{ productId: wtIssueProduct, quantity: 2, distributionDeliveryFee: 999 }]
+  };
+  const wtNoIdemIssue = await call(
+    'POST',
+    '/mini/admin/water-tickets/issue',
+    { stationId: wtIssueStation, items: [{ productId: wtIssueProduct, quantity: 1 }] },
+    adminToken
+  );
+  assert(
+    wtNoIdemIssue.code === 400 && /clientRequestId/.test(String(wtNoIdemIssue.message)),
+    `21.4 发行缺幂等键被拒（${wtNoIdemIssue.message}）`
+  );
+  const wtIssue = await call('POST', '/mini/admin/water-tickets/issue', wtIssueBody, adminToken);
+  assert(wtIssue.code === 200, `21.4 ★ 发行 200（${wtIssue.code} ${wtIssue.message || ''}）`);
+
+  const wtIssRow = (
+    await pool.query(
+      `SELECT distribution_delivery_fee_unit, distribution_delivery_fee_total, distribution_delivery_fee, wallet_transaction_id
+         FROM water_ticket_issuance WHERE issuance_id = ?`,
+      [wtIssue.data.issuanceIds[0]]
+    )
+  )[0][0];
+  assert(
+    near(wtIssRow.distribution_delivery_fee_unit, wtUnitFee) &&
+      near(wtIssRow.distribution_delivery_fee_total, wtUnitFee * 2) &&
+      near(wtIssRow.distribution_delivery_fee, wtUnitFee * 2),
+    `21.4 ★★ 三列恒等且客户端金额（999）被忽略：unit=${wtIssRow.distribution_delivery_fee_unit} total=${wtIssRow.distribution_delivery_fee_total}`
+  );
+  assert(Boolean(wtIssRow.wallet_transaction_id), '21.4 发行记录回填了入账流水号（wallet_transaction_id）');
+  const wtWalletOf = async () =>
+    (
+      await pool.query("SELECT wallet_id, balance FROM wallet_accounts WHERE owner_type = 'STATION' AND owner_id = ?", [
+        wtIssueStation
+      ])
+    )[0][0];
+  const wtWallet1 = await wtWalletOf();
+  assert(
+    wtWallet1 && near(Number(wtWallet1.balance), wtUnitFee * 2),
+    `21.4 ★★ 发行给水站钱包入账 = 单件×数量 = ${wtUnitFee * 2}（实得 ${wtWallet1 && wtWallet1.balance}）`
+  );
+  const wtTicketCnt = (
+    await pool.query('SELECT COUNT(*) c FROM water_tickets WHERE issuance_id = ?', [wtIssue.data.issuanceIds[0]])
+  )[0][0];
+  assert(Number(wtTicketCnt.c) === 2, `21.4 生成等量水票 2 张（实得 ${wtTicketCnt.c}）`);
+
+  const wtIssueReplay = await call('POST', '/mini/admin/water-tickets/issue', wtIssueBody, adminToken);
+  assert(
+    wtIssueReplay.code === 200 && wtIssueReplay.data.replayed === true,
+    `21.4 ★ 幂等重放 replayed=true（${JSON.stringify(wtIssueReplay.data || wtIssueReplay.message)}）`
+  );
+  assert(
+    near(Number((await wtWalletOf()).balance), wtUnitFee * 2),
+    '21.4 ★★ 重放后余额未变（弱网重试**不会**给水站发两次积分）'
+  );
+  assert((await auditActions()).includes('ISSUE_TICKET_ADMIN'), '21.4 审计含 ISSUE_TICKET_ADMIN');
+
+  // ── 21.5 改数量：差额补入账 / 回冲（同一个核心，金额仍由服务端算）──────────
+  const wtEditKey = 'smkwt_' + TS + '_u1';
+  const wtEdit = await call(
+    'PUT',
+    '/mini/admin/water-tickets/issuances/' + wtIssue.data.issuanceIds[0],
+    { clientRequestId: wtEditKey, quantity: 3 },
+    adminToken
+  );
+  assert(wtEdit.code === 200, `21.5 改数量 2→3（${wtEdit.code} ${wtEdit.message || ''}）`);
+  assert(
+    near(Number((await wtWalletOf()).balance), wtUnitFee * 3),
+    `21.5 ★★ 加量按差额补入账（余额应 ${wtUnitFee * 3}，实得 ${(await wtWalletOf()).balance}）`
+  );
+  const wtEditBad = await call(
+    'PUT',
+    '/mini/admin/water-tickets/issuances/' + wtIssue.data.issuanceIds[0],
+    { clientRequestId: wtEditKey, quantity: 5 },
+    adminToken
+  );
+  assert(
+    wtEditBad.code === 400 && /内容不一致/.test(String(wtEditBad.message)),
+    `21.5 同键不同内容（2→5）被拒 400（${wtEditBad.message}）`
+  );
+  const wtEditReplay = await call(
+    'PUT',
+    '/mini/admin/water-tickets/issuances/' + wtIssue.data.issuanceIds[0],
+    { clientRequestId: wtEditKey, quantity: 3 },
+    adminToken
+  );
+  assert(
+    wtEditReplay.code === 200 && wtEditReplay.data.replayed === true,
+    '21.5 幂等重放 replayed=true（不会重复补一次积分）'
+  );
+  assert(near(Number((await wtWalletOf()).balance), wtUnitFee * 3), '21.5 ★ 重放后余额未变');
+  const wtEditNotFound = await call(
+    'PUT',
+    '/mini/admin/water-tickets/issuances/NOSUCH?clientRequestId=' + encodeURIComponent('smkwt_' + TS + '_u9'),
+    { quantity: 1 },
+    adminToken
+  );
+  assert(wtEditNotFound.code === 404, `21.5 发行记录不存在 → 404（实得 ${wtEditNotFound.code}）`);
+
+  // ── 21.6 ★ 范围反向断言：仍未开放的路径必须 404 ───────────────────────────
+  // ⚠️ 这条断言的价值在于「防止将来顺手加上」：
+  //    · 两个配送费调整端点已于 §12.9 停用（Web 侧也只返回 410）；
+  //    · 批次删除是破坏性操作（整批删除 + 按净入账回冲积分），手机误触代价过高。
+  for (const p of ['adjust-balance', 'adjust-delivery-fee', 'adjust-station-delivery-fee']) {
     const hit = await call('POST', '/mini/admin/water-tickets/' + p, { clientRequestId: 'x' }, adminToken);
-    assert(hit.code === 404, `21.4 ★ 发行类接口 /admin/water-tickets/${p} 不存在（实得 ${hit.code}）`);
+    assert(hit.code === 404, `21.6 ★ /admin/water-tickets/${p} 不存在（实得 ${hit.code}）`);
   }
   const wtBatchDel = await call(
     'DELETE',
@@ -3348,7 +3474,7 @@ async function main() {
     null,
     adminToken
   );
-  assert(wtBatchDel.code === 404, `21.4 ★ 批次删除接口不存在（实得 ${wtBatchDel.code}）`);
+  assert(wtBatchDel.code === 404, `21.6 ★ 批次删除未开放（实得 ${wtBatchDel.code}）`);
 
   // ── 18.5 各域声明可用的区间都真的通 ─────────────────────────────────────
   for (const [p, ranges] of [
@@ -3361,6 +3487,304 @@ async function main() {
       assert(one.code === 200, `18.5 ${p} range=${rg} → 200（实得 ${one.code} ${one.message || ''}）`);
     }
   }
+
+  // ═════════════ 22. 小程序账号管理（运维域：禁用/启用、改绑定、解绑）════════════
+  // 背景：这三件事此前只能改 SQL —— 服务端每请求校验早已生效，缺的只是管理入口。
+  // ⚠️ 三条硬边界都要有**反向断言**（它们不是保守，是放开后没有可恢复的路径）：
+  //    ① 不能操作自己；② 管理员角色账号不在此处管理；③ 改绑目标必须存在且启用且未被占用。
+  // ⚠️ 「禁用」与「解绑」是两件不同的事，断言必须把差别钉住：
+  //    禁用保留绑定（该微信登不进、**写操作 401**、读历史仍可用）；解绑**删除绑定行**
+  //    （这正是「同一微信可以重新登录并重绑」的前提）。
+  section('22. 小程序账号管理：列表脱敏 + 禁用/启用 + 改绑定 + 解绑 + ★ 三条硬边界');
+
+  // 自建载体：两个水站 + 一个停用水站 + 一个业务员（冒烟前缀，收尾按前缀清）
+  const accStation1 = 'SMKSTACA' + TS;
+  const accStation2 = 'SMKSTACB' + TS;
+  const accStationOff = 'SMKSTACO' + TS;
+  const accWorker = 'SMKWKAC' + TS;
+  for (const [sid, sname, st] of [
+    [accStation1, '冒烟-账号测试水站A', 1],
+    [accStation2, '冒烟-账号测试水站B', 1],
+    [accStationOff, '冒烟-账号测试水站(停用)', 0]
+  ]) {
+    await pool.query(
+      `INSERT INTO sub_stations (station_id, station_name, contact_name, phone, status, created_at, updated_at)
+       VALUES (?, ?, '冒烟', '13800000000', ?, NOW(), NOW())`,
+      [sid, sname, st]
+    );
+  }
+  await pool.query(
+    `INSERT INTO workers (worker_id, worker_name, employee_type, phone, status, created_at, updated_at)
+     VALUES (?, '冒烟-账号测试业务员', 3, '13900001111', 1, NOW(), NOW())`,
+    [accWorker]
+  );
+
+  const accOpenidA = 'smoke_ac_' + TS + '_A';
+  const accOpenidB = 'smoke_ac_' + TS + '_B';
+  const accOpenidAdm = 'smoke_ac_' + TS + '_ADM';
+  await pool.query(
+    `INSERT INTO mini_accounts (openid, phone, role, target_id, nickname, status, created_at)
+     VALUES (?, '13700000002', 'salesman', ?, '冒烟-账号A', 1, NOW())`,
+    [accOpenidA, accWorker]
+  );
+  await pool.query(
+    `INSERT INTO mini_accounts (openid, phone, role, target_id, nickname, status, created_at)
+     VALUES (?, '13700000001', 'station', ?, '冒烟-账号B', 1, NOW())`,
+    [accOpenidB, accStation1]
+  );
+  // ⚠️ target_id 用冒烟专用值：与 §0 建的冒烟管理员账号共用同一 users.id 会撞唯一键 uk_role_active
+  await pool.query(
+    `INSERT INTO mini_accounts (openid, phone, role, target_id, nickname, status, created_at)
+     VALUES (?, '13700000003', 'admin', ?, '冒烟-账号ADM', 1, NOW())`,
+    [accOpenidAdm, 'SMKADMT' + TS]
+  );
+  const accIdOfOpenid = async o => (await pool.query('SELECT id FROM mini_accounts WHERE openid = ?', [o]))[0][0].id;
+  const accIdA = await accIdOfOpenid(accOpenidA);
+  const accIdB = await accIdOfOpenid(accOpenidB);
+  const accIdAdm = await accIdOfOpenid(accOpenidAdm);
+  const accStatusOf = async id =>
+    Number((await pool.query('SELECT status FROM mini_accounts WHERE id = ?', [id]))[0][0].status);
+
+  // ── 22.1 权限 ────────────────────────────────────────────────────────────
+  const accNoToken = await call('GET', '/mini/admin/mini-accounts');
+  assert(
+    accNoToken._status === 401 || accNoToken.code === 401,
+    `22.1 无令牌读账号列表被拒 401（实得 ${accNoToken._status}）`
+  );
+  const acctDenied = await call('GET', '/mini/admin/mini-accounts', null, ordSalesmanToken);
+  assert(
+    acctDenied.code === 403 && /管理员角色/.test(String(acctDenied.message)),
+    `22.1 业务员读账号列表被拒 403（实得 ${acctDenied.code}）`
+  );
+  const accWriteDenied = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdA + '/status',
+    { clientRequestId: 'smoke_ac_' + TS + '_d', status: 0 },
+    ordSalesmanToken
+  );
+  assert(accWriteDenied.code === 403, `22.1 业务员改账号状态被拒 403（实得 ${accWriteDenied.code}）`);
+
+  // ── 22.2 列表与脱敏 ──────────────────────────────────────────────────────
+  const accList = await call('GET', '/mini/admin/mini-accounts?role=salesman&pageSize=50', null, adminToken);
+  assert(accList.code === 200 && Array.isArray(accList.data.list), `22.2 账号列表 200（${accList.code}）`);
+  assert(
+    (accList.data.list || []).every(x => x.role === 'salesman'),
+    '22.2 角色筛选生效（全部为 salesman）'
+  );
+  const accRowA = (accList.data.list || []).find(x => x.accountId === accIdA);
+  assert(Boolean(accRowA), '22.2 列表含本次自建的业务员账号');
+  assert(
+    accRowA && !('openid' in accRowA) && accRowA.phoneMasked === '137****0002',
+    `22.2 ★★ 列表**不含 openid** 且手机号脱敏（实得 ${accRowA && JSON.stringify({ phoneMasked: accRowA.phoneMasked })}）`
+  );
+  assert(
+    accRowA && accRowA.operable === true && accRowA.subjectName === '冒烟-账号测试业务员',
+    '22.2 业务账号 operable=true 且带主体名'
+  );
+  const accBadRole = await call('GET', '/mini/admin/mini-accounts?role=bogus', null, adminToken);
+  assert(accBadRole.code === 400, `22.2 非法 role 筛选 → 400（实得 ${accBadRole.code}）`);
+
+  // ── 22.3 ★ 硬边界②：管理员角色账号不在此处管理 ───────────────────────────
+  // ⚠️ 附带一个诚实结论：硬边界①（不能操作自己）在当前角色模型下**被②覆盖**——
+  //    调用者必然是管理员，而管理员账号一律不可操作，所以「操作自己」进不到 ① 的分支。
+  //    ① 是**冗余防线**：一旦将来放开「管理员账号管理」，它就会成为唯一的防线，故保留。
+  const accAdmStatus = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdAdm + '/status',
+    { clientRequestId: 'smoke_ac_' + TS + '_adm1', status: 0 },
+    adminToken
+  );
+  assert(
+    accAdmStatus.code === 403 && /管理员账号不在此处管理/.test(String(accAdmStatus.message)),
+    `22.3 ★★ 改管理员账号状态被拒 403（实得 ${accAdmStatus.code} ${accAdmStatus.message}）`
+  );
+  const accAdmBind = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdAdm + '/binding',
+    { clientRequestId: 'smoke_ac_' + TS + '_adm2', role: 'station', targetId: accStation1 },
+    adminToken
+  );
+  assert(accAdmBind.code === 403, `22.3 ★ 改管理员账号绑定被拒 403（实得 ${accAdmBind.code}）`);
+  const accAdmUnbind = await call(
+    'DELETE',
+    '/mini/admin/mini-accounts/' + accIdAdm + '?clientRequestId=' + encodeURIComponent('smoke_ac_' + TS + '_adm3'),
+    null,
+    adminToken
+  );
+  assert(accAdmUnbind.code === 403, `22.3 ★ 解绑管理员账号被拒 403（实得 ${accAdmUnbind.code}）`);
+  assert((await accStatusOf(accIdAdm)) === 1, '22.3 被拒后管理员账号状态未变（仍启用）');
+  assert(
+    (await pool.query('SELECT COUNT(*) c FROM mini_accounts WHERE id = ?', [accIdAdm]))[0][0].c === 1,
+    '22.3 管理员账号未被删除（三条路径全部被拒）'
+  );
+
+  // ── 22.4 禁用 / 启用：禁用即时拦「写」、不拦「读」────────────────────────
+  const accTicketToken = signMiniToken({ id: accIdA, role: 'salesman', target_id: accWorker });
+  const accWriteProbe = async () =>
+    call('POST', '/mini/wallet/recharge', { clientRequestId: 'smoke_ac_' + TS + '_r' }, accTicketToken);
+  const accBefore = await accWriteProbe();
+  assert(
+    accBefore._status === 503 || accBefore.code === 503,
+    `22.4 启用态下写接口过了 requireMiniActive（落到「微信充值未开通」503，实得 ${accBefore._status}）`
+  );
+  const accDisable = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdA + '/status',
+    { clientRequestId: 'smoke_ac_' + TS + '_s1', status: 0 },
+    adminToken
+  );
+  assert(accDisable.code === 200, `22.4 禁用成功（${accDisable.code} ${accDisable.message || ''}）`);
+  assert((await accStatusOf(accIdA)) === 0, '22.4 DB 中 status=0');
+  const accAfterBlock = await accWriteProbe();
+  assert(
+    accAfterBlock._status === 401 && accAfterBlock.code === 401,
+    `22.4 ★★ 禁用后该账号**写操作 401**（禁用即时生效，实得 ${accAfterBlock._status}）`
+  );
+  const accReadStill = await call('GET', '/mini/me', null, accTicketToken);
+  assert(accReadStill.code === 200, `22.4 ★ 禁用**不拦读**：该账号仍能读自己的资料（实得 ${accReadStill.code}）`);
+  const accDisableReplay = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdA + '/status',
+    { clientRequestId: 'smoke_ac_' + TS + '_s1', status: 0 },
+    adminToken
+  );
+  assert(
+    accDisableReplay.code === 200 && accDisableReplay.data.replayed === true,
+    `22.4 幂等重放 replayed=true（${JSON.stringify(accDisableReplay.data || accDisableReplay.message)}）`
+  );
+  assert((await auditActions()).includes('UPDATE_MINI_ACCOUNT_STATUS'), '22.4 审计含 UPDATE_MINI_ACCOUNT_STATUS');
+  const accEnable = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdA + '/status',
+    { clientRequestId: 'smoke_ac_' + TS + '_s2', status: 1 },
+    adminToken
+  );
+  assert(accEnable.code === 200 && (await accStatusOf(accIdA)) === 1, '22.4 启用成功且 status=1');
+  assert(
+    (await accWriteProbe())._status === 503,
+    '22.4 ★ 恢复后写接口重新可达（503 未开通，说明已通过 requireMiniActive）'
+  );
+  const accBadStatus = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdA + '/status',
+    { clientRequestId: 'smoke_ac_' + TS + '_s3', status: 9 },
+    adminToken
+  );
+  assert(accBadStatus.code === 400, `22.4 非法 status 值 → 400（实得 ${accBadStatus.code}）`);
+  const acctNoIdem = await call('PUT', '/mini/admin/mini-accounts/' + accIdA + '/status', { status: 0 }, adminToken);
+  assert(
+    acctNoIdem.code === 400 && /clientRequestId/.test(String(acctNoIdem.message)),
+    `22.4 缺幂等键被拒（${acctNoIdem.message}）`
+  );
+
+  // ── 22.5 改绑定（占用 / 停用 / 不存在 / 角色非法 / 未变化 五种拒绝）────────
+  const accBind = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdB + '/binding',
+    { clientRequestId: 'smoke_ac_' + TS + '_b1', role: 'station', targetId: accStation2 },
+    adminToken
+  );
+  assert(accBind.code === 200, `22.5 改绑水站A→B（${accBind.code} ${accBind.message || ''}）`);
+  const accRowB = (await pool.query('SELECT role, target_id FROM mini_accounts WHERE id = ?', [accIdB]))[0][0];
+  assert(
+    accRowB.role === 'station' && accRowB.target_id === accStation2,
+    `22.5 DB 绑定已更新（实得 ${accRowB.role}/${accRowB.target_id}）`
+  );
+  const accBindReplay = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdB + '/binding',
+    { clientRequestId: 'smoke_ac_' + TS + '_b1', role: 'station', targetId: accStation2 },
+    adminToken
+  );
+  assert(accBindReplay.code === 200 && accBindReplay.data.replayed === true, '22.5 幂等重放 replayed=true');
+  assert((await auditActions()).includes('UPDATE_MINI_ACCOUNT_BINDING'), '22.5 审计含 UPDATE_MINI_ACCOUNT_BINDING');
+  const accBindConflict = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdB + '/binding',
+    { clientRequestId: 'smoke_ac_' + TS + '_b2', role: 'salesman', targetId: accWorker },
+    adminToken
+  );
+  assert(
+    accBindConflict.code === 400 && /已绑定其他微信/.test(String(accBindConflict.message)),
+    `22.5 ★ 目标已被别的启用账号占用 → 400 且文案可读（非 500）（${accBindConflict.message}）`
+  );
+  const accBindOff = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdB + '/binding',
+    { clientRequestId: 'smoke_ac_' + TS + '_b3', role: 'station', targetId: accStationOff },
+    adminToken
+  );
+  assert(
+    accBindOff.code === 400 && /已停用/.test(String(accBindOff.message)),
+    `22.5 ★ 目标主体已停用 → 400（${accBindOff.message}）`
+  );
+  const accBindGhost = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdB + '/binding',
+    { clientRequestId: 'smoke_ac_' + TS + '_b4', role: 'station', targetId: 'SMKNOSUCH' + TS },
+    adminToken
+  );
+  assert(accBindGhost.code === 404, `22.5 目标不存在 → 404（实得 ${accBindGhost.code}）`);
+  const accBindAdmin = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdB + '/binding',
+    { clientRequestId: 'smoke_ac_' + TS + '_b5', role: 'admin', targetId: '1' },
+    adminToken
+  );
+  assert(
+    accBindAdmin.code === 400 && /业务员|直营水站/.test(String(accBindAdmin.message)),
+    `22.5 ★★ 不允许把账号改绑成 **admin**（否则就是提权通道，实得 ${accBindAdmin.code} ${accBindAdmin.message}）`
+  );
+  const accBindSame = await call(
+    'PUT',
+    '/mini/admin/mini-accounts/' + accIdB + '/binding',
+    { clientRequestId: 'smoke_ac_' + TS + '_b6', role: 'station', targetId: accStation2 },
+    adminToken
+  );
+  assert(accBindSame.code === 400, `22.5 绑定未变化 → 400（实得 ${accBindSame.code}）`);
+  assert(
+    (await pool.query('SELECT target_id FROM mini_accounts WHERE id = ?', [accIdB]))[0][0].target_id === accStation2,
+    '22.5 五种拒绝之后绑定仍是第二次改绑的结果（没有被后续请求改坏）'
+  );
+
+  // ── 22.6 解绑：删绑定行（同一微信才能重新绑）+ 审计 + 幂等 ────────────────
+  const accUnbindKey = 'smoke_ac_' + TS + '_u1';
+  const accUnbind = await call(
+    'DELETE',
+    '/mini/admin/mini-accounts/' + accIdA + '?clientRequestId=' + encodeURIComponent(accUnbindKey),
+    null,
+    adminToken
+  );
+  assert(accUnbind.code === 200, `22.6 解绑成功（${accUnbind.code} ${accUnbind.message || ''}）`);
+  assert(
+    (await pool.query('SELECT COUNT(*) c FROM mini_accounts WHERE id = ?', [accIdA]))[0][0].c === 0,
+    '22.6 ★★ 绑定行已**删除**（这正是「同一微信可重新登录并重绑」的前提 —— 用 status=0 冒充解绑会让用户永远登不进去）'
+  );
+  const accUnbindReplay = await call(
+    'DELETE',
+    '/mini/admin/mini-accounts/' + accIdA + '?clientRequestId=' + encodeURIComponent(accUnbindKey),
+    null,
+    adminToken
+  );
+  assert(
+    accUnbindReplay.code === 200 && accUnbindReplay.data.replayed === true,
+    '22.6 幂等重放 replayed=true（不会重复删/重复审计）'
+  );
+  assert((await auditActions()).includes('UNBIND_MINI_ACCOUNT'), '22.6 审计含 UNBIND_MINI_ACCOUNT');
+  const accUnbindGone = await call(
+    'DELETE',
+    '/mini/admin/mini-accounts/' + accIdA + '?clientRequestId=' + encodeURIComponent('smoke_ac_' + TS + '_u2'),
+    null,
+    adminToken
+  );
+  assert(accUnbindGone.code === 404, `22.6 已解绑的账号再解绑（新键）→ 404（实得 ${accUnbindGone.code}）`);
+  const accUnbindGhost = await call(
+    'DELETE',
+    '/mini/admin/mini-accounts/999999999?clientRequestId=' + encodeURIComponent('smoke_ac_' + TS + '_u3'),
+    null,
+    adminToken
+  );
+  assert(accUnbindGhost.code === 404, `22.6 不存在的账号 → 404（实得 ${accUnbindGhost.code}）`);
 
   return {
     accountId,

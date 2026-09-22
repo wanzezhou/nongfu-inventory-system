@@ -151,8 +151,16 @@ Page({
   goAdminSettings() {
     ui.navTo('/pages/admin-settings/index');
   },
+  /** 运维域：小程序账号管理（禁用/启用、改绑定、解绑；此前只能改 SQL） */
+  goAdminMiniAccounts() {
+    ui.navTo('/pages/admin-mini-accounts/index');
+  },
   goAdminTickets() {
     ui.navTo('/pages/admin-tickets/index');
+  },
+  /** Phase 7 补齐：返货发行（与水票台账分开入口 —— 它是「每月录一次」的动作） */
+  goAdminTicketIssue() {
+    ui.navTo('/pages/admin-ticket-issue/index');
   },
   /** Phase 8b 业务域：库存（入库 / 出库；入库会在同一事务里扣付款账户余额） */
   goAdminInventory() {

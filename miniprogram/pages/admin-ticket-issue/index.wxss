@@ -1,0 +1,6 @@
+/* 水票 · 返货发行（管理员 · Phase 7 补齐）
+   样式基本沿用 app.wxss 的全局类（.page/.card/.row-between/.divider/.form-input/.btn/.banner*），
+   这里只补本页特有的小间距，避免与全局类重复定义导致改一处漏一处。 */
+.page .card .form-input {
+  text-align: right;
+}

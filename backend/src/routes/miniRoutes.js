@@ -48,6 +48,7 @@ const adminReportCtrl = require('../controllers/mini/admin/reportController');
 const adminBarrelCtrl = require('../controllers/mini/admin/barrelController');
 const adminSettingsCtrl = require('../controllers/mini/admin/settingsController');
 const adminTicketCtrl = require('../controllers/mini/admin/waterTicketController');
+const adminAccountCtrl = require('../controllers/mini/admin/accountController');
 // 主数据四域（供应商/员工/水站/机台）：同一工厂构造，故只引一个配置模块
 const masterDomains = require('../controllers/mini/admin/masterDomains');
 // 商品图片上传**完全复用 Web 端的 multer 中间件与 handler**（目录/命名/体积校验只有一份），
@@ -303,18 +304,21 @@ router.post('/admin/barrels/deposits', requireMiniAdmin, requireMiniActive, admi
 router.put('/admin/barrels/configs/:id', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.updateConfig);
 router.delete('/admin/barrels/configs/:id', requireMiniAdmin, requireMiniActive, adminBarrelCtrl.removeConfig);
 
-// ── 域 15/17：水票（查：库存 / 明细 / 发行记录 + 作废单张）──────────────────────
-// ⚠️⚠️ **发行类写操作刻意不在本批**（docs §7.2 把这 6 个既有 Web 端点划给 Phase 7，
-//    要求逐个定处置方案 + 准备回滚路径）；更硬的一条是 §12.10：
-//    `unit_distribution_fee` 必须由服务端从 products.distribution_delivery_fee 重取，
-//    而现发行接口把客户端传入值直接写库 —— 手机端开放发行等于把
-//    「公司欠水站多少积分」的定价权交给公网客户端。**不做发行不是省事，是不做才安全。**
-// ⚠️ 因此本域只有 1 个写接口（作废单张，不动积分），其余全为只读。
-// ⚠️ 静态段（options/inventory/list/issuances）必须早于 `/:id`（仓库既有陷阱）。
+// ── 域 15/17：水票（查：库存 / 明细 / 发行记录 + 发行 + 改数量 + 作废单张）────────
+// ✅ **Phase 7 已落地（2026-09-22）**，发行随之开放 —— 落地顺序不可颠倒：
+//    ① §12.6 单件值落库；② §12.10 单件值由服务端从 products.distribution_delivery_fee 重取；
+//    ③ §12.9 停用两个「改历史金额」的配送费调整端点（410）；④ §12.7 发行入账 / 作废回冲。
+//    先收定价权、再开放公网入口；反了就是「前端传多少，公司就欠水站多少积分」。
+// ⚠️ **批次删除仍不开放**：破坏性操作（整批删除 + 按净入账回冲积分），手机误触代价过高。
+//    冒烟有反向断言（该路径必须 404），防止将来被「顺手」打开。
+// ⚠️ 发行与改数量都是**资金动作**（水站钱包入账/回冲）→ 必须带幂等键 + 落审计。
+// ⚠️ 静态段（options/inventory/list/issuances/issue）必须早于 `/:id`（仓库既有陷阱）。
 router.get('/admin/water-tickets/options', requireMiniAdmin, adminTicketCtrl.getFormOptions);
 router.get('/admin/water-tickets/inventory', requireMiniAdmin, adminTicketCtrl.getInventory);
 router.get('/admin/water-tickets/list', requireMiniAdmin, adminTicketCtrl.listTickets);
 router.get('/admin/water-tickets/issuances', requireMiniAdmin, adminTicketCtrl.listIssuances);
+router.post('/admin/water-tickets/issue', requireMiniAdmin, requireMiniActive, adminTicketCtrl.issueTickets);
+router.put('/admin/water-tickets/issuances/:id', requireMiniAdmin, requireMiniActive, adminTicketCtrl.updateIssuance);
 router.post('/admin/water-tickets/:id/cancel', requireMiniAdmin, requireMiniActive, adminTicketCtrl.cancelTicket);
 
 // ── 域 17/17：系统设置（销售单打印店长）──────────────────────────────────────
@@ -323,6 +327,25 @@ router.post('/admin/water-tickets/:id/cancel', requireMiniAdmin, requireMiniActi
 router.get('/admin/settings/options', requireMiniAdmin, adminSettingsCtrl.getFormOptions);
 router.get('/admin/settings/print-manager', requireMiniAdmin, adminSettingsCtrl.getPrintManager);
 router.put('/admin/settings/print-manager', requireMiniAdmin, requireMiniActive, adminSettingsCtrl.updatePrintManager);
+
+// ── 运维域：小程序账号管理（禁用/启用、改绑定、解绑）──────────────────────────
+// 背景：这三件事此前只能改 SQL —— 服务端的每请求校验早已生效，缺的只是管理入口。
+// ⚠️ 三条硬边界（服务端强制，页面只是同步隐藏按钮）：
+//   ① 不能操作自己（否则当场失去管理权限；只有一个管理员时即永久锁死）；
+//   ② 管理员角色账号**不开放**（否则「管理员令牌 → 把任意账号提权成 admin」这条链成立）；
+//   ③ 改绑定/解绑校验目标存在且启用、且未被其它启用中账号占用。
+// ⚠️ 「禁用」≠「解绑」：禁用保留该微信的绑定（写操作 401，读历史可用），
+//    解绑是**删除绑定行**（同一微信才能重新登录重绑）—— 用 status=0 冒充解绑会让用户永远登不进去。
+// ⚠️ 静态段 options 写在 :id 之前（仓库既有陷阱）。
+// ⚠️⚠️ 路径用 **mini-accounts** 而不是 accounts：/admin/accounts 是**公司资金账户**域（第 10 域）
+//    的路径。Express 对「同名路由注册两次」**不报错**，只会静默命中**先注册**的那个 ——
+//    表现是「账号管理页列出来的是公司资金账户、删除按钮删的是公司账户」，
+//    而接口全返回 200，看不出任何异常（实测：本域首版就是这么写的，被冒烟第 22 节抓到）。
+router.get('/admin/mini-accounts/options', requireMiniAdmin, adminAccountCtrl.getFormOptions);
+router.get('/admin/mini-accounts', requireMiniAdmin, adminAccountCtrl.listAccounts);
+router.put('/admin/mini-accounts/:id/status', requireMiniAdmin, requireMiniActive, adminAccountCtrl.updateStatus);
+router.put('/admin/mini-accounts/:id/binding', requireMiniAdmin, requireMiniActive, adminAccountCtrl.updateBinding);
+router.delete('/admin/mini-accounts/:id', requireMiniAdmin, requireMiniActive, adminAccountCtrl.unbindAccount);
 
 // ── 兜底 404 ─────────────────────────────────────────────────────────────────
 // ⚠️ 必须显式兜底：否则未匹配的 /api/mini/* 会**落到 app.js 的全局 /api 鉴权**上，

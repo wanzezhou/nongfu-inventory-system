@@ -244,9 +244,19 @@
           <text class="t-strong">销售单打印店长 ›</text>
         </view>
         <view class="divider"></view>
+        <view class="kv-row" bindtap="goAdminMiniAccounts">
+          <text class="t-sub">小程序账号</text>
+          <text class="t-strong">禁用 / 改绑定 / 解绑 ›</text>
+        </view>
+        <view class="divider"></view>
         <view class="kv-row" bindtap="goAdminTickets">
           <text class="t-sub">水票</text>
-          <text class="t-strong">水站库存 / 明细 / 作废 ›</text>
+          <text class="t-strong">水站库存 / 明细 / 改数量 / 作废 ›</text>
+        </view>
+        <view class="divider"></view>
+        <view class="kv-row" bindtap="goAdminTicketIssue">
+          <text class="t-sub">返货发行</text>
+          <text class="t-strong">按月录返货清单（给水站入账积分）›</text>
         </view>
         <view class="divider"></view>
         <view class="kv-row" bindtap="goAdminInventory">

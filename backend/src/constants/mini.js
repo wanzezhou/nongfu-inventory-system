@@ -216,12 +216,23 @@ const IDEM_SCOPE = {
   //    ⚠️ 只有一个动作、只改一行配置，但它决定「客户回拨的是谁的电话」——
   //      重放不会造成账面问题，却会让审计里出现两条无法区分的记录。仍按定式带键。
   UPDATE_SETTING: 'UPDATE_SETTING',
-  // ── Phase 8b 第 15 域 水票（仅「作废单张」）──
-  //    ⚠️ 水票的发行/调整/批次删除**不在本批**：§7.2 明确它们属 Phase 7 独立批次
-  //      （要改 5 个既有 Web 端点 + 逐个定处置与回滚路径），且 §12.10 要求
-  //      「配送费积分由服务端从商品档案重取」——现发行接口信任客户端传入值。
-  //      在只做「手机端接入」的批次里改动 Web 的既有发行语义，风险远大于收益。
-  CANCEL_TICKET_ADMIN: 'CANCEL_TICKET_ADMIN'
+  // ── Phase 8b 第 15 域 水票 · Phase 7 补齐（发行 + 改数量）──
+  //    ⚠️ 与「只做手机端接入」的那一批不同：这一批**先把 Web 侧的定价权收回到服务端**
+  //      （§12.6 单件值落库 / §12.10 服务端重取 / §12.9 停用两个改历史金额的端点），
+  //      再开放手机端发行 —— 顺序反了就是「前端传多少，公司就欠水站多少积分」。
+  //    ⚠️ 发行与改数量都是**资金动作**（水站钱包入账 / 回冲）：弱网重试一次就是真的多发一笔
+  //      积分，两笔都合法、账面看不出异常。必须带幂等键。
+  CANCEL_TICKET_ADMIN: 'CANCEL_TICKET_ADMIN',
+  ISSUE_TICKET_ADMIN: 'ISSUE_TICKET_ADMIN',
+  UPDATE_TICKET_ISSUANCE_ADMIN: 'UPDATE_TICKET_ISSUANCE_ADMIN',
+  // ── 运维域 小程序账号管理（禁用/启用、改绑定、解绑）──
+  //    ⚠️ 这三个动作都**不直接动钱**，但都会改变「谁能操作钱」：
+  //      禁用后该微信写操作立即 401；改绑定/解绑会让旧令牌立即失效。
+  //      重放一次会让审计里出现两条无法区分真假的记录（「谁在什么时候把谁禁了」），
+  //      故同样按定式带键。
+  UPDATE_MINI_ACCOUNT_STATUS: 'UPDATE_MINI_ACCOUNT_STATUS',
+  UPDATE_MINI_ACCOUNT_BINDING: 'UPDATE_MINI_ACCOUNT_BINDING',
+  UNBIND_MINI_ACCOUNT: 'UNBIND_MINI_ACCOUNT'
 };
 /** 服务端保留幂等键至少 24h（覆盖「用户离线数小时后重试」，§23.1） */
 const IDEM_TTL_HOURS = 24;
@@ -316,10 +327,20 @@ const AUDIT_ACTION = {
   //    ⚠️ 审计 detail 里记 before/after 的**人**（不只是 id）：
   //      打印配置的变更只对「电话是谁的」有意义，光记 id 事后要再查一次员工表才知道换成了谁。
   UPDATE_SETTING: 'UPDATE_SETTING',
-  // ── Phase 8b 第 15 域 水票（仅「作废单张」）──
+  // ── Phase 8b 第 15 域 水票（作废单张 + Phase 7 补齐的发行/改数量）──
   //    与业务员侧的 CANCEL_ORDER 不同名：这里是管理员在管理端作废任意一张未用票，
   //    审计里要能区分「谁在什么端作废的」。
-  CANCEL_TICKET_ADMIN: 'CANCEL_TICKET_ADMIN'
+  CANCEL_TICKET_ADMIN: 'CANCEL_TICKET_ADMIN',
+  //    ⚠️ 发行与改数量的审计 detail 必须记**金额与单件值**（不只是数量）：
+  //      这两个动作会给水站入账/回冲积分，事后核账要能一眼看出「这次动了多少钱」。
+  ISSUE_TICKET_ADMIN: 'ISSUE_TICKET_ADMIN',
+  UPDATE_TICKET_ISSUANCE_ADMIN: 'UPDATE_TICKET_ISSUANCE_ADMIN',
+  // ── 运维域 小程序账号管理 ──
+  //    ⚠️ detail 必须记 before/after（status 或 role+target）：本域动作的结果是
+  //      「某个人从此刻起能不能操作系统」，只记「改过了」事后无法还原判断依据。
+  UPDATE_MINI_ACCOUNT_STATUS: 'UPDATE_MINI_ACCOUNT_STATUS',
+  UPDATE_MINI_ACCOUNT_BINDING: 'UPDATE_MINI_ACCOUNT_BINDING',
+  UNBIND_MINI_ACCOUNT: 'UNBIND_MINI_ACCOUNT'
 };
 
 // ── 分页（⚠️ mysql2 不支持 LIMIT ?，必须 parseInt 内联）────────────────────
