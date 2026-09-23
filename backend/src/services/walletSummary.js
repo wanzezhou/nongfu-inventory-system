@@ -267,16 +267,30 @@ async function listWalletsForAdmin(conn, { ownerType = null } = {}) {
   };
 }
 
-/** 水站积分总额（§28 管理员首页指标） */
+/**
+ * 钱包积分总额（§28 管理员首页指标 / Web 管理端概览）
+ *
+ * ★ 2026-09-23 双积分：除按主体类型的总额外，**同时给出两类积分的合计**。
+ *   ⚠️ 刻意在**这一处**扩展而不是在 Web 控制器里另写一份聚合：仓库既有教训是
+ *      「同一口径出现两份公式，对账不一致时无法判断哪份对」—— 两类合计与总额
+ *      必须来自同一张表的同一次读取，才可能自洽。
+ *   ⚠️ 只统计 status = 1（启用）钱包，与按主体类型的口径保持一致（停用钱包的钱不算可用额度）。
+ */
 async function sumBalanceByOwnerType(conn) {
   const [rows] = await conn.execute(
-    `SELECT owner_type, ROUND(SUM(balance), 2) AS total, COUNT(*) AS cnt
+    `SELECT owner_type,
+            ROUND(SUM(balance), 2) AS total,
+            ROUND(SUM(recharge_balance), 2) AS recharge_total,
+            ROUND(SUM(delivery_fee_balance), 2) AS delivery_fee_total,
+            COUNT(*) AS cnt
        FROM wallet_accounts WHERE status = 1 GROUP BY owner_type`
   );
-  const out = { SALESMAN: 0, STATION: 0, total: 0 };
+  const out = { SALESMAN: 0, STATION: 0, total: 0, rechargeTotal: 0, deliveryFeeTotal: 0 };
   for (const r of rows) {
     out[r.owner_type] = round2(r.total);
     out.total = round2(out.total + Number(r.total));
+    out.rechargeTotal = round2(out.rechargeTotal + Number(r.recharge_total));
+    out.deliveryFeeTotal = round2(out.deliveryFeeTotal + Number(r.delivery_fee_total));
   }
   return out;
 }

@@ -143,6 +143,10 @@ export const menuGroups = [
     items: FINANCE_ITEMS
   },
   { type: 'item', index: '/water-tickets', title: '水站账户管理', icon: Ticket },
+  // 积分钱包（Web 管理端）——**充值积分的唯一发放入口**（在线充值已于 2026-09-23 下线）。
+  // ⚠️ 与「水站账户管理」分列而非合并：后者管的是**水票张数与欠款**（提货权/应收），
+  //    本页管的是**积分余额（钱）**，两者的可操作动作与审计对象都不同。
+  { type: 'item', index: '/wallet', title: '积分钱包', icon: Wallet },
   {
     type: 'group',
     index: '/barrel',

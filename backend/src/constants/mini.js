@@ -184,6 +184,25 @@ const WALLET_RELATED_TYPE = {
   MANUAL_ADJUST: 'MANUAL_ADJUST'
 };
 
+/**
+ * 员工类型（workers.employee_type）—— 取值与 services/salaryLedger.EMPLOYEE_TYPE_TEXT 同源
+ * ---------------------------------------------------------------------------
+ * ⚠️ 这里**只收口「钱包主体身份」需要的那一个取值**，不是要把工资域的整套字典搬过来：
+ *    钱包主体 = 业务员（`employee_type = 3`），这正是 `ROLE_TO_OWNER_TYPE.SALESMAN`
+ *    在数据库里的落地口径（另见 miniAccountService：手机号 → 主体消歧）。
+ *
+ * 为什么必须收口：该字面量原先在 `miniAccountService.matchSubjectsByPhone` 里硬编码，
+ * Web 端「主体钱包列表」若再写一个 `3`，就会出现第三份同名口径 ——
+ * 一旦员工类型编码调整（历史上 5-7 类账户就这么变过），改动方无法确定有几处要跟着改。
+ * 因此新增 Web 管理端之前先把它收口于此，两处统一引用。
+ */
+const EMPLOYEE_TYPE = {
+  MANAGER: 1, // 店长
+  DELIVERER: 2, // 配送员工
+  SALESMAN: 3, // 业务员（钱包主体）
+  ADMIN: 4 // 管理员
+};
+
 // ── 幂等（§23.1）────────────────────────────────────────────────────────────
 const IDEM_SCOPE = {
   CREATE_ORDER: 'CREATE_ORDER',
@@ -428,6 +447,7 @@ module.exports = {
   POINTS_TYPE_LABEL,
   TX_TYPE_LABEL,
   WALLET_RELATED_TYPE,
+  EMPLOYEE_TYPE,
   IDEM_SCOPE,
   IDEM_TTL_HOURS,
   IDEM_KEY_MAX_LEN,

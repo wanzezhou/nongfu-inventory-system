@@ -170,6 +170,14 @@ const routes = [
         meta: { title: t('water-tickets'), requiresAuth: true }
       },
       {
+        // 积分钱包（Web 管理端）：双积分查看 + 管理员发放充值积分。
+        // 对应后端 /api/wallets（与小程序端的 /api/mini/wallet 是两个挂载点）
+        path: 'wallet',
+        name: 'WalletManage',
+        component: () => import('@/views/wallet/WalletManage.vue'),
+        meta: { title: t('wallet'), requiresAuth: true }
+      },
+      {
         path: 'barrel/deposit',
         name: 'BarrelDeposit',
         component: () => import('@/views/barrel/BarrelDeposit.vue'),

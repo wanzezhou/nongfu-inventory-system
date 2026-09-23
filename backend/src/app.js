@@ -29,6 +29,7 @@ const incomeRoutes = require('./routes/incomeRoutes');
 const financeAccountRoutes = require('./routes/financeAccountRoutes');
 const barrelRoutes = require('./routes/barrelRoutes');
 const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
+const walletRoutes = require('./routes/walletRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -166,6 +167,9 @@ app.use('/api/incomes', incomeRoutes);
 app.use('/api/finance-accounts', financeAccountRoutes);
 app.use('/api/barrel', barrelRoutes);
 app.use('/api/system-settings', systemSettingsRoutes);
+// 积分钱包管理（Web 管理端）。⚠️ 与小程序端的 `/api/mini/wallet` 是**两个挂载点**：
+// 后者在全局 /api 鉴权之前挂载并自带小程序令牌校验，本挂载点走 Web 令牌 + requireAdmin。
+app.use('/api/wallets', walletRoutes);
 
 // 根路由
 app.get('/', (req, res) => {

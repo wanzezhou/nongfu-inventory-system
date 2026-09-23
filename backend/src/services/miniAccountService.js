@@ -33,7 +33,8 @@ const {
   MINI_TOKEN_AUDIENCE,
   MINI_TOKEN_ISSUER,
   MINI_TOKEN_TTL,
-  AUDIT_ACTION
+  AUDIT_ACTION,
+  EMPLOYEE_TYPE
 } = require('../constants/mini');
 
 const MINI_JWT_SECRET = process.env.JWT_SECRET_MINI;
@@ -156,7 +157,7 @@ async function loadSubject(conn, role, targetId) {
 /**
  * 手机号 → 主体匹配（§4.2 / §4.3 / §4.4）
  *
- * 业务员：workers.employee_type = 3（业务员并入员工管理，不单独维护 salesmen 主数据）
+ * 业务员：workers.employee_type = EMPLOYEE_TYPE.SALESMAN（业务员并入员工管理，不单独维护 salesmen 主数据）
  * 直营水站：sub_stations.station_id
  * 管理员：users.role = 'admin'（小程序管理员无独立档案，绑定 Web 用户）
  *
@@ -171,8 +172,8 @@ async function matchSubjectsByPhone(conn, phone) {
 
   const [workers] = await conn.execute(
     `SELECT worker_id AS id, worker_name AS name, status FROM workers
-      WHERE phone = ? AND employee_type = 3 ORDER BY worker_id ASC`,
-    [phone]
+      WHERE phone = ? AND employee_type = ? ORDER BY worker_id ASC`,
+    [phone, EMPLOYEE_TYPE.SALESMAN]
   );
   for (const w of workers) {
     matches.push({ role: MINI_ROLES.SALESMAN, targetId: w.id, name: w.name, status: Number(w.status) });

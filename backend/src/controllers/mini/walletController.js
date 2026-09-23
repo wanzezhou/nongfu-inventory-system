@@ -7,18 +7,14 @@ const { pool } = require('../../config/db');
 const { success, error, pagination } = require('../../utils/response');
 const walletService = require('../../services/walletService');
 const walletSummary = require('../../services/walletSummary');
-const { hashRequest } = require('../../utils/requestHash');
+// ★ 2026-09-23：「调整积分」的业务规则抽到共享服务，Web 管理端与本控制器共用同一份
+//   （见 services/walletAdminService.js 顶部说明）。本文件只留事务边界与响应外形。
+const walletAdminService = require('../../services/walletAdminService');
 const {
   ROLE_TO_OWNER_TYPE,
   WALLET_OWNER_TYPE,
   WALLET_TX_TYPE,
-  TX_DIRECTION,
-  POINTS_TYPE,
   POINTS_TYPE_VALUES,
-  POINTS_TYPE_LABEL,
-  IDEM_SCOPE,
-  IDEM_KEY_MAX_LEN,
-  AUDIT_ACTION,
   MINI_MESSAGE
 } = require('../../constants/mini');
 
@@ -202,119 +198,58 @@ async function adminWalletTransactions(req, res) {
  *
  * ⚠️ 幂等（§45「管理员重复点击增加积分/减少积分」必测项）：
  *    要求客户端传 clientRequestId，同键重复提交只生效一次、第二次返回首次结果。
+ *
+ * ★ 2026-09-23：**核心逻辑已抽到 services/walletAdminService**（Web 管理端与小程序
+ *   管理端共用同一份）。这里只负责「事务边界」与「响应外形」—— 两端唯一的差别就是
+ *   这两件事（操作人身份取令牌、响应字段命名），业务规则不再有第二份实现。
  */
 async function adminAdjust(req, res) {
-  const body = req.body || {};
-  const walletId = body.walletId;
-  const direction = String(body.direction || '').toUpperCase();
-  const amount = Number(body.amount);
-  const reason = (body.reason || '').trim();
-  const remark = (body.remark || '').trim();
-  const clientRequestId = body.clientRequestId;
-  // ★ 双积分（2026-09-23）：管理员可指定加到/扣减哪一类积分，**默认充值积分**
-  //   （「充值积分 = 管理员后台设置的那一类」是业务方确认的口径）；
-  //   补发配送费积分是真实场景（发行漏录、对账差异），故保留显式指定能力。
-  const pointsType = String(body.pointsType || POINTS_TYPE.RECHARGE).toUpperCase();
-
-  if (!walletId) return error(res, '缺少 walletId', 400);
-  if (direction !== 'IN' && direction !== 'OUT') {
-    return error(res, 'direction 只能是 IN（增加）或 OUT（扣减）', 400);
-  }
-  if (!POINTS_TYPE_VALUES.includes(pointsType)) {
-    return error(res, `积分类型只能是 ${POINTS_TYPE_VALUES.join(' 或 ')}`, 400);
-  }
-  if (!Number.isFinite(amount) || amount <= 0) return error(res, '积分数量必须为正数', 400);
-  if (!reason) return error(res, '必须填写操作原因（文档 §18）', 400);
-  if (!clientRequestId || String(clientRequestId).length > IDEM_KEY_MAX_LEN) {
-    return error(res, `缺少或非法 clientRequestId（幂等键，长度不超过 ${IDEM_KEY_MAX_LEN}）`, 400);
+  // 入参规范化在**事务外**（非法入参不该占用行锁）：抛 bizFail → 统一 400
+  let input;
+  try {
+    input = walletAdminService.normalizeAdjustInput(req.body || {});
+  } catch (err) {
+    return handleError(res, err, '调整积分失败，请稍后重试');
   }
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    const wallet = await walletService.findWalletById(conn, walletId);
-    if (!wallet) {
-      await conn.rollback();
-      return error(res, '积分钱包不存在', 404);
-    }
-
-    const idemScope = `${IDEM_SCOPE.WALLET_ADJUST}:${walletId}`;
-    const claim = await walletService.claimIdempotency(conn, {
-      scope: idemScope,
-      key: String(clientRequestId),
-      // ⚠️ 用共享指纹函数，不要拼明文串：request_hash 是 varchar(64)，
-      //    管理员把「操作原因」写长一点就会超长 → 接口 500（2026-09-21 修）
-      // 指纹必须包含积分类型：否则「同一幂等键 + 同金额 + 不同类型」会被判成重复请求，
-      // 第二次（本意是补发另一类积分）被静默合并掉
-      requestHash: hashRequest({ direction, amount, reason, pointsType }),
+    const result = await walletAdminService.applyAdjust(conn, input, {
+      scope: walletAdminService.buildIdemScope('MINI', input.walletId),
+      actorType: 'MINI',
+      actorId: `mini:${req.mini.accountId}`,
+      operatorId: `mini:${req.mini.accountId}`,
+      operatorRole: req.mini.role,
       miniAccountId: req.mini.accountId
     });
 
-    if (claim.conflict) {
-      await conn.rollback();
-      return error(res, '重复提交的请求内容不一致，请刷新后重试', 400);
-    }
-    if (claim.replayed) {
+    if (result.replayed) {
       await conn.rollback();
       return success(
         res,
-        { walletId, transactionNo: claim.resultRef, replayed: true },
+        { walletId: input.walletId, transactionNo: result.transactionNo, replayed: true },
         '该操作已处理（重复请求已合并）'
       );
     }
 
-    // ⚠️ 按方向选择加锁方式：
-    //    增加积分是收入方向 → 允许停用钱包（撤销类同理，§11.7 第 4 条）；
-    //    扣减积分是支出方向 → 必须校验钱包启用 + 余额充足。
-    const walletRow =
-      direction === 'IN'
-        ? await walletService.loadWalletForUpdateIncludingDisabled(conn, walletId)
-        : await walletService.loadWalletForUpdate(conn, walletId);
-
-    const tx = await walletService.applyTransaction(conn, walletRow, {
-      txType: direction === 'IN' ? WALLET_TX_TYPE.ADJUST_IN : WALLET_TX_TYPE.ADJUST_OUT,
-      amount,
-      direction: direction === 'IN' ? TX_DIRECTION.IN : TX_DIRECTION.OUT,
-      // ★ 双积分：作用于哪一类（默认充值积分，可显式指定配送费积分）
-      pointsType,
-      relatedType: 'MANUAL_ADJUST',
-      relatedId: null,
-      operatorId: `mini:${req.mini.accountId}`,
-      operatorRole: req.mini.role,
-      // 操作原因必填（§18）；备注可空
-      remark: remark ? `${reason}｜${remark}` : reason
-    });
-
-    await walletService.completeIdempotency(conn, {
-      scope: idemScope,
-      key: String(clientRequestId),
-      resultRef: tx.transaction_no
-    });
-    await walletService.writeAuditLog(conn, {
-      action: AUDIT_ACTION.WALLET_ADJUST,
-      actorType: 'MINI',
-      actorId: `mini:${req.mini.accountId}`,
-      targetType: 'WALLET',
-      targetId: walletId,
-      detail: { direction, amount, reason, remark, transactionNo: tx.transaction_no }
-    });
-
     await conn.commit();
 
-    const after = await walletStrategyAfter(conn, walletId);
+    const after = await walletStrategyAfter(conn, input.walletId);
     return success(
       res,
       {
-        walletId,
-        transactionNo: tx.transaction_no,
-        direction,
-        amount,
-        balanceBefore: tx.balance_before,
-        balanceAfter: tx.balance_after,
+        walletId: input.walletId,
+        transactionNo: result.transactionNo,
+        direction: input.direction,
+        amount: input.amount,
+        pointsType: input.pointsType,
+        balanceBefore: result.balanceBefore,
+        balanceAfter: result.balanceAfter,
         wallet: after
       },
-      direction === 'IN' ? '积分已增加' : '积分已扣减'
+      input.direction === 'IN' ? '积分已增加' : '积分已扣减'
     );
   } catch (err) {
     try {

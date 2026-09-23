@@ -497,17 +497,26 @@ try {
   //   ① 有数据 → ECharts 初始化，出现 canvas
   //   ② 数据全为 0（如系统初始化后）→ 按设计显示空态占位，**不**初始化 ECharts
   // 断言必须对两种状态都成立，否则「全 0 数据」会变成假失败（2026-09-18 踩到）
+  //
+  // ⚠️ 2026-09-23 修正（第二处假失败，同一个坑的另一面）：
+  //    空态占位 `.trend-empty` **既是加载中的初始呈现、也是「数据全为 0」的终态**，
+  //    所以「等 empties===4 就放行」会在**数据还没回来**时就通过 ——
+  //    紧接着的「每图 12 个桶」断言拿到 `labels.length === 0` → 必然假红（实测）；
+  //    而随后一按粒度按钮数据就到位（5/12/12/12），证明是**竞态**而非真缺陷。
+  //    故终态判据改为「4 张图都取到桶数」（data-buckets = labels.length，>0 才算到位）。
   await waitFor(
     async () => {
       const r = await cdp.eval(`
+      const cards = [...document.querySelectorAll('.trend-card')]
       return {
         canvases: document.querySelectorAll('.trend-card canvas').length,
-        empties: document.querySelectorAll('.trend-card .trend-empty').length
+        empties: document.querySelectorAll('.trend-card .trend-empty').length,
+        buckets: cards.map(c => Number(c.dataset.buckets) || 0)
       }
     `)
-      return r.canvases === 4 || r.empties === 4
+      return r.canvases === 4 || (r.empties === 4 && r.buckets.length === 4 && r.buckets.every(n => n > 0))
     },
-    { desc: '4 张趋势图完成渲染（canvas 或空态）', timeout: 15000 }
+    { desc: '4 张趋势图完成渲染（canvas 或空态，且桶数已到位）', timeout: 15000 }
   )
   const tr = await cdp.eval(`
     const cards = [...document.querySelectorAll('.trend-card')]

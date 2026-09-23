@@ -185,6 +185,27 @@ async function cleanupSmokeResidue(pool, opts = {}) {
     //    （文档 §11.5 / §44.12），只要留下一条孤儿流水或留下被改动过的余额，恒等式即破。
     //    冒烟脚本若只删订单、不清钱包流水，下一次跑「钱包恒等式」断言就会假红。
     if (hasWallets) {
+      // ⚠️ 2026-09-23 新增：**钱包审计必须在删钱包之前清**。
+      //    为什么不能按操作人清：Web 管理端调整积分的审计 `actor_id` 是 `web:<用户名>`，
+      //    那是真实账号 —— 按它清会把真实操作的审计一起删掉（而真实审计正是要留的）。
+      //    为什么必须在删钱包之前：审计只记 `target_type='WALLET' + target_id=<wallet_id>`，
+      //    钱包行一旦删掉，就再也无法判断这些审计属于冒烟数据了（残留会一直累积）。
+      //    故按「目标落在冒烟钱包上」识别，且执行点在下方任何钱包删除之前。
+      if (hasAudit && (walletIds.length || workerIds.length || stationIds.length)) {
+        await del(
+          'mini_audit_logs',
+          `DELETE FROM mini_audit_logs
+            WHERE target_type = 'WALLET'
+              AND target_id IN (
+                SELECT wallet_id FROM wallet_accounts
+                 WHERE wallet_id LIKE 'SMKW%'
+                    OR (owner_type = 'SALESMAN' AND owner_id IN (SELECT worker_id FROM workers WHERE worker_name LIKE '冒烟%'))
+                    OR (owner_type = 'STATION' AND owner_id IN (
+                          SELECT station_id FROM sub_stations
+                           WHERE station_name LIKE '冒烟%' OR station_id LIKE 'SMKST%'))
+              )`
+        );
+      }
       if (orderIds.length) {
         await del(
           'wallet_transactions',

@@ -18,6 +18,9 @@
  *   node scripts/check-diff-hazards.mjs --base master
  *   node scripts/check-diff-hazards.mjs --all         # 全仓基线统计（始终退出 0）
  *   node scripts/check-diff-hazards.mjs --staged      # 只看暂存区（pre-commit 用）
+ *   node scripts/check-diff-hazards.mjs --staged --diff-file <路径>
+ *                                                     # 受限环境（node 不能派生 git）用：
+ *                                                     # 先用 shell 生成 diff 再交给本脚本，规则集不变
  *
  * 豁免：在同一行写 `hazard-allow: <原因>` 注释即可豁免（必须写原因，便于评审追溯）
  */
@@ -183,6 +186,27 @@ function git(args) {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 
+/**
+ * 取 diff 文本：默认走 git；传了 `--diff-file <路径>` 时直接读该文件。
+ *
+ * 为什么需要文件模式（2026-09-23 实测）：某些沙箱/受限会话**禁止 node 派生子进程**
+ * （`execFileSync('git', …)` 直接报 `EBUSY`），此时本门禁**完全跑不起来**。
+ * 而「门禁跑不起来」比「门禁报红」更危险 —— 改动会以「门禁没法跑」为由被放过，
+ * 且恰好在最需要它的时候（临时性受限环境）失效。
+ * 文件模式让调用方用 shell 自己生成 diff（shell 里 git 是能用的）再交进来，
+ * **规则集与判定逻辑一字不改**（不做任何近似重写）：
+ *
+ *   git diff --cached --unified=0 > /tmp/staged.diff
+ *   node scripts/check-diff-hazards.mjs --staged --diff-file /tmp/staged.diff
+ *
+ * ⚠️ 文件模式只解决「取 diff」这一步；`--all`（全仓基线统计）仍走 git 读工作区。
+ */
+let DIFF_FILE = null;
+function readDiff(args) {
+  if (DIFF_FILE) return readFileSync(DIFF_FILE, 'utf8');
+  return git(args);
+}
+
 function isInScope(file) {
   if (SKIP.some(r => r.test(file))) return false;
   return INCLUDE.some(r => r.test(file));
@@ -274,6 +298,9 @@ function main() {
   const stagedMode = argv.includes('--staged');
   const baseIdx = argv.indexOf('--base');
   const base = baseIdx >= 0 ? argv[baseIdx + 1] : 'origin/master';
+  // --diff-file <path>：受限环境里 node 无法派生 git 时，由调用方先用 shell 生成 diff（见 readDiff）
+  const diffFileIdx = argv.indexOf('--diff-file');
+  DIFF_FILE = diffFileIdx >= 0 ? argv[diffFileIdx + 1] : null;
 
   let added;
   let modeLabel;
@@ -282,16 +309,16 @@ function main() {
     added = scanWorktree();
     modeLabel = '全仓基线统计（不阻断）';
   } else if (stagedMode) {
-    const diff = git(['diff', '--cached', '--unified=0']);
+    const diff = readDiff(['diff', '--cached', '--unified=0']);
     added = parseAddedLines(diff);
     modeLabel = '暂存区新增行（对比 HEAD）';
   } else {
     let diff;
     try {
-      diff = git(['diff', '--unified=0', `${base}...HEAD`]);
+      diff = readDiff(['diff', '--unified=0', `${base}...HEAD`]);
     } catch {
       console.error(`⚠️  无法对比基线 ${base}，回退到暂存区模式。`);
-      diff = git(['diff', '--cached', '--unified=0']);
+      diff = readDiff(['diff', '--cached', '--unified=0']);
     }
     added = parseAddedLines(diff);
     modeLabel = `本次改动新增行（对比 ${base}）`;
