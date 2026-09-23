@@ -3,8 +3,11 @@
 # 一键发布脚本 —— 农夫山泉经销商进销存系统
 #
 # 用法：
-#   bash /opt/nongfu/deploy/deploy.sh              # 发布当前分支最新代码
-#   bash /opt/nongfu/deploy/deploy.sh v1.2.0       # 发布并检出指定 tag
+#   bash /opt/nongfu/deploy/deploy.sh              # 发布当前分支最新代码（日常用这个）
+#   bash /opt/nongfu/deploy/deploy.sh V1.2         # 发布并检出指定 tag
+#
+# ⚠️ 传 tag 会进入 detached HEAD（分离头指针）。脚本已做兼容：下次不带参数运行时
+#    会自动切回默认分支再 pull，不必手工 `git checkout master`。
 #
 # 流程：备份 → 拉代码 → 装依赖 → 跑数据库迁移 → 构建前端 → 重启后端 → 校验
 #     任何一步失败立即停止（set -e），不会留下「半发布」状态。
@@ -18,6 +21,7 @@ DB_NAME="${DB_NAME:-nongfu_inventory}"
 DB_USER="${DB_USER:-nongfu}"
 PM2_NAME="${PM2_NAME:-nongfu-api}"
 API_PORT="${API_PORT:-3000}"
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
 
 TARGET_TAG="${1:-}"
 
@@ -48,6 +52,12 @@ git fetch --all --tags --prune
 if [ -n "$TARGET_TAG" ]; then
   git checkout "$TARGET_TAG"
 else
+  # ⚠️ 此前若用 tag 部署过，此刻处于 detached HEAD —— 直接 `git pull` 会报
+  #    「You are not currently on a branch」并把整次发布中断。故先切回默认分支。
+  if ! git symbolic-ref --quiet --short HEAD > /dev/null 2>&1; then
+    echo "      检测到分离头指针（此前用 tag 部署过），切回 $DEFAULT_BRANCH…"
+    git checkout "$DEFAULT_BRANCH"
+  fi
   git pull --ff-only
 fi
 echo "      当前版本：$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)"

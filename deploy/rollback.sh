@@ -3,7 +3,7 @@
 # 一键回滚脚本 —— 农夫山泉经销商进销存系统
 #
 # 用法：
-#   bash /opt/nongfu/deploy/rollback.sh v1.1.0        # 回滚到指定 tag
+#   bash /opt/nongfu/deploy/rollback.sh V1.1          # 回滚到指定 tag
 #   bash /opt/nongfu/deploy/rollback.sh               # 只列出可用版本
 #
 # ⚠️ 回滚 ≠ 数据回滚。本脚本只回滚**代码**。
@@ -91,4 +91,7 @@ fi
 echo
 echo "=============================================================="
 echo " 回滚完成，当前版本：$(git describe --tags --always 2>/dev/null || echo unknown)"
+echo " ⚠️ 现在处于 detached HEAD（分离头指针），这是回滚的正常状态。"
+echo "    要回到最新代码：bash $APP_DIR/deploy/deploy.sh"
+echo "    （该脚本会自动切回默认分支；也可手工 cd $APP_DIR && git checkout master）"
 echo "=============================================================="
