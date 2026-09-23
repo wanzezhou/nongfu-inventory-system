@@ -128,7 +128,9 @@ router.get('/wallet/admin/:walletId/transactions', requireMiniAdmin, walletCtrl.
 router.get('/wallet', walletCtrl.getWallet);
 router.get('/wallet/transactions', walletCtrl.getTransactions);
 // 充值是写接口（Phase 6，本期返回「未开通」），仍挂 requireMiniActive 保持口径一致
-router.post('/wallet/recharge', requireMiniActive, walletCtrl.recharge);
+// ⚠️ 在线充值（微信支付）**已按业务要求下线**（2026-09-23）：不再提供 POST /wallet/recharge。
+//    充值积分改由管理员在后台「积分钱包 → 调整」设置（默认类型 RECHARGE）。
+//    保留注释是为了让后来者知道这里**曾经有**、以及为什么没有 —— 避免被「顺手补上」。
 
 // ── 水票（§21.7）─────────────────────────────────────────────────────────────
 router.get('/water-tickets/summary', requireMiniRole(MINI_ROLES.STATION), ticketCtrl.getWaterTicketSummary);

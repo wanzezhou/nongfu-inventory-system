@@ -17,6 +17,8 @@ Page({
     role: '',
     wallet: null,
     byType: [],
+    /** ★ 配送费积分按月发放明细（后端聚合，前端只做格式化） */
+    feeMonths: [],
     loading: true,
     loadError: '',
     identityWarn: '',
@@ -62,10 +64,22 @@ Page({
       this.setData({
         wallet: Object.assign({}, w, {
           balanceText: fmt.points(w.balance),
+          // ★ 双积分（2026-09-23）：两类分账户各自成列展示 —— 业务要求
+          //   「可混合抵扣但必须区分」，所以总额之外必须把构成摆出来
+          rechargeBalanceText: fmt.points(w.rechargeBalance),
+          deliveryFeeBalanceText: fmt.points(w.deliveryFeeBalance),
           totalInText: fmt.points(w.totalIn),
           totalOutText: fmt.points(w.totalOut),
           rmbText: fmt.money(w.equivalentRmb)
         }),
+        // 配送费积分按月发放明细（服务端聚合，前端不做任何加总）
+        feeMonths: (w.deliveryFeeMonthly || []).map(m => ({
+          month: m.month,
+          creditedText: fmt.points(m.credited),
+          revertedText: fmt.points(m.reverted),
+          netText: fmt.points(m.net),
+          count: m.count
+        })),
         byType: (w.byType || []).map(t => ({
           type: t.type,
           label: t.label,
@@ -87,9 +101,8 @@ Page({
   goTransactions() {
     ui.navTo('/pages/wallet-transactions/index');
   },
-  goRecharge() {
-    ui.navTo('/pages/wallet-recharge/index');
-  },
+  // ⚠️ 在线充值（微信支付）**已按业务要求下线**（2026-09-23）：充值积分改为
+  //    由管理员在后台设置，因此本页不再有充值入口（页面也一并删除）。
   goTickets() {
     ui.navTo('/pages/station-tickets/index');
   }

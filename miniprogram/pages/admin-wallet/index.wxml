@@ -42,6 +42,8 @@
         </view>
         <view class="col" style="align-items: flex-end;">
           <text class="t-primary t-lg">{{item.balanceText}}</text>
+          <!-- ★ 双积分：总额 + 构成 -->
+          <text class="t-sub mt-8">充值 {{item.rechargeBalanceText}} · 配送费 {{item.deliveryFeeBalanceText}}</text>
           <text class="tag {{item.statusText === '启用' ? 'tag-ok' : 'tag-plain'}} mt-8">{{item.statusText}}</text>
         </view>
       </view>
@@ -64,6 +66,8 @@
       <view class="hero-sm">
         <view class="hs-label">{{walletOwnerLabel}}</view>
         <view class="hs-value">{{wallet.balanceText}}</view>
+        <!-- ★ 双积分：总额 + 构成（充值 / 配送费） -->
+        <view class="hs-sub">充值积分 {{wallet.rechargeBalanceText}} · 配送费积分 {{wallet.deliveryFeeBalanceText}}</view>
         <view class="hs-sub">
           累计入账 +{{wallet.totalInText}} · 累计出账 −{{wallet.totalOutText}} ·
           {{wallet.statusText}}
@@ -81,6 +85,13 @@
           <view class="seg-item {{adjustDirection === 'IN' ? 'is-active' : ''}}" data-dir="IN" bindtap="onDirChange">增加积分</view>
           <view class="seg-item {{adjustDirection === 'OUT' ? 'is-active' : ''}}" data-dir="OUT" bindtap="onDirChange">扣减积分</view>
         </view>
+
+        <!-- ★ 双积分（2026-09-23）：指定动的是哪一类积分（默认充值积分） -->
+        <view class="seg mt-16">
+          <view class="seg-item {{adjustPointsType === 'RECHARGE' ? 'is-active' : ''}}" data-pt="RECHARGE" bindtap="onPointsTypeChange">充值积分</view>
+          <view class="seg-item {{adjustPointsType === 'DELIVERY_FEE' ? 'is-active' : ''}}" data-pt="DELIVERY_FEE" bindtap="onPointsTypeChange">配送费积分</view>
+        </view>
+        <view class="t-sub mt-8">充值积分由后台设置；配送费积分一般由返货发行自动产生，手工补发用于对账差异。</view>
 
         <view class="form-row">
           <view class="form-label">数量<text class="form-required">*</text></view>

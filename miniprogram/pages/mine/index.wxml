@@ -30,7 +30,7 @@
         <text>积分流水</text><text class="t-sub">›</text>
       </view>
       <view class="mlink" bindtap="goWallet">
-        <text>积分钱包 / 充值</text><text class="t-sub">›</text>
+        <text>积分钱包</text><text class="t-sub">›</text>
       </view>
     </block>
     <block wx:if="{{isStation}}">

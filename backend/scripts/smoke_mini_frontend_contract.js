@@ -91,22 +91,33 @@ async function main() {
     const [adminUser] = await pool.query("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
     const adminTargetId = String(adminUser[0].id);
 
+    // ⚠️ mini_accounts 有唯一索引 uk_role_active（role + target_id，仅活动行）：
+    //    admin 账号在库里通常**已存在**（本地开发登录会建、运维也必需）→ 直接 INSERT 撞唯一键
+    //    （2026-09-23 实测）。统一「存在则复用、不存在才新建」，并**在循环内记录 id** ——
+    //    原先靠 openid 前缀回查，复用来的账号不匹配该前缀会让 byRole 缺角色。
+    const byRole = {};
     for (const [openid, phone, role, target] of [
       [`smoke_fe_salesman_${TS}`, S.workerPhone, 'salesman', S.workerId],
       [`smoke_fe_station_${TS}`, S.stationPhone, 'station', S.stationId],
       [`smoke_fe_admin_${TS}`, '13500000009', 'admin', adminTargetId]
     ]) {
+      const [exist] = await pool.query(
+        `SELECT id FROM mini_accounts WHERE role = ? AND target_id = ? AND status = 1 LIMIT 1`,
+        [role, target]
+      );
+      if (exist.length) {
+        byRole[role] = exist[0].id;
+        console.log(`  （复用已存在的 ${role} 小程序账号 id=${exist[0].id}）`);
+        continue;
+      }
       await pool.query(
         `INSERT INTO mini_accounts (openid, phone, role, target_id, status, created_at)
          VALUES (?, ?, ?, ?, 1, NOW())`,
         [openid, phone, role, target]
       );
+      const [created] = await pool.query('SELECT id FROM mini_accounts WHERE openid = ?', [openid]);
+      byRole[role] = created[0].id;
     }
-    const [ids] = await pool.query(`SELECT id, role FROM mini_accounts WHERE openid LIKE 'smoke\\_fe\\_%' ORDER BY id`);
-    const byRole = {};
-    ids.forEach(r => {
-      byRole[r.role] = r.id;
-    });
 
     // 钱包注入（走正规事务路径）
     const conn = await pool.getConnection();
@@ -396,9 +407,15 @@ async function main() {
       '按类型筛选生效（§33 流水筛选）'
     );
 
+    // ⚠️ 反向断言（2026-09-23）：在线充值已按业务要求**整体下线**（端点 + 页面一并删除）。
+    //    这里断言"端点不存在"，防止将来被「顺手」加回来 —— 加回来就等于重新引入在线支付，
+    //    而业务已明确不需要（且未配置支付资质）。
     const recharge = await call('POST', '/mini/wallet/recharge', { amount: 100 }, tokenSalesman);
-    assert(recharge.code === 503, `充值接口按 §13.8 返回「未开通」（503）：实得 ${recharge.code}`);
-    assert(/未开通|未就绪/.test(recharge.message || ''), `充值提示文案明确：${recharge.message}`);
+    assert(recharge.code === 404, `充值端点已下线（404，不得被加回）：实得 ${recharge.code}`);
+    assert(
+      !/未开通|未就绪/.test(recharge.message || ''),
+      `不再有「未开通」话术（说明能力真的移除了，而非仅改文案）：${recharge.message}`
+    );
 
     // ── 7. 水票（水站） ─────────────────────────────────────────────────────
     console.log('\n7. 水票 pages/station-tickets');

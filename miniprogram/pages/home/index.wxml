@@ -37,7 +37,7 @@
       </view>
       <view class="quick-item" bindtap="goWallet">
         <view class="quick-title">积分钱包</view>
-        <view class="quick-sub">充值 / 流水</view>
+        <view class="quick-sub">余额 / 流水</view>
       </view>
     </view>
   </block>
@@ -53,7 +53,7 @@
     <view class="stat-grid">
       <view class="stat-cell">
         <view class="stat-num">{{month ? month.recharge : 0}}</view>
-        <view class="stat-label">本月充值</view>
+        <view class="stat-label">本月入账</view>
       </view>
       <view class="stat-cell">
         <view class="stat-num">{{month ? month.distributionPoints : 0}}</view>

@@ -22,7 +22,7 @@ CREATE TABLE `barrel_config` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_barrel_type` (`barrel_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=77 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='桶型押金配置';
+) ENGINE=InnoDB AUTO_INCREMENT=122 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='桶型押金配置';
 INSERT INTO `barrel_config` (`id`, `barrel_type`, `deposit_price`, `status`, `sort_order`, `created_at`, `updated_at`) VALUES (1, '19L桶', '30.00', 1, 1, '2026-09-08 21:27:49.000', '2026-09-08 21:27:49.000');
 -- 1 行
 
@@ -54,7 +54,7 @@ CREATE TABLE `barrel_deposits` (
   KEY `idx_deposit_type` (`deposit_type`),
   KEY `idx_deposit_created` (`created_at`),
   KEY `idx_party_type` (`party_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=44 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- 表结构: delivery_fee_settlement
@@ -107,12 +107,12 @@ INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `b
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_CREDIT', '可上单信用余额', 5, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义） [已合并至农夫上单账户 2026-09-15]', 0, '2026-09-02 21:09:28.000', '2026-09-15 20:44:18.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_DISCOUNT', '可上单折扣余额', 6, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义） [已合并至农夫上单账户 2026-09-15]', 0, '2026-09-02 21:09:28.000', '2026-09-15 20:44:18.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_FEE', '自有费用余额', 7, '', '', '0.00', '0.00', '普通账户（相互独立，无业务语义） [已合并至农夫上单账户 2026-09-15]', 0, '2026-09-02 21:09:28.000', '2026-09-15 20:44:18.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_NFSD', '农夫上单账户', 8, NULL, NULL, '0.00', '0.00', '由「可上单信用余额/可上单折扣余额/自有费用余额」合并（2026-09-15）', 1, '2026-09-15 20:44:18.000', '2026-09-20 21:42:55.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_OTHER', '其他', 4, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-18 22:51:57.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_NFSD', '农夫上单账户', 8, NULL, NULL, '0.00', '9900.00', '由「可上单信用余额/可上单折扣余额/自有费用余额」合并（2026-09-15）', 1, '2026-09-15 20:44:18.000', '2026-09-23 19:55:49.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_OTHER', '其他', 4, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-22 21:09:24.000');
 INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_RETAIL_MACHINE', '零售机账户', 10, NULL, NULL, '0.00', '0.00', '零售机营收归集账户（2026-09-15）', 1, '2026-09-15 20:44:18.000', '2026-09-15 20:44:18.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SGS', '水公社公户', 2, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-20 21:41:24.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '270.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-20 21:42:55.000');
-INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, NULL, NULL, '0.00', '0.00', NULL, 1, '2026-09-02 20:50:03.000', '2026-09-18 22:52:17.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SGS', '水公社公户', 2, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-22 22:45:08.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_SZX', '晟之溪公户', 1, '', '', '0.00', '0.00', '预置账户', 1, '2026-09-02 20:50:03.000', '2026-09-22 22:45:13.000');
+INSERT INTO `finance_accounts` (`account_id`, `account_name`, `account_type`, `bank_name`, `bank_account`, `initial_balance`, `current_balance`, `remark`, `status`, `created_at`, `updated_at`) VALUES ('ACCOUNT_WX', '微信', 3, NULL, NULL, '0.00', '0.00', NULL, 1, '2026-09-02 20:50:03.000', '2026-09-22 22:45:09.000');
 -- 10 行
 
 -- ----------------------------
@@ -142,16 +142,9 @@ CREATE TABLE `finance_transactions` (
   KEY `idx_tx_date` (`tx_date`),
   KEY `idx_related` (`related_module`,`related_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='账户资金流水表';
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V8GM96RG', 'TX2026092021884', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '40.00', '18.00', '58.00', 'order_revenue', 'SZX2026092000002', '2026-09-20 00:00:00.000', 'mini:77', '冒烟客户MU9V8GC2', '订单 SZX2026092000002 营收入账', '2026-09-20 21:42:18.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V8GNJ2CJ', 'TX2026092081683', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '20.00', '158.00', '178.00', 'order_revenue', 'SZX2026092000004', '2026-09-20 00:00:00.000', 'mini:77', '冒烟客户MU9V8GC2', '订单 SZX2026092000004 营收入账', '2026-09-20 21:42:18.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V8GRZ3BS', 'TX2026092027065', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '30.00', '60.00', '90.00', 'order_revenue', 'SZX2026092000006', '2026-09-20 00:00:00.000', 'mini:77', '冒烟客户MU9V8GC2', '订单 SZX2026092000006 营收入账', '2026-09-20 21:42:18.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V98JO17W', 'TX2026092007864', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '40.00', '108.00', '148.00', 'order_revenue', 'SZX2026092000002', '2026-09-20 00:00:00.000', 'mini:82', '冒烟客户MU9V988K', '订单 SZX2026092000002 营收入账', '2026-09-20 21:42:54.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V98L11Z1', 'TX2026092042348', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '20.00', '248.00', '268.00', 'order_revenue', 'SZX2026092000004', '2026-09-20 00:00:00.000', 'mini:82', '冒烟客户MU9V988K', '订单 SZX2026092000004 营收入账', '2026-09-20 21:42:54.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V98PGS2', 'TX2026092022098', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '30.00', '150.00', '180.00', 'order_revenue', 'SZX2026092000006', '2026-09-20 00:00:00.000', 'mini:82', '冒烟客户MU9V988K', '订单 SZX2026092000006 营收入账', '2026-09-20 21:42:55.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V9965615', 'TX2026092071757', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '40.00', '198.00', '238.00', 'order_revenue', 'SZX2026092000002', '2026-09-20 00:00:00.000', 'mini:87', '冒烟客户MU9V98X4', '订单 SZX2026092000002 营收入账', '2026-09-20 21:42:55.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V997H3NQ', 'TX2026092024302', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '20.00', '338.00', '358.00', 'order_revenue', 'SZX2026092000004', '2026-09-20 00:00:00.000', 'mini:87', '冒烟客户MU9V98X4', '订单 SZX2026092000004 营收入账', '2026-09-20 21:42:55.000');
-INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMU9V99B65PA', 'TX2026092043141', 'ACCOUNT_SZX', '晟之溪公户', 1, '订单营收', '30.00', '240.00', '270.00', 'order_revenue', 'SZX2026092000006', '2026-09-20 00:00:00.000', 'mini:87', '冒烟客户MU9V98X4', '订单 SZX2026092000006 营收入账', '2026-09-20 21:42:55.000');
--- 9 行
+INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMUE1QOD3108', 'TX2026092349956', 'ACCOUNT_NFSD', '农夫上单账户', 1, '收入', '10000.00', '0.00', '10000.00', 'account_transfer', 'MANUAL', '2026-09-23 00:00:00.000', 'admin', '人工收入', '测试用', '2026-09-23 19:55:30.000');
+INSERT INTO `finance_transactions` (`tx_id`, `tx_no`, `account_id`, `account_name`, `tx_type`, `tx_category`, `amount`, `balance_before`, `balance_after`, `related_module`, `related_id`, `tx_date`, `handler`, `counterparty`, `remark`, `created_at`) VALUES ('TXMUE1R31S1O5', 'TX2026092358392', 'ACCOUNT_NFSD', '农夫上单账户', 2, '采购入库', '100.00', '10000.00', '9900.00', 'purchase', 'PR17901645499344860', '2026-09-23 00:00:00.000', 'admin', '农夫山泉（南京）有限公司', '入库单 PR17901645499344860 采购付款', '2026-09-23 19:55:49.000');
+-- 2 行
 
 -- ----------------------------
 -- 表结构: financial_settlement
@@ -217,7 +210,7 @@ CREATE TABLE `inventory` (
   PRIMARY KEY (`inventory_id`),
   UNIQUE KEY `uk_product` (`product_id`),
   CONSTRAINT `fk_inventory_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=342 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='总仓库库存表';
+) ENGINE=InnoDB AUTO_INCREMENT=457 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='总仓库库存表';
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (1, 'Pmrf3fgpqDNVO8Q', 0, NULL, NULL, '2026-09-18 20:02:11.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (2, 'Pmrf3fgpzF5XO8D', 0, NULL, NULL, '2026-09-18 20:02:11.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (3, 'Pmrf3fgq30J6ZV3', 0, NULL, NULL, '2026-09-18 20:02:11.000');
@@ -258,7 +251,7 @@ INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (38, 'Pmrf3fgt7Z3E7E9', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (39, 'Pmrf3fgtbWU28QX', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (40, 'Pmrf3fgteHHV9KX', 0, NULL, NULL, '2026-09-18 20:02:11.000');
-INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (41, 'Pmrf3fgthXVMNN9', 0, NULL, NULL, '2026-09-18 20:02:11.000');
+INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (41, 'Pmrf3fgthXVMNN9', 10, '2026-09-23 19:55:50.000', NULL, '2026-09-23 19:55:50.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (42, 'Pmrf3fgtlPZCO9R', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (43, 'Pmrf3fgtoQJZ3RM', 0, NULL, NULL, '2026-07-10 23:31:26.000');
 INSERT INTO `inventory` (`inventory_id`, `product_id`, `quantity`, `last_in_time`, `last_out_time`, `updated_at`) VALUES (44, 'Pmrf3fgtrO9S5YP', 0, NULL, NULL, '2026-07-10 23:31:26.000');
@@ -450,7 +443,10 @@ CREATE TABLE `mini_accounts` (
   KEY `idx_openid` (`openid`),
   KEY `idx_phone` (`phone`),
   KEY `idx_role` (`role`)
-) ENGINE=InnoDB AUTO_INCREMENT=92 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='小程序账号绑定表';
+) ENGINE=InnoDB AUTO_INCREMENT=378 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='小程序账号绑定表';
+INSERT INTO `mini_accounts` (`id`, `openid`, `union_id`, `phone`, `role`, `target_id`, `nickname`, `avatar_url`, `status`, `last_login_at`, `created_at`, `updated_at`, `active_key`) VALUES (376, 'dev_13900000001', NULL, '13900000001', 'admin', '1', '本地开发账号', NULL, 1, '2026-09-22 23:47:32.000', '2026-09-22 23:12:23.000', '2026-09-22 23:47:32.000', '1');
+INSERT INTO `mini_accounts` (`id`, `openid`, `union_id`, `phone`, `role`, `target_id`, `nickname`, `avatar_url`, `status`, `last_login_at`, `created_at`, `updated_at`, `active_key`) VALUES (377, 'dev_13900000002', NULL, '13900000002', 'station', 'ST002', '本地开发账号', NULL, 1, '2026-09-22 23:50:34.000', '2026-09-22 23:50:34.000', '2026-09-22 23:50:34.000', 'ST002');
+-- 2 行
 
 -- ----------------------------
 -- 表结构: mini_audit_logs
@@ -468,7 +464,11 @@ CREATE TABLE `mini_audit_logs` (
   PRIMARY KEY (`log_id`),
   KEY `idx_action_time` (`action`,`created_at`),
   KEY `idx_target` (`target_type`,`target_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=98 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序审计日志（§40）';
+) ENGINE=InnoDB AUTO_INCREMENT=2440 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序审计日志（§40）';
+INSERT INTO `mini_audit_logs` (`log_id`, `action`, `actor_type`, `actor_id`, `target_type`, `target_id`, `detail`, `created_at`) VALUES (2437, 'BIND', 'DEV', 'openid:dev_1390***', 'MINI_ACCOUNT', '376', '{\"role\":\"admin\",\"targetId\":\"1\",\"subjectName\":\"管理员\",\"phoneTail\":\"0001\"}', '2026-09-22 23:12:23.000');
+INSERT INTO `mini_audit_logs` (`log_id`, `action`, `actor_type`, `actor_id`, `target_type`, `target_id`, `detail`, `created_at`) VALUES (2438, 'LOGIN', 'MINI', 'mini:376', 'MINI_ACCOUNT', '376', '{\"event\":\"LOGOUT\"}', '2026-09-22 23:50:31.000');
+INSERT INTO `mini_audit_logs` (`log_id`, `action`, `actor_type`, `actor_id`, `target_type`, `target_id`, `detail`, `created_at`) VALUES (2439, 'BIND', 'DEV', 'openid:dev_1390***', 'MINI_ACCOUNT', '377', '{\"role\":\"station\",\"targetId\":\"ST002\",\"subjectName\":\"秦淮水站\",\"phoneTail\":\"0002\"}', '2026-09-22 23:50:34.000');
+-- 3 行
 
 -- ----------------------------
 -- 表结构: mini_idempotency
@@ -486,7 +486,7 @@ CREATE TABLE `mini_idempotency` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_scope_key` (`scope`,`idem_key`),
   KEY `idx_created` (`created_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=96 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序接口幂等表（§23.1；服务端至少保留 24h）';
+) ENGINE=InnoDB AUTO_INCREMENT=3091 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序接口幂等表（§23.1；服务端至少保留 24h）';
 
 -- ----------------------------
 -- 表结构: mini_payment_orders
@@ -546,7 +546,7 @@ CREATE TABLE `order_items` (
   KEY `idx_product` (`product_id`),
   CONSTRAINT `fk_item_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_item_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=118 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单商品明细表';
+) ENGINE=InnoDB AUTO_INCREMENT=395 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单商品明细表';
 
 -- ----------------------------
 -- 表结构: orders
@@ -869,6 +869,8 @@ CREATE TABLE `purchase_records` (
   CONSTRAINT `fk_purchase_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_purchase_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`supplier_id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='进货记录表';
+INSERT INTO `purchase_records` (`purchase_id`, `product_id`, `supplier_id`, `account_id`, `account_name`, `quantity`, `unit_price`, `total_amount`, `paid_amount`, `payment_status`, `status`, `void_at`, `void_by`, `void_reason`, `payment_date`, `remark`, `created_at`, `handler`) VALUES ('PR17901645499344860', 'Pmrf3fgthXVMNN9', 'SUP001', 'ACCOUNT_NFSD', '农夫上单账户', 10, '10.00', '100.00', '100.00', 1, 1, NULL, NULL, NULL, '2026-09-23 19:55:50.000', NULL, '2026-09-23 19:55:50.000', 'admin');
+-- 1 行
 
 -- ----------------------------
 -- 表结构: reimburse_attachments
@@ -1128,8 +1130,7 @@ INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone
 INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST003', '鼓楼水站', '郑老板', '13900000003', '南京市鼓楼区中山北路', '鼓楼区', '40000.00', '0.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST004', '玄武水站', '冯老板', '13900000004', '南京市玄武区锁金村', '玄武区', '35000.00', '0.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-14 20:20:28.000');
 INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST005', '建邺水站', '褚老板', '13900000005', '南京市建邺区兴隆大街', '建邺区', '28000.00', '0.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `sub_stations` (`station_id`, `station_name`, `contact_name`, `phone`, `address`, `area`, `credit_limit`, `current_debt`, `payment_type`, `bank_name`, `bank_account`, `account_name`, `invoice_title`, `tax_number`, `invoice_address`, `invoice_phone`, `status`, `created_at`, `updated_at`) VALUES ('ST006', '栖霞水站', '卫老板', '13900000006', '南京市栖霞区仙林', '栖霞区', '32000.00', '0.00', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-25 23:40:29.000', '2026-09-17 21:43:10.000');
--- 6 行
+-- 5 行
 
 -- ----------------------------
 -- 表结构: suppliers
@@ -1156,8 +1157,7 @@ CREATE TABLE `suppliers` (
 INSERT INTO `suppliers` (`supplier_id`, `supplier_name`, `contact_name`, `phone`, `address`, `bank_name`, `bank_account`, `account_name`, `tax_number`, `invoice_title`, `status`, `remark`, `created_at`, `updated_at`) VALUES ('SUP001', '农夫山泉（南京）有限公司', '王经理', '025-88880001', '南京市江宁区空港物流园', NULL, NULL, NULL, NULL, NULL, 1, '农夫山泉官方供货', '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 INSERT INTO `suppliers` (`supplier_id`, `supplier_name`, `contact_name`, `phone`, `address`, `bank_name`, `bank_account`, `account_name`, `tax_number`, `invoice_title`, `status`, `remark`, `created_at`, `updated_at`) VALUES ('SUP002', '南京鑫达饮品批发部', '刘老板', '025-88880002', '南京市栖霞区尧化门', NULL, NULL, NULL, NULL, NULL, 1, NULL, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 INSERT INTO `suppliers` (`supplier_id`, `supplier_name`, `contact_name`, `phone`, `address`, `bank_name`, `bank_account`, `account_name`, `tax_number`, `invoice_title`, `status`, `remark`, `created_at`, `updated_at`) VALUES ('SUP003', '华东水业配送中心', '陈经理', '025-88880003', '南京市雨花台区铁心桥', NULL, NULL, NULL, NULL, NULL, 1, NULL, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
-INSERT INTO `suppliers` (`supplier_id`, `supplier_name`, `contact_name`, `phone`, `address`, `bank_name`, `bank_account`, `account_name`, `tax_number`, `invoice_title`, `status`, `remark`, `created_at`, `updated_at`) VALUES ('SUP004', '玄武湖贸易有限公司', '赵总', '025-88880004', '南京市玄武区珠江路', NULL, NULL, NULL, NULL, NULL, 1, NULL, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
--- 4 行
+-- 3 行
 
 -- ----------------------------
 -- 表结构: system_settings
@@ -1170,8 +1170,6 @@ CREATE TABLE `system_settings` (
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`setting_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置（键值对）';
-INSERT INTO `system_settings` (`setting_key`, `setting_value`, `remark`, `updated_at`) VALUES ('print_manager_worker_id', NULL, '销售单打印「店长联系电话」使用的员工ID；为空时回退为第一位启用的店长', '2026-09-20 21:30:09.000');
--- 1 行
 
 -- ----------------------------
 -- 表结构: users
@@ -1189,7 +1187,7 @@ CREATE TABLE `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
   KEY `idx_phone` (`phone`)
-) ENGINE=InnoDB AUTO_INCREMENT=28 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统用户表';
+) ENGINE=InnoDB AUTO_INCREMENT=35 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统用户表';
 INSERT INTO `users` (`id`, `username`, `password`, `display_name`, `phone`, `role`, `created_at`, `updated_at`) VALUES (1, 'admin', '$2b$10$7fAfAOoH6DqE4r4dgrllNOP93BjZo3Z0YaZp713lH8CceH9GJRnqe', '管理员', '13900000001', 'admin', '2026-08-04 21:14:39.000', '2026-08-12 00:34:15.000');
 -- 1 行
 
@@ -1204,6 +1202,8 @@ CREATE TABLE `wallet_accounts` (
   `owner_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '主体名称快照（仅展示用，非事实源）',
   `initial_balance` decimal(14,2) NOT NULL DEFAULT '0.00' COMMENT '初始余额（恒等式期初项，正常为 0）',
   `balance` decimal(14,2) NOT NULL DEFAULT '0.00' COMMENT '当前积分余额（唯一权威值，只经 wallet_transactions 变动）',
+  `recharge_balance` decimal(14,2) NOT NULL DEFAULT '0.00' COMMENT '充值积分余额（管理员后台设置，可与配送费积分混合抵扣）',
+  `delivery_fee_balance` decimal(14,2) NOT NULL DEFAULT '0.00' COMMENT '配送费积分余额（返货配送费 1 元 = 1 积分，来源水票发行）',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：1启用 0停用',
   `remark` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '备注',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -1212,6 +1212,9 @@ CREATE TABLE `wallet_accounts` (
   UNIQUE KEY `uk_owner` (`owner_type`,`owner_id`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序积分钱包表（业务员/直营水站内部订货预存额度，1元=1积分）';
+INSERT INTO `wallet_accounts` (`wallet_id`, `owner_type`, `owner_id`, `owner_name`, `initial_balance`, `balance`, `recharge_balance`, `delivery_fee_balance`, `status`, `remark`, `created_at`, `updated_at`) VALUES ('WLTMUCUP41H15P', 'STATION', 'ST002', '秦淮水站', '0.00', '0.00', '0.00', '0.00', 1, '小程序积分钱包（创建时自动开立）', '2026-09-22 23:50:34.000', '2026-09-22 23:50:34.000');
+INSERT INTO `wallet_accounts` (`wallet_id`, `owner_type`, `owner_id`, `owner_name`, `initial_balance`, `balance`, `recharge_balance`, `delivery_fee_balance`, `status`, `remark`, `created_at`, `updated_at`) VALUES ('WLTMUE1RIQ42PP', 'STATION', 'ST001', '江宁水站', '0.00', '21.00', '21.00', '0.00', 1, '小程序积分钱包（创建时自动开立）', '2026-09-23 19:56:10.000', '2026-09-23 19:56:11.000');
+-- 2 行
 
 -- ----------------------------
 -- 表结构: wallet_transactions
@@ -1224,6 +1227,8 @@ CREATE TABLE `wallet_transactions` (
   `transaction_type` enum('RECHARGE','DISTRIBUTION_FEE','ORDER_PAYMENT','REFUND','DISTRIBUTION_FEE_REVERSAL','ADJUST_IN','ADJUST_OUT') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '流水类型，见文档 §11.4',
   `direction` tinyint NOT NULL COMMENT '方向：1=正向入账 2=负向出账（amount 恒为正数，方向只看本列）',
   `amount` decimal(14,2) NOT NULL COMMENT '金额（正数）',
+  `points_type` enum('RECHARGE','DELIVERY_FEE') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'RECHARGE' COMMENT '积分类型：RECHARGE=充值积分 DELIVERY_FEE=配送费积分',
+  `points_month` varchar(7) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '配送费积分发行月份 YYYY-MM（仅 DELIVERY_FEE 入账填写，用于按月发放明细）',
   `balance_before` decimal(14,2) NOT NULL COMMENT '变动前余额',
   `balance_after` decimal(14,2) NOT NULL COMMENT '变动后余额',
   `related_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '关联业务类型：ORDER / WATER_TICKET_ISSUANCE / WATER_TICKET / PAYMENT / MANUAL_ADJUST',
@@ -1240,6 +1245,8 @@ CREATE TABLE `wallet_transactions` (
   KEY `idx_type` (`transaction_type`),
   CONSTRAINT `fk_wallet_tx_wallet` FOREIGN KEY (`wallet_id`) REFERENCES `wallet_accounts` (`wallet_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序积分钱包流水表（余额 = 期初 + Σ正向 − Σ负向 的事实源）';
+INSERT INTO `wallet_transactions` (`transaction_id`, `transaction_no`, `wallet_id`, `transaction_type`, `direction`, `amount`, `points_type`, `points_month`, `balance_before`, `balance_after`, `related_type`, `related_id`, `reversal_of`, `operator_id`, `operator_role`, `remark`, `created_at`) VALUES ('WTXMUE1RIQ87FYG', 'WT20260923910610', 'WLTMUE1RIQ42PP', 'DISTRIBUTION_FEE', 1, '21.00', 'RECHARGE', NULL, '0.00', '21.00', 'WATER_TICKET_ISSUANCE', 'WTI1790164570251470', NULL, 'admin', 'admin', '返货发行入账（3 件 × 7）', '2026-09-23 19:56:10.000');
+-- 1 行
 
 -- ----------------------------
 -- 表结构: water_ticket_issuance
@@ -1264,6 +1271,8 @@ CREATE TABLE `water_ticket_issuance` (
   KEY `idx_product` (`product_id`),
   KEY `idx_month` (`month`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='水票发行记录（每月返货清单：水站+商品+数量+返货配送费，生成等量水票）';
+INSERT INTO `water_ticket_issuance` (`issuance_id`, `batch_id`, `station_id`, `product_id`, `quantity`, `distribution_delivery_fee`, `month`, `remark`, `created_by`, `created_at`, `distribution_delivery_fee_unit`, `distribution_delivery_fee_total`, `wallet_transaction_id`) VALUES ('WTI1790164570251470', 'WTB179016457025157', 'ST001', 'Pmrf3fgthXVMNN9', 3, '21.00', '2026-09', NULL, 'admin', '2026-09-23 19:56:10.000', '7.0000', '21.00', 'WTXMUE1RIQ87FYG');
+-- 1 行
 
 -- ----------------------------
 -- 表结构: water_tickets
@@ -1288,6 +1297,10 @@ CREATE TABLE `water_tickets` (
   KEY `idx_month` (`month`),
   KEY `idx_order` (`order_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='水票表（一张水票=一件对应商品，价值=进货价，经销商按返货清单获取）';
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1790164570257317437', 'Pmrf3fgthXVMNN9', 'ST001', 1, '2026-09', 'WTI1790164570251470', '2026-09-23 19:56:10.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1790164570257630555', 'Pmrf3fgthXVMNN9', 'ST001', 1, '2026-09', 'WTI1790164570251470', '2026-09-23 19:56:10.000', 'admin', NULL, NULL, NULL);
+INSERT INTO `water_tickets` (`ticket_id`, `product_id`, `station_id`, `status`, `month`, `issuance_id`, `issued_at`, `issued_by`, `used_at`, `order_id`, `remark`) VALUES ('WT1790164570257681687', 'Pmrf3fgthXVMNN9', 'ST001', 1, '2026-09', 'WTI1790164570251470', '2026-09-23 19:56:10.000', 'admin', NULL, NULL, NULL);
+-- 3 行
 
 -- ----------------------------
 -- 表结构: workers
@@ -1312,11 +1325,10 @@ INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `co
 INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM003', '孙丽', '13600000003', 3, '0.00', NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-14 20:38:37.000');
 INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('SM004', '李强', '13600000004', 3, '0.00', NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-14 20:38:40.000');
 INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W002', '李师傅', '13800000002', 1, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-16 23:25:35.000');
-INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W003', '王师傅', '13800000003', 1, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-16 23:25:35.000');
 INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W004', '刘师傅', '13800000004', 1, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-09-16 23:25:35.000');
 INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W005', '陈师傅', '13800000005', 2, NULL, NULL, NULL, NULL, 1, '2026-08-25 23:40:29.000', '2026-08-25 23:40:29.000');
 INSERT INTO `workers` (`worker_id`, `worker_name`, `phone`, `employee_type`, `commission_rate`, `monthly_salary`, `bank_name`, `bank_account`, `status`, `created_at`, `updated_at`) VALUES ('W17899110618614091', '111', '10086', 4, NULL, NULL, NULL, NULL, 1, '2026-09-20 21:31:02.000', '2026-09-20 21:31:02.000');
--- 8 行
+-- 7 行
 
 SET FOREIGN_KEY_CHECKS=1;
 SELECT '数据库初始化完成！' AS message;

@@ -72,17 +72,36 @@ async function lockStationWallet(conn, { stationId, stationName, forReversal = f
 
 /**
  * 发行 / 加量入账（IN）
+ *
+ * ★ 双积分（2026-09-23）：本笔入的是**配送费积分**（1 元 = 1 积分），且必须带上
+ *   **发行月份** —— 业务方要求能看「每月发了多少配送费积分」，`points_month` 就是
+ *   月度归集的唯一依据。月份**在函数内自己取**（来源 water_ticket_issuance.month），
+ *   不让调用方传：调用方传错月份不会报错，只会让月度明细静默错位。
+ *
  * @returns {Promise<object|null>} 流水行；金额为 0 时不写流水（避免 0 元噪声流水）
  */
-async function creditDistributionFee(conn, { issuanceId, stationId, stationName, amount, operator, remark }) {
+async function creditDistributionFee(
+  conn,
+  { issuanceId, stationId, stationName, amount, month = null, operator, remark }
+) {
   const amt = round2(amount);
   if (amt <= 0) return null;
+  // ★ 发行月份：**优先取调用方传入**，未传时回查数据库。
+  //   ⚠️ 为什么不能只靠回查：发行流程是「① 先入账 → ② 再写发行记录」（waterTicketController
+  //      的既定顺序，见其注释「先入账…发行即产生」），入账这一刻库里**还没有**那条记录，
+  //      回查必然拿到 null —— 2026-09-23 实测踩到（月度发放明细整列空白）。
+  let pointsMonth = month ? String(month) : null;
+  if (!pointsMonth) {
+    const [issRows] = await conn.execute('SELECT month FROM water_ticket_issuance WHERE issuance_id = ?', [issuanceId]);
+    pointsMonth = issRows.length && issRows[0].month ? String(issRows[0].month) : null;
+  }
   const wallet = await lockStationWallet(conn, { stationId, stationName });
   return applyTransaction(conn, wallet, {
     txType: WALLET_TX_TYPE.DISTRIBUTION_FEE,
     amount: amt,
     relatedType: WALLET_RELATED_TYPE.WATER_TICKET_ISSUANCE,
     relatedId: issuanceId,
+    pointsMonth,
     operatorId: operator || null,
     operatorRole: 'admin',
     remark: remark || null
@@ -93,10 +112,21 @@ async function creditDistributionFee(conn, { issuanceId, stationId, stationName,
  * 回冲（OUT）：作废单张票 / 编辑减量 / 删除批次
  * ⚠️ 方向固定 OUT（原方向 IN 的反向）。余额不足时 `applyTransaction` 会抛业务错误，
  *    由调用方 rollback —— 这正是「不制造负余额」的落点。
+ *
+ * ★ 双积分：冲回**只能动配送费积分**（类型由流水类型推导：DISTRIBUTION_FEE_REVERSAL → DELIVERY_FEE），
+ *   并沿用原入账流水的**发行月份**，否则「该月净额」会对不上发放明细。
  */
 async function revertDistributionFee(conn, { issuanceId, stationId, amount, operator, remark }) {
   const amt = round2(amount);
   if (amt <= 0) return null;
+  // 原入账流水的月份（同一发行记录的首笔 DISTRIBUTION_FEE）
+  const [origRows] = await conn.execute(
+    `SELECT points_month FROM wallet_transactions
+      WHERE related_type = ? AND related_id = ? AND transaction_type = ?
+      ORDER BY created_at ASC, transaction_id ASC LIMIT 1`,
+    [WALLET_RELATED_TYPE.WATER_TICKET_ISSUANCE, issuanceId, WALLET_TX_TYPE.DISTRIBUTION_FEE]
+  );
+  const pointsMonth = origRows.length ? origRows[0].points_month || null : null;
   const wallet = await lockStationWallet(conn, { stationId, forReversal: true });
   return applyTransaction(conn, wallet, {
     txType: WALLET_TX_TYPE.DISTRIBUTION_FEE_REVERSAL,
@@ -104,6 +134,7 @@ async function revertDistributionFee(conn, { issuanceId, stationId, amount, oper
     direction: TX_DIRECTION.OUT,
     relatedType: WALLET_RELATED_TYPE.WATER_TICKET_ISSUANCE,
     relatedId: issuanceId,
+    pointsMonth,
     operatorId: operator || null,
     operatorRole: 'admin',
     remark: remark || null

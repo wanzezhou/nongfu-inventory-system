@@ -13,6 +13,9 @@ const {
   WALLET_OWNER_TYPE,
   WALLET_TX_TYPE,
   TX_DIRECTION,
+  POINTS_TYPE,
+  POINTS_TYPE_VALUES,
+  POINTS_TYPE_LABEL,
   IDEM_SCOPE,
   IDEM_KEY_MAX_LEN,
   AUDIT_ACTION,
@@ -56,8 +59,11 @@ async function getWallet(req, res) {
   try {
     const wallet = await resolveMyWallet(conn, req.mini);
     const overview = await walletSummary.getWalletOverview(conn, wallet.wallet_id);
+    // ★ 双积分（2026-09-23）：配送费积分**按月发放明细**（业务要求「能看每月发了多少」）
+    const deliveryFeeMonthly = await walletSummary.getDeliveryFeeMonthly(conn, wallet.wallet_id);
     return success(res, {
       ...overview,
+      deliveryFeeMonthly,
       /** 1 元 = 1 积分（§3.3）：直接给出等值人民币便于展示 */
       equivalentRmb: overview.balance,
       tips: {
@@ -81,14 +87,20 @@ async function getTransactions(req, res) {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize, 10) || 10));
     const type = req.query.type || req.query.transactionType || null;
+    // ★ 双积分：可按积分类型筛选（「只看充值积分 / 只看配送费积分」）
+    const pointsType = req.query.pointsType ? String(req.query.pointsType).toUpperCase() : null;
 
     if (type && !Object.values(WALLET_TX_TYPE).includes(String(type).toUpperCase())) {
       return error(res, '流水类型无效', 400);
+    }
+    if (pointsType && !POINTS_TYPE_VALUES.includes(pointsType)) {
+      return error(res, `积分类型只能是 ${POINTS_TYPE_VALUES.join(' 或 ')}`, 400);
     }
 
     const result = await walletSummary.listWalletTransactions(conn, {
       walletId: wallet.wallet_id,
       transactionType: type ? String(type).toUpperCase() : null,
+      pointsType,
       page,
       size: pageSize
     });
@@ -101,25 +113,11 @@ async function getTransactions(req, res) {
   }
 }
 
-/**
- * POST /api/mini/wallet/recharge —— 微信充值（文档 §13）
- *
- * ⚠️ 本端点属 **Phase 6**，本次交付范围（Phase 1~5 + 8a）**不含**，
- *    因此按 §13.8「资质未就绪时的降级路径」返回明确文案，而不是返回假数据或静默成功：
- *      「资质就绪前：钱包正向入账来源 = 管理员手工调增积分（§18）+ 水票发行分销配送费（§12）
- *        → 业务员/水站订单链路、钱包扣减、退款、对账 均可端到端开发与验证；
- *        → 仅「微信充值」这一期（Phase 6）挂起」
- *    §13.8 同时明确：降级期间**不要造假数据**（不得写测试用的"已充值"流水进生产库）。
- *
- *    因此这里既不写流水、也不返回伪成功，只返回「未开通」+ 替代路径指引。
- */
-async function recharge(req, res) {
-  try {
-    return error(res, MINI_MESSAGE.WECHAT_PAY_NOT_OPEN, 503);
-  } catch (err) {
-    return handleError(res, err, '充值失败');
-  }
-}
+// ⚠️ 在线充值（微信支付 / Phase 6）**已按业务要求整体下线**（2026-09-23）：
+//    本控制器不再提供 recharge，路由 POST /wallet/recharge 同步删除，
+//    小程序页 pages/wallet-recharge 也已移除。
+//    充值积分改由管理员在后台设置（POST /wallet/admin/adjust，默认积分类型 RECHARGE）。
+//    保留这段说明是为了让后来者知道这里**曾经有**、以及为什么没有 —— 避免被「顺手补上」。
 
 // ── 管理员端（§18 / §21.8 / Phase 5 + 8a）────────────────────────────────────
 /** GET /api/mini/wallet/admin/overview —— 全部钱包总览 */
@@ -155,12 +153,20 @@ async function adminWalletTransactions(req, res) {
     if (type && !Object.values(WALLET_TX_TYPE).includes(type)) {
       return error(res, '流水类型无效', 400);
     }
+    // ★ 双积分：可按积分类型筛选
+    const pointsType = req.query.pointsType ? String(req.query.pointsType).toUpperCase() : null;
+    if (pointsType && !POINTS_TYPE_VALUES.includes(pointsType)) {
+      return error(res, `积分类型只能是 ${POINTS_TYPE_VALUES.join(' 或 ')}`, 400);
+    }
 
     // 单源：与小程序端、对账页共用同一取数实现（§53）
     const overview = await walletSummary.getWalletOverview(conn, walletId);
+    // ★ 双积分：配送费积分的按月发放明细（管理员对账时看「这个水站每月收了多少」）
+    const deliveryFeeMonthly = await walletSummary.getDeliveryFeeMonthly(conn, walletId);
     const result = await walletSummary.listWalletTransactions(conn, {
       walletId,
       transactionType: type,
+      pointsType,
       page,
       size: pageSize
     });
@@ -172,6 +178,7 @@ async function adminWalletTransactions(req, res) {
 
     return success(res, {
       wallet: overview,
+      deliveryFeeMonthly,
       transactions: result.list,
       total: result.total,
       page: result.page,
@@ -204,10 +211,17 @@ async function adminAdjust(req, res) {
   const reason = (body.reason || '').trim();
   const remark = (body.remark || '').trim();
   const clientRequestId = body.clientRequestId;
+  // ★ 双积分（2026-09-23）：管理员可指定加到/扣减哪一类积分，**默认充值积分**
+  //   （「充值积分 = 管理员后台设置的那一类」是业务方确认的口径）；
+  //   补发配送费积分是真实场景（发行漏录、对账差异），故保留显式指定能力。
+  const pointsType = String(body.pointsType || POINTS_TYPE.RECHARGE).toUpperCase();
 
   if (!walletId) return error(res, '缺少 walletId', 400);
   if (direction !== 'IN' && direction !== 'OUT') {
     return error(res, 'direction 只能是 IN（增加）或 OUT（扣减）', 400);
+  }
+  if (!POINTS_TYPE_VALUES.includes(pointsType)) {
+    return error(res, `积分类型只能是 ${POINTS_TYPE_VALUES.join(' 或 ')}`, 400);
   }
   if (!Number.isFinite(amount) || amount <= 0) return error(res, '积分数量必须为正数', 400);
   if (!reason) return error(res, '必须填写操作原因（文档 §18）', 400);
@@ -231,7 +245,9 @@ async function adminAdjust(req, res) {
       key: String(clientRequestId),
       // ⚠️ 用共享指纹函数，不要拼明文串：request_hash 是 varchar(64)，
       //    管理员把「操作原因」写长一点就会超长 → 接口 500（2026-09-21 修）
-      requestHash: hashRequest({ direction, amount, reason }),
+      // 指纹必须包含积分类型：否则「同一幂等键 + 同金额 + 不同类型」会被判成重复请求，
+      // 第二次（本意是补发另一类积分）被静默合并掉
+      requestHash: hashRequest({ direction, amount, reason, pointsType }),
       miniAccountId: req.mini.accountId
     });
 
@@ -260,6 +276,8 @@ async function adminAdjust(req, res) {
       txType: direction === 'IN' ? WALLET_TX_TYPE.ADJUST_IN : WALLET_TX_TYPE.ADJUST_OUT,
       amount,
       direction: direction === 'IN' ? TX_DIRECTION.IN : TX_DIRECTION.OUT,
+      // ★ 双积分：作用于哪一类（默认充值积分，可显式指定配送费积分）
+      pointsType,
       relatedType: 'MANUAL_ADJUST',
       relatedId: null,
       operatorId: `mini:${req.mini.accountId}`,
@@ -318,7 +336,6 @@ async function walletStrategyAfter(conn, walletId) {
 module.exports = {
   getWallet,
   getTransactions,
-  recharge,
   adminOverview,
   adminWalletTransactions,
   adminAdjust

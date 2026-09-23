@@ -25,6 +25,19 @@
 .type-row { padding: 16rpx 0; }
 .type-row + .type-row { border-top: 2rpx solid #f7f8fa; }
 
+/* ★ 双积分：两类积分并排展示（可混合抵扣，但必须区分） */
+.split-grid { display: flex; gap: 20rpx; margin: 20rpx 24rpx 0; }
+.split-cell {
+  flex: 1;
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 24rpx 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(24, 28, 35, 0.05);
+}
+.split-label { font-size: 24rpx; color: #8a8f99; }
+.split-value { font-size: 44rpx; font-weight: 700; color: #181c23; margin: 8rpx 0 4rpx; }
+.split-sub { font-size: 20rpx; color: #8a8f99; }
+
 .quick3 { display: flex; gap: 20rpx; margin: 20rpx 24rpx; }
 .quick3-item {
   flex: 1;

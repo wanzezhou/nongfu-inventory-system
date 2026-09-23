@@ -92,6 +92,44 @@
       <view class="t-sub">下单后由水站安排配送，配送员送达前会电话联系收货人。</view>
     </view>
 
+    <!-- ★ 双积分抵扣（2026-09-23）：两类积分可混合使用，**由用户决定各抵扣多少**。
+         两项之和必须等于应付（本单只能积分支付）；校验由服务端强制，这里只提前提示。 -->
+    <view class="card">
+      <view class="section-title">积分抵扣</view>
+      <view class="t-sub">应付 ¥{{previewAmount}} · 两项之和须等于应付</view>
+
+      <view class="form-row">
+        <view class="form-label">充值积分（可用 {{rechargeAvail}}）</view>
+        <input
+          class="form-input"
+          type="digit"
+          placeholder="0"
+          value="{{pointsRecharge}}"
+          data-field="pointsRecharge"
+          bindinput="onPointsInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <view class="form-label">配送费积分（可用 {{deliveryFeeAvail}}）</view>
+        <input
+          class="form-input"
+          type="digit"
+          placeholder="0"
+          value="{{pointsDeliveryFee}}"
+          data-field="pointsDeliveryFee"
+          bindinput="onPointsInput"
+        />
+      </view>
+
+      <view class="row-between mt-8">
+        <text class="t-sub">抵扣合计</text>
+        <text class="t-strong">{{pointsSumText}}</text>
+      </view>
+      <view wx:if="{{splitError}}" class="banner banner-warn">{{splitError}}</view>
+      <view class="t-sub mt-8">1 元 = 1 积分。充值积分由管理员后台设置；配送费积分来自返货发行。</view>
+    </view>
+
     <!-- 商品明细 -->
     <view class="card">
       <view class="section-title">商品明细</view>
@@ -172,7 +210,9 @@
       <view wx:if="{{!balanceEnough}}" class="banner banner-warn" style="margin: 16rpx 0 0;">
         积分可能不足。本单只支持积分钱包支付，不接受混合支付（§14.4），请先由管理员调增积分。
       </view>
-      <view class="t-sub mt-16">微信充值（Phase 6）尚未开通，正向入账由管理员调增承担（§13.8 降级路径）</view>
+      <view class="t-sub mt-16">
+        充值积分由管理员在后台设置；配送费积分来自返货发行（1 元配送费 = 1 积分）。两类均可用于抵扣。
+      </view>
     </view>
 
     <!-- 备注 -->
@@ -193,7 +233,7 @@
       class="btn btn-primary"
       style="width: 300rpx;"
       bindtap="submit"
-      disabled="{{submitting || priceErrors.length > 0 || !balanceEnough}}"
+      disabled="{{submitting || priceErrors.length > 0 || !balanceEnough || !!splitError}}"
     >{{submitting ? '提交中…' : '提交订单'}}</button>
   </view>
 </view>

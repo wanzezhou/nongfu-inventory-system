@@ -32,6 +32,9 @@ Page({
     loadError: '',
     // 调整表单
     adjustDirection: 'IN',
+    // ★ 双积分（2026-09-23）：指定加到/扣减哪一类积分，**默认充值积分**
+    //   （「充值积分 = 管理员后台设置的那一类」是业务方确认的口径）
+    adjustPointsType: 'RECHARGE',
     adjustAmount: '',
     adjustReason: '',
     adjustRemark: '',
@@ -79,6 +82,9 @@ Page({
           ownerId: w.ownerId,
           ownerName: w.ownerName || w.ownerId,
           balanceText: fmt.points(w.balance),
+          // ★ 双积分：列出构成（充值 / 配送费）—— 只给总额无法判断能不能抵扣
+          rechargeBalanceText: fmt.points(w.rechargeBalance),
+          deliveryFeeBalanceText: fmt.points(w.deliveryFeeBalance),
           statusText: w.status === 1 ? '启用' : '停用',
           txCount: w.txCount,
           lastTxText: fmt.fromNow(w.lastTxAt)
@@ -114,6 +120,8 @@ Page({
       this.setData({
         wallet: Object.assign({}, w, {
           balanceText: fmt.points(w.balance),
+          rechargeBalanceText: fmt.points(w.rechargeBalance),
+          deliveryFeeBalanceText: fmt.points(w.deliveryFeeBalance),
           totalInText: fmt.points(w.totalIn),
           totalOutText: fmt.points(w.totalOut),
           ownerLabel: WALLET_OWNER_LABEL[w.ownerType] || w.ownerType,
@@ -125,6 +133,8 @@ Page({
           transactionId: t.transactionId,
           transactionNo: t.transactionNo,
           typeLabel: t.typeLabel,
+          // ★ 双积分：本笔动的是哪一类积分（充值 / 配送费）
+          pointsTypeLabel: t.pointsTypeLabel || '',
           signedText: fmt.signedPoints(t.signedAmount),
           isIn: Number(t.direction) === 1,
           balanceAfterText: fmt.points(t.balanceAfter),
@@ -157,6 +167,11 @@ Page({
     this.setData({ adjustDirection: e.currentTarget.dataset.dir });
   },
 
+  /** ★ 双积分：切换调整的积分类型（充值积分 / 配送费积分） */
+  onPointsTypeChange(e) {
+    this.setData({ adjustPointsType: e.currentTarget.dataset.pt });
+  },
+
   onInput(e) {
     const field = e.currentTarget.dataset.field;
     const patch = {};
@@ -179,9 +194,10 @@ Page({
     }
 
     const dirLabel = this.data.adjustDirection === 'IN' ? '增加' : '扣减';
+    const typeLabel = this.data.adjustPointsType === 'DELIVERY_FEE' ? '配送费积分' : '充值积分';
     const ok = await ui.confirm(
-      `确认${dirLabel}积分`,
-      `将从「${this.data.walletOwnerLabel}」${dirLabel} ${amount} 积分。\n原因：${reason}\n该操作会生成独立流水并留审计。`,
+      `确认${dirLabel}${typeLabel}`,
+      `将从「${this.data.walletOwnerLabel}」${dirLabel} ${amount} ${typeLabel}。\n原因：${reason}\n该操作会生成独立流水并留审计。`,
       `确认${dirLabel}`
     );
     if (!ok) return;
@@ -191,6 +207,8 @@ Page({
     const payload = {
       walletId: this.data.wallet.walletId,
       direction: this.data.adjustDirection,
+      // ★ 双积分：作用于哪一类（默认充值积分；补发配送费积分是真实场景）
+      pointsType: this.data.adjustPointsType,
       amount,
       reason,
       remark: String(this.data.adjustRemark || '').trim() || undefined

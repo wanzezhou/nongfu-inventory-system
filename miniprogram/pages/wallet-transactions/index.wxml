@@ -29,7 +29,11 @@
   >
     <view class="row-between">
       <view class="col flex-1">
-        <text class="t-strong">{{item.typeLabel}}</text>
+        <view class="row gap-12" style="align-items: center;">
+          <text class="t-strong">{{item.typeLabel}}</text>
+          <!-- ★ 双积分：标明本笔动的是哪一类积分 -->
+          <text wx:if="{{item.pointsTypeLabel}}" class="tag">{{item.pointsTypeLabel}}</text>
+        </view>
         <text class="t-sub mt-8">{{item.timeText}}</text>
       </view>
       <view class="col" style="align-items: flex-end;">

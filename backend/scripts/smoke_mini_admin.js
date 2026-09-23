@@ -253,13 +253,27 @@ async function main() {
   const [users] = await conn.query('SELECT id FROM users ORDER BY id LIMIT 1');
   const adminTargetId = String(users[0].id);
 
-  await conn.query(
-    `INSERT INTO mini_accounts (openid, phone, role, target_id, nickname, status, created_at)
-     VALUES (?, ?, 'admin', ?, '冒烟管理员', 1, NOW())`,
-    [`smoke_admin_${TS}`, '13500000000', adminTargetId]
+  // ⚠️ mini_accounts 有唯一索引 uk_role_active（role + target_id，仅活动行）：
+  //    管理员账号在库里通常**已存在**（本地开发登录会建、运维也必需），
+  //    直接 INSERT 必然撞唯一键（2026-09-23 实测：三个脚本都崩在这里）。
+  //    → 存在则复用、不存在才新建；复用只用于鉴权，测试对象全是自建冒烟数据。
+  const [existAdm] = await conn.query(
+    `SELECT id FROM mini_accounts WHERE role = 'admin' AND target_id = ? AND status = 1 LIMIT 1`,
+    [adminTargetId]
   );
-  const [adRows] = await conn.query('SELECT id FROM mini_accounts WHERE openid = ?', [`smoke_admin_${TS}`]);
-  const adminAccountId = adRows[0].id;
+  let adminAccountId;
+  if (existAdm.length) {
+    adminAccountId = existAdm[0].id;
+    console.log(`  （复用已存在的小程序管理员账号 id=${adminAccountId}）`);
+  } else {
+    await conn.query(
+      `INSERT INTO mini_accounts (openid, phone, role, target_id, nickname, status, created_at)
+       VALUES (?, ?, 'admin', ?, '冒烟管理员', 1, NOW())`,
+      [`smoke_admin_${TS}`, '13500000000', adminTargetId]
+    );
+    const [adRows] = await conn.query('SELECT id FROM mini_accounts WHERE openid = ?', [`smoke_admin_${TS}`]);
+    adminAccountId = adRows[0].id;
+  }
 
   await conn.query(
     `INSERT INTO mini_accounts (openid, phone, role, target_id, nickname, status, created_at)
@@ -3624,12 +3638,15 @@ async function main() {
 
   // ── 22.4 禁用 / 启用：禁用即时拦「写」、不拦「读」────────────────────────
   const accTicketToken = signMiniToken({ id: accIdA, role: 'salesman', target_id: accWorker });
-  const accWriteProbe = async () =>
-    call('POST', '/mini/wallet/recharge', { clientRequestId: 'smoke_ac_' + TS + '_r' }, accTicketToken);
+  // ⚠️ 2026-09-23：原用 POST /wallet/recharge（返回 503「未开通」）探测「写接口可达性」，
+  //    该端点已随在线充值下线删除。改用 POST /orders 且**故意不传 items**：
+  //    启用态会落到业务参数校验（400 = 已通过 requireMiniActive），
+  //    禁用态则在鉴权层就被拦（401）—— 探测语义完全一致。
+  const accWriteProbe = async () => call('POST', '/mini/orders', {}, accTicketToken);
   const accBefore = await accWriteProbe();
   assert(
-    accBefore._status === 503 || accBefore.code === 503,
-    `22.4 启用态下写接口过了 requireMiniActive（落到「微信充值未开通」503，实得 ${accBefore._status}）`
+    accBefore._status === 400 || accBefore.code === 400,
+    `22.4 启用态下写接口过了 requireMiniActive（落到参数校验 400，实得 ${accBefore._status}）`
   );
   const accDisable = await call(
     'PUT',
@@ -3665,8 +3682,8 @@ async function main() {
   );
   assert(accEnable.code === 200 && (await accStatusOf(accIdA)) === 1, '22.4 启用成功且 status=1');
   assert(
-    (await accWriteProbe())._status === 503,
-    '22.4 ★ 恢复后写接口重新可达（503 未开通，说明已通过 requireMiniActive）'
+    (await accWriteProbe())._status === 400,
+    '22.4 ★ 恢复后写接口重新可达（落到参数校验 400，说明已通过 requireMiniActive）'
   );
   const accBadStatus = await call(
     'PUT',

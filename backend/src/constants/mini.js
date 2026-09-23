@@ -125,6 +125,45 @@ const TX_TYPE_DIRECTION = {
   [WALLET_TX_TYPE.ADJUST_OUT]: TX_DIRECTION.OUT
 };
 
+/**
+ * 积分类型（wallet_transactions.points_type + wallet_accounts 的分账户）—— 2026-09-23 双积分
+ * ---------------------------------------------------------------------------
+ * 为什么需要：业务要求区分两类积分，可**混合**抵扣，但必须分别可见、分别记账、分别回冲：
+ *   · RECHARGE      充值积分 —— 管理员后台设置（ADJUST_IN/OUT）
+ *   · DELIVERY_FEE  配送费积分 —— 返货配送费 1 元 = 1 积分（水票发行入账）
+ *
+ * ⚠️ 与 WALLET_TX_TYPE 是**两个正交维度**：txType 讲「这笔积分因何而发生」，
+ *    pointsType 讲「动的是哪一类积分」。同一个 txType 可作用于不同积分类型
+ *    —— 例如管理员调整既可加充值积分，也可补发配送费积分（补发场景真实存在）。
+ */
+const POINTS_TYPE = {
+  RECHARGE: 'RECHARGE',
+  DELIVERY_FEE: 'DELIVERY_FEE'
+};
+
+const POINTS_TYPE_VALUES = Object.values(POINTS_TYPE);
+
+/**
+ * 流水类型 → **默认**积分类型（调用方未显式指定时按此推导）
+ *
+ * ⚠️ 刻意**不给 ORDER_PAYMENT / REFUND 设默认值**：混合扣款时这两类会拆成两条流水，
+ *    若给了默认值，「漏传类型」就会被静默记成充值积分 —— 账面上看不出来，对账时才发现
+ *    配送费积分没被扣。因此这两类必须由调用方显式传类型（applyTransaction 会拒收无类型者）。
+ */
+const TX_TYPE_POINTS_TYPE = {
+  [WALLET_TX_TYPE.RECHARGE]: POINTS_TYPE.RECHARGE,
+  [WALLET_TX_TYPE.DISTRIBUTION_FEE]: POINTS_TYPE.DELIVERY_FEE,
+  [WALLET_TX_TYPE.DISTRIBUTION_FEE_REVERSAL]: POINTS_TYPE.DELIVERY_FEE,
+  [WALLET_TX_TYPE.ADJUST_IN]: POINTS_TYPE.RECHARGE,
+  [WALLET_TX_TYPE.ADJUST_OUT]: POINTS_TYPE.RECHARGE
+};
+
+/** 积分类型 → 中文名（下发给前端，避免两端各维护一份） */
+const POINTS_TYPE_LABEL = {
+  [POINTS_TYPE.RECHARGE]: '充值积分',
+  [POINTS_TYPE.DELIVERY_FEE]: '配送费积分'
+};
+
 /** 流水类型 → 中文名（下发给小程序，前端不再维护一份映射） */
 const TX_TYPE_LABEL = {
   [WALLET_TX_TYPE.RECHARGE]: '充值',
@@ -383,6 +422,10 @@ module.exports = {
   WALLET_TX_TYPE,
   TX_DIRECTION,
   TX_TYPE_DIRECTION,
+  POINTS_TYPE,
+  POINTS_TYPE_VALUES,
+  TX_TYPE_POINTS_TYPE,
+  POINTS_TYPE_LABEL,
   TX_TYPE_LABEL,
   WALLET_RELATED_TYPE,
   IDEM_SCOPE,

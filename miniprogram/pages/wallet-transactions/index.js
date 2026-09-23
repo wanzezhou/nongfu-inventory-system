@@ -17,7 +17,7 @@ const TYPE_FILTERS = [
   { key: '', label: '全部' },
   { key: 'ORDER_PAYMENT', label: '订单消费' },
   { key: 'REFUND', label: '退款' },
-  { key: 'RECHARGE', label: '充值' },
+  { key: 'RECHARGE', label: '充值积分' },
   { key: 'DISTRIBUTION_FEE', label: '分销配送费' },
   { key: 'DISTRIBUTION_FEE_REVERSAL', label: '配送费冲回' },
   { key: 'ADJUST_IN', label: '管理员增加' },
@@ -90,6 +90,10 @@ Page({
         transactionNo: t.transactionNo,
         type: t.type,
         typeLabel: t.typeLabel,
+        // ★ 双积分（2026-09-23）：标明本笔动的是哪一类积分（充值 / 配送费）
+        pointsTypeLabel: t.pointsTypeLabel || '',
+        // 配送费积分的发行月份（仅发行入账有值）
+        pointsMonth: t.pointsMonth || '',
         // 符号与金额直接用服务端值（见文件头说明）
         signedText: fmt.signedPoints(t.signedAmount),
         isIn: Number(t.direction) === 1,

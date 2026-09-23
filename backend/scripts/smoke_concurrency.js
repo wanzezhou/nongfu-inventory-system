@@ -31,7 +31,7 @@ require('dotenv').config();
 const { pool } = require('../src/config/db');
 const { writeOffTickets, deductInventoryForSale } = require('../src/services/orderPricingService');
 const walletService = require('../src/services/walletService');
-const { WALLET_TX_TYPE, WALLET_RELATED_TYPE, IDEM_SCOPE } = require('../src/constants/mini');
+const { WALLET_TX_TYPE, WALLET_RELATED_TYPE, POINTS_TYPE, IDEM_SCOPE } = require('../src/constants/mini');
 
 let pass = 0;
 let fail = 0;
@@ -170,6 +170,9 @@ async function main() {
       const rowC = await walletService.loadWalletForUpdate(connC, walletId);
       await walletService.debitWallet(connC, rowC, {
         txType: WALLET_TX_TYPE.ORDER_PAYMENT,
+        // ★ 双积分（2026-09-23）：订单消费必须显式指定动的是哪一类积分
+        //   （applyTransaction 对 ORDER_PAYMENT/REFUND 刻意不给默认值 —— 漏传即报错）
+        pointsType: POINTS_TYPE.RECHARGE,
         amount: 20,
         relatedType: WALLET_RELATED_TYPE.ORDER,
         relatedId: F.orderA,
@@ -185,6 +188,8 @@ async function main() {
         const rowD = await walletService.loadWalletForUpdate(connD, walletId);
         await walletService.debitWallet(connD, rowD, {
           txType: WALLET_TX_TYPE.ORDER_PAYMENT,
+          // ★ 双积分：同上，订单消费须显式指定积分类型
+          pointsType: POINTS_TYPE.RECHARGE,
           amount: 20,
           relatedType: WALLET_RELATED_TYPE.ORDER,
           relatedId: F.orderB,

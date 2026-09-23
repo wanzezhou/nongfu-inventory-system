@@ -12,7 +12,7 @@
 //   因此本文件的每个函数都在参数名上带 Incl 后缀，且 SQL 一律写
 //   `DATE(created_at) >= ? AND DATE(created_at) <= ?`，避免调用方误用。
 // ===========================================================================
-const { WALLET_TX_TYPE, TX_DIRECTION, TX_TYPE_LABEL } = require('../constants/mini');
+const { WALLET_TX_TYPE, TX_DIRECTION, TX_TYPE_LABEL, POINTS_TYPE, POINTS_TYPE_LABEL } = require('../constants/mini');
 
 const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -30,7 +30,8 @@ const TX_TYPE_ORDER = [
 /** 钱包概览（§33 钱包页面 / §19.4 账实恒等式） */
 async function getWalletOverview(conn, walletId) {
   const [w] = await conn.execute(
-    `SELECT wallet_id, owner_type, owner_id, owner_name, initial_balance, balance, status, created_at
+    `SELECT wallet_id, owner_type, owner_id, owner_name, initial_balance, balance,
+            recharge_balance, delivery_fee_balance, status, created_at
        FROM wallet_accounts WHERE wallet_id = ?`,
     [walletId]
   );
@@ -66,6 +67,11 @@ async function getWalletOverview(conn, walletId) {
   const balance = round2(wallet.balance);
   const expected = round2(initialBalance + totalIn - totalOut);
 
+  // ★ 双积分（2026-09-23）：两类分账户余额 + 第二条恒等式
+  const rechargeBalance = round2(wallet.recharge_balance);
+  const deliveryFeeBalance = round2(wallet.delivery_fee_balance);
+  const splitDiff = round2(balance - round2(rechargeBalance + deliveryFeeBalance));
+
   return {
     walletId: wallet.wallet_id,
     ownerType: wallet.owner_type,
@@ -74,6 +80,13 @@ async function getWalletOverview(conn, walletId) {
     status: Number(wallet.status),
     /** 当前积分 ≈ 当前可用订货额度（§33） */
     balance,
+    /** 充值积分（管理员后台设置的那一类，下单时可抵扣） */
+    rechargeBalance,
+    /** 配送费积分（返货配送费 1 元 = 1 积分，下单时可抵扣） */
+    deliveryFeeBalance,
+    /** 分账户恒等式：balance = 充值积分 + 配送费积分 */
+    splitDiff,
+    splitOk: splitDiff === 0,
     initialBalance,
     totalIn,
     totalOut,
@@ -92,7 +105,10 @@ async function getWalletOverview(conn, walletId) {
  * 钱包流水列表（分页）
  * ⚠️ mysql2 **不支持 `LIMIT ?`**（仓库既有陷阱）→ 分页参数 parseInt 后内联。
  */
-async function listWalletTransactions(conn, { walletId, transactionType = null, page = 1, size = 10 }) {
+async function listWalletTransactions(
+  conn,
+  { walletId, transactionType = null, pointsType = null, page = 1, size = 10 }
+) {
   const currentPage = Math.max(1, parseInt(page, 10) || 1);
   const pageSize = Math.max(1, parseInt(size, 10) || 10);
   const offset = (currentPage - 1) * pageSize;
@@ -103,12 +119,18 @@ async function listWalletTransactions(conn, { walletId, transactionType = null, 
     where += ' AND transaction_type = ?';
     params.push(transactionType);
   }
+  // ★ 双积分：可按积分类型筛选（前端「只看配送费积分」等视图）
+  if (pointsType) {
+    where += ' AND points_type = ?';
+    params.push(pointsType);
+  }
 
   const [countRows] = await conn.execute(`SELECT COUNT(*) AS total FROM wallet_transactions ${where}`, params);
   const total = Number(countRows[0].total) || 0;
 
   const [rows] = await conn.execute(
     `SELECT transaction_id, transaction_no, wallet_id, transaction_type, direction, amount,
+            points_type, points_month,
             balance_before, balance_after, related_type, related_id, reversal_of,
             operator_id, operator_role, remark, created_at
        FROM wallet_transactions ${where}
@@ -126,6 +148,11 @@ async function listWalletTransactions(conn, { walletId, transactionType = null, 
       transactionNo: r.transaction_no,
       type: r.transaction_type,
       typeLabel: TX_TYPE_LABEL[r.transaction_type] || r.transaction_type,
+      /** ★ 双积分：本笔作用于哪一类积分（充值 / 配送费） */
+      pointsType: r.points_type,
+      pointsTypeLabel: POINTS_TYPE_LABEL[r.points_type] || r.points_type,
+      /** 配送费积分的发行月份（仅发行入账有值，用于按月核对） */
+      pointsMonth: r.points_month,
       direction: Number(r.direction),
       /** 带符号金额，直接可展示：正向 +、负向 −（方向以 direction 为准，不按类型反推） */
       signedAmount: Number(r.direction) === TX_DIRECTION.IN ? round2(r.amount) : round2(-r.amount),
@@ -209,7 +236,8 @@ async function listWalletsForAdmin(conn, { ownerType = null } = {}) {
   }
 
   const [rows] = await conn.execute(
-    `SELECT w.wallet_id, w.owner_type, w.owner_id, w.owner_name, w.balance, w.status, w.created_at,
+    `SELECT w.wallet_id, w.owner_type, w.owner_id, w.owner_name, w.balance,
+            w.recharge_balance, w.delivery_fee_balance, w.status, w.created_at,
             (SELECT COUNT(*) FROM wallet_transactions t WHERE t.wallet_id = w.wallet_id) AS tx_count,
             (SELECT MAX(t2.created_at) FROM wallet_transactions t2 WHERE t2.wallet_id = w.wallet_id) AS last_tx_at
        FROM wallet_accounts w ${where}
@@ -228,6 +256,9 @@ async function listWalletsForAdmin(conn, { ownerType = null } = {}) {
       ownerId: r.owner_id,
       ownerName: r.owner_name,
       balance: round2(r.balance),
+      /** ★ 双积分：两类分账户（管理员列表要能一眼看出钱的构成） */
+      rechargeBalance: round2(r.recharge_balance),
+      deliveryFeeBalance: round2(r.delivery_fee_balance),
       status: Number(r.status),
       txCount: Number(r.tx_count),
       lastTxAt: r.last_tx_at,
@@ -250,10 +281,44 @@ async function sumBalanceByOwnerType(conn) {
   return out;
 }
 
+/**
+ * ★ 配送费积分**按月汇总**（2026-09-23 双积分）
+ *
+ * 业务要求「能看每月发了多少配送费积分」。按 `points_month`（发行记录的月份）分组，
+ * 同时给出**发放（入账）**、**回冲（作废/减量/删批次）**与**净额** ——
+ * 只给"发放"会让「发了又被作废」的月份看起来仍然有钱进来。
+ *
+ * 已知边界：本表是**按发行月份**归集，不追踪"消耗属于哪个月"（下单抵扣不带月份）。
+ * 因此 `net` 的含义是「该月发放后净留在账面的量」，不是"该月额度还剩多少"。
+ *
+ * ⚠️ 枚举一律由常量派生（禁硬编码字面量）。
+ */
+async function getDeliveryFeeMonthly(conn, walletId) {
+  const [rows] = await conn.execute(
+    `SELECT points_month AS month,
+            ROUND(COALESCE(SUM(CASE WHEN transaction_type = ? THEN amount ELSE 0 END), 0), 2) AS credited,
+            ROUND(COALESCE(SUM(CASE WHEN transaction_type = ? THEN amount ELSE 0 END), 0), 2) AS reverted,
+            COUNT(*) AS cnt
+       FROM wallet_transactions
+      WHERE wallet_id = ? AND points_type = ?
+      GROUP BY points_month
+      ORDER BY points_month DESC`,
+    [WALLET_TX_TYPE.DISTRIBUTION_FEE, WALLET_TX_TYPE.DISTRIBUTION_FEE_REVERSAL, walletId, POINTS_TYPE.DELIVERY_FEE]
+  );
+  return rows.map(r => ({
+    month: r.month || '(未标月份)',
+    credited: round2(r.credited),
+    reverted: round2(r.reverted),
+    net: round2(round2(r.credited) - round2(r.reverted)),
+    count: Number(r.cnt)
+  }));
+}
+
 module.exports = {
   TX_TYPE_ORDER,
   getWalletOverview,
   listWalletTransactions,
+  getDeliveryFeeMonthly,
   reconcileWallet,
   listWalletsForAdmin,
   sumBalanceByOwnerType

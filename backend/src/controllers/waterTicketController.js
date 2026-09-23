@@ -66,11 +66,14 @@ async function createIssuance(conn, { stationId, month, remark, items, operator 
     const fee = waterTicketLedger.computeFeeCols(unitFeeMap[it.productId], it.quantity);
 
     // ① 先入账（积分 = 水站可用余额，发行即产生）：金额 = 单件值 × 数量
+    //    ★ 双积分：必须带上发行月份（此刻发行记录还没写，服务端无法回查 —— 见
+    //      waterTicketLedger.creditDistributionFee 的说明）
     const tx = await waterTicketLedger.creditDistributionFee(conn, {
       issuanceId,
       stationId,
       stationName,
       amount: fee.total,
+      month: actualMonth,
       operator,
       remark: `返货发行入账（${it.quantity} 件 × ${fee.unit}）`
     });
@@ -527,6 +530,7 @@ async function updateIssuanceCore(conn, { id, quantity, month, remark, operator 
       issuanceId: id,
       stationId: old.station_id,
       amount: feeDiff,
+      month: old.month,
       operator,
       remark: `改单加量入账（数量 ${old.quantity} → ${newQuantity}）`
     });

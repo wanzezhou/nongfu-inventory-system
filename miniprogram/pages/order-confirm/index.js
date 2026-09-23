@@ -22,7 +22,8 @@
 //   ③ 幂等键在「用户点提交的那一刻」生成并持久化，重试复用同一个键（§23.1）。
 //      因此提交按钮在请求中会被禁用，且 key 的生成放在 submit 内部而不是页面 onLoad。
 //
-//   ④ 积分不足 → 明确提示并给「去充值」入口（§14.3），不做「先下单再补款」。
+//   ④ 积分不足 → 明确提示（不引导去充值页 —— 在线充值已于 2026-09-23 下线），
+//      不做「先下单再补款」。
 // ===========================================================================
 const ui = require('../../utils/ui');
 const auth = require('../../utils/auth');
@@ -67,7 +68,7 @@ function parsePriceInput(raw, fallback) {
  *
  * @returns {{items: Array, preview: number, priceErrors: string[], balanceEnough: boolean}}
  */
-function computePricing(items, balance) {
+function computePricing(items, wallet) {
   let preview = 0;
   const priceErrors = [];
 
@@ -108,14 +109,52 @@ function computePricing(items, balance) {
   });
 
   const previewAmount = round2(preview);
+  // ★ 双积分（2026-09-23）：可用额度 = 充值积分 + 配送费积分（两类都能抵扣）
+  const rechargeAvail = round2((wallet && wallet.rechargeBalance) || 0);
+  const deliveryFeeAvail = round2((wallet && wallet.deliveryFeeBalance) || 0);
   return {
     items: next,
     preview: previewAmount,
     previewAmountText: fmt.money(previewAmount),
     priceErrors,
+    rechargeAvail,
+    deliveryFeeAvail,
     // 积分是否够只作提前提示；真正的判定在服务端事务内（§14.2）
-    balanceEnough: Number(balance || 0) + 1e-9 >= previewAmount
+    balanceEnough: round2(rechargeAvail + deliveryFeeAvail) + 1e-9 >= previewAmount
   };
+}
+
+/** 解析抵扣输入（空 → 0；非法 → NaN，交给校验函数报错） */
+function parsePoints(raw) {
+  const s = String(raw === null || raw === undefined ? '' : raw).trim();
+  if (s === '') return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? round2(n) : NaN;
+}
+
+/**
+ * ★ 抵扣分配校验（双积分，2026-09-23）
+ *
+ * ⚠️ 与后端 `miniOrderService.resolvePointsSplit` **同口径**：两项之和必须等于应付、
+ *    各不超对应用途的可用余额。前端只是提前提示（**不是安全边界** —— 真正拦截在服务端
+ *    事务内），但两边口径分叉会给出误导性提示，所以必须一起改。
+ */
+function computeSplitError(recharge, deliveryFee, payable, rechargeAvail, deliveryFeeAvail) {
+  if (!Number.isFinite(recharge) || !Number.isFinite(deliveryFee)) {
+    return '抵扣积分格式不正确（须为不小于 0 的数字）';
+  }
+  if (recharge < 0 || deliveryFee < 0) return '抵扣积分不能为负数';
+  if (recharge > rechargeAvail + 1e-9) {
+    return `充值积分不足：可用 ${fmt.points(rechargeAvail)}，本次填了 ${fmt.points(recharge)}`;
+  }
+  if (deliveryFee > deliveryFeeAvail + 1e-9) {
+    return `配送费积分不足：可用 ${fmt.points(deliveryFeeAvail)}，本次填了 ${fmt.points(deliveryFee)}`;
+  }
+  const sum = round2(recharge + deliveryFee);
+  if (Math.abs(sum - payable) > 0.005) {
+    return `两项之和需等于应付 ${fmt.points(payable)}，当前合计 ${fmt.points(sum)}`;
+  }
+  return '';
 }
 
 Page({
@@ -147,7 +186,16 @@ Page({
     recentPrices: {},
     submitting: false,
     blocked: '',
-    loadError: ''
+    loadError: '',
+
+    // ★ 双积分抵扣分配（2026-09-23，业务方确认「由用户自己选各类抵扣多少」）
+    pointsRecharge: '', // 充值积分抵扣额（输入框文本）
+    pointsDeliveryFee: '', // 配送费积分抵扣额（输入框文本）
+    pointsTouched: false, // 用户是否手动改过 → 改过就不再自动分配
+    splitError: '',
+    rechargeAvail: 0,
+    deliveryFeeAvail: 0,
+    pointsSumText: '0'
   },
 
   onLoad() {
@@ -232,13 +280,17 @@ Page({
         };
       });
 
-      const pricing = computePricing(baseItems, wallet.balance);
+      const pricing = computePricing(baseItems, wallet);
 
       this.setData({
         wallet,
         items: pricing.items,
         previewAmount: pricing.previewAmountText,
         balanceEnough: pricing.balanceEnough,
+        rechargeAvail: pricing.rechargeAvail,
+        deliveryFeeAvail: pricing.deliveryFeeAvail,
+        // ★ 双积分：首次进入按「先配送费、后充值」自动分配（用户可改）
+        ...this.autoSplitPatch(pricing.previewAmountText, pricing.rechargeAvail, pricing.deliveryFeeAvail),
         priceErrors: pricing.priceErrors,
         loadError: '',
         // 水站默认地址快照（有档案地址才默认选中，否则强制手填）
@@ -307,13 +359,55 @@ Page({
 
     const items = this.data.items.map((it, i) => (i === index ? Object.assign({}, it, { priceInput: raw }) : it));
     const wallet = this.data.wallet || {};
-    const pricing = computePricing(items, wallet.balance);
+    const pricing = computePricing(items, wallet);
 
     this.setData({
       items: pricing.items,
       previewAmount: pricing.previewAmountText,
       balanceEnough: pricing.balanceEnough,
-      priceErrors: pricing.priceErrors
+      priceErrors: pricing.priceErrors,
+      rechargeAvail: pricing.rechargeAvail,
+      deliveryFeeAvail: pricing.deliveryFeeAvail,
+      // 改价后应付变了 → 用户没手动改过抵扣额时重新自动分配
+      ...this.autoSplitPatch(pricing.previewAmountText, pricing.rechargeAvail, pricing.deliveryFeeAvail)
+    });
+  },
+
+  /**
+   * ★ 双积分自动分配（先配送费积分、不足部分用充值积分）
+   *
+   * 用户手动改过（pointsTouched）就不再覆盖 —— 否则每次改价都会把用户填的值冲掉。
+   * 与后端 `resolvePointsSplit` 的「不传分配时的兜底」同口径。
+   */
+  autoSplitPatch(previewText, rechargeAvail, deliveryFeeAvail) {
+    if (this.data.pointsTouched) return {};
+    const payable = round2(previewText);
+    const useDelivery = round2(Math.min(deliveryFeeAvail, payable));
+    const useRecharge = round2(payable - useDelivery);
+    return {
+      pointsRecharge: numText(useRecharge),
+      pointsDeliveryFee: numText(useDelivery),
+      pointsSumText: numText(round2(useRecharge + useDelivery)),
+      splitError: computeSplitError(useRecharge, useDelivery, payable, rechargeAvail, deliveryFeeAvail)
+    };
+  },
+
+  /** 用户改抵扣额 → 标记已手动 + 重算校验 */
+  onPointsInput(e) {
+    const field = e.currentTarget.dataset.field;
+    const patch = { pointsTouched: true };
+    patch[field] = e.detail.value;
+    this.setData(patch, () => this.recomputeSplit());
+  },
+
+  /** 重算两项之和与校验红字（纯展示口径，与后端同一算法） */
+  recomputeSplit() {
+    const payable = round2(this.data.previewAmount);
+    const r = parsePoints(this.data.pointsRecharge);
+    const d = parsePoints(this.data.pointsDeliveryFee);
+    this.setData({
+      pointsSumText: Number.isFinite(r) && Number.isFinite(d) ? numText(round2(r + d)) : '—',
+      splitError: computeSplitError(r, d, payable, this.data.rechargeAvail, this.data.deliveryFeeAvail)
     });
   },
 
@@ -388,8 +482,8 @@ Page({
       return;
     }
     if (!this.data.balanceEnough) {
-      const go = await ui.confirm('积分不足', '当前积分不足以支付本单，请先由管理员调增积分后再下单。', '知道了');
-      if (go) wx.navigateTo({ url: '/pages/wallet-recharge/index' });
+      // ⚠️ 在线充值已下线（2026-09-23）→ 不再跳转充值页（该页已删除，跳过去会报错）
+      ui.showError({ message: '当前积分不足以支付本单，请先由管理员调增积分后再下单。' }, '积分不足');
       return;
     }
     if (auth.isBlocked()) {
@@ -400,9 +494,18 @@ Page({
     const me = auth.me();
     const ownerKey = `${me.account.role}:${me.account.targetId}`;
 
+    // ★ 双积分（2026-09-23）：提交前本地再校验一次分配（与后端同口径；服务端仍会强校验）
+    if (this.data.splitError) {
+      ui.showError({ message: this.data.splitError }, '积分抵扣有误');
+      return;
+    }
+
     // 订单请求体（**全部驼峰**；后端全局 normalizeBody 做蛇形→驼峰，故这里必须是驼峰）
     const payload = {
       fulfillmentType: this.data.fulfillmentType,
+      // ★ 双积分：两类积分各抵扣多少（用户自选；服务端校验「和 = 应付」且各不超余额）
+      pointsRecharge: round2(this.data.pointsRecharge || 0),
+      pointsDeliveryFee: round2(this.data.pointsDeliveryFee || 0),
       orderScene: role === ROLES.SALESMAN ? this.data.orderScene : undefined,
       customerName: this.data.customerName.trim(),
       customerPhone: this.data.customerPhone.trim() || undefined,
@@ -445,8 +548,9 @@ Page({
       // 失败时不释放幂等键：用户点「重试」时复用同一个键，避免重复下单
       if (e.code === 401) return;
       if (/积分不足/.test(e.message || '')) {
-        const go = await ui.confirm('积分不足', e.message, '去充值');
-        if (go) wx.navigateTo({ url: '/pages/wallet-recharge/index' });
+        // ⚠️ 在线充值已下线（2026-09-23）→ 不再引导「去充值」，
+        //    改为如实提示（充值积分由管理员后台设置、配送费积分来自返货发行）
+        ui.showError(e, '积分不足');
       } else {
         ui.showError(e, '下单失败，请稍后重试');
       }

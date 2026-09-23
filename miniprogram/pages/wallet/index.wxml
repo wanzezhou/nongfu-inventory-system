@@ -6,8 +6,21 @@
     <view class="wh-value">{{wallet.balanceText}}</view>
     <view class="wh-rmb">等值 ¥{{wallet.rmbText}} · 1 元 = 1 积分</view>
     <view class="wh-actions">
-      <view class="wh-btn" bindtap="goRecharge">充值</view>
       <view class="wh-btn" bindtap="goTransactions">查看流水</view>
+    </view>
+  </view>
+
+  <!-- ★ 双积分（2026-09-23）：两类积分分别可见 —— 可混合抵扣，但必须区分 -->
+  <view wx:if="{{!loading && !loadError}}" class="split-grid">
+    <view class="split-cell">
+      <view class="split-label">充值积分</view>
+      <view class="split-value">{{wallet.rechargeBalanceText}}</view>
+      <view class="split-sub">管理员后台设置</view>
+    </view>
+    <view class="split-cell">
+      <view class="split-label">配送费积分</view>
+      <view class="split-value">{{wallet.deliveryFeeBalanceText}}</view>
+      <view class="split-sub">返货配送费 1 元 = 1 积分</view>
     </view>
   </view>
 
@@ -54,23 +67,32 @@
       </view>
     </view>
 
-    <!-- 水站：分销配送费与充值入口 -->
+    <!-- ★ 配送费积分按月发放明细（业务要求：能看每月发了多少） -->
+    <view class="card" wx:if="{{feeMonths.length}}">
+      <view class="section-title">配送费积分 · 按月明细</view>
+      <view wx:for="{{feeMonths}}" wx:key="month" class="row-between mt-8">
+        <view class="col">
+          <text>{{item.month}}</text>
+          <text class="t-sub">发放 +{{item.creditedText}} · 回冲 −{{item.revertedText}}</text>
+        </view>
+        <text class="amount-in">净 {{item.netText}}</text>
+      </view>
+      <view class="t-sub mt-16">「净」= 该月发放 − 该月回冲。下单抵扣不按月份归集，只体现在总余额里。</view>
+    </view>
+
+    <!-- 水站：水票与档案入口 -->
     <view wx:if="{{role === 'station'}}" class="quick3">
       <view class="quick3-item" bindtap="goTickets">
         <view class="quick3-title">我的水票</view>
         <view class="quick3-sub">按商品查看</view>
-      </view>
-      <view class="quick3-item" bindtap="goRecharge">
-        <view class="quick3-title">充值</view>
-        <view class="quick3-sub">微信充值（未开通）</view>
       </view>
     </view>
 
     <view class="banner banner-info">
       积分是公司的内部订货预存额度，不是微信零钱，也不能在用户之间转移（文档 §3.3）。
     </view>
-    <view class="banner banner-warn">
-      {{wallet.tips.wechatPayNotOpen}}
+    <view class="banner banner-info">
+      充值积分由管理员在后台设置；配送费积分来自返货发行（1 元配送费 = 1 积分）。下单时可自行决定两类各抵扣多少。
     </view>
   </block>
 </view>

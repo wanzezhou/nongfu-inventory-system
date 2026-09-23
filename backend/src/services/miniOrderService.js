@@ -87,6 +87,46 @@ const {
 } = walletService;
 
 // ── 工具 ─────────────────────────────────────────────────────────────────────
+/**
+ * ★ 解析下单的积分分配（双积分，2026-09-23）
+ *
+ * 请求体字段（驼峰 —— D7 normalizeBody 已把 snake_case 归一）：
+ *   pointsRecharge      充值积分抵扣额
+ *   pointsDeliveryFee   配送费积分抵扣额
+ *
+ * 规则（业务方确认：两类可混合，**由用户自己选**各出多少）：
+ *   ① 两个字段都不传 → **自动分配**：先用配送费积分（专款专用），不足部分用充值积分。
+ *      保留这条兜底是为了让老调用方（以及将来可能的其他入口）不传也能下单；
+ *      水站手上有配送费积分时也不会被白白闲置（否则明明够钱却下不了单）。
+ *   ② 传了就按传的来，但**之和必须等于应付积分** —— 小程序订单只能钱包足额支付、
+ *      不产生欠款（§3.6 / §6.5.1）；允许少付等于凭空产生应收账款，而系统里没有
+ *      在线支付来补这笔钱。
+ *   ③ 负数、超可用余额一律拒绝 —— 后者由 applyTransaction 按**分账户**兜底校验
+ *      （总额够但那一类不够同样会被拦，文案指明是哪一类积分不足）。
+ */
+function resolvePointsSplit(body, payable, walletRow) {
+  const has = v => v !== undefined && v !== null && v !== '';
+  const givenRecharge = has(body.pointsRecharge);
+  const givenDelivery = has(body.pointsDeliveryFee);
+
+  if (!givenRecharge && !givenDelivery) {
+    const availableDelivery = round2(walletRow.delivery_fee_balance || 0);
+    const useDelivery = round2(Math.min(availableDelivery, payable));
+    return { recharge: round2(payable - useDelivery), deliveryFee: useDelivery, auto: true };
+  }
+
+  const recharge = round2(givenRecharge ? body.pointsRecharge : 0);
+  const deliveryFee = round2(givenDelivery ? body.pointsDeliveryFee : 0);
+  if (!Number.isFinite(recharge) || !Number.isFinite(deliveryFee) || recharge < 0 || deliveryFee < 0) {
+    throw businessError('抵扣积分不能为负数或非数字');
+  }
+  const sum = round2(recharge + deliveryFee);
+  if (Math.abs(sum - round2(payable)) > 0.005) {
+    throw businessError(`抵扣积分之和（${sum}）必须等于应付积分（${round2(payable)}）`);
+  }
+  return { recharge, deliveryFee, auto: false };
+}
+
 /** 履约状态 → 中文（下发给小程序，前端不再维护一份映射） */
 const FULFILLMENT_LABEL = {
   [FULFILLMENT_STATUS.PAID]: '已支付',
@@ -365,15 +405,23 @@ async function createMiniOrder(mini, body) {
     }
 
     // ⑭ 扣钱包 + 写流水（三联事务的中间一环；积分不足在此抛业务错误 → 整体回滚，§14.3）
-    const payTx = await walletService.debitWallet(conn, walletRow, {
-      txType: WALLET_TX_TYPE.ORDER_PAYMENT,
-      amount: totalReceivable,
-      relatedType: WALLET_RELATED_TYPE.ORDER,
-      relatedId: orderId,
-      operatorId: `mini:${mini.accountId}`,
-      operatorRole: mini.role,
-      remark: `小程序订单 ${orderId} 消费`
-    });
+    // ★ 双积分（2026-09-23）：可用「充值积分 + 配送费积分」**自选分配**抵扣，
+    //   拆成两条流水（各类型一条，同一 orderId）—— 对账与退款都按类型逐条走。
+    const split = resolvePointsSplit(body, totalReceivable, walletRow);
+    const paySplit = await walletService.debitWalletBySplit(
+      conn,
+      walletRow,
+      { rechargeAmount: split.recharge, deliveryFeeAmount: split.deliveryFee },
+      {
+        txType: WALLET_TX_TYPE.ORDER_PAYMENT,
+        relatedType: WALLET_RELATED_TYPE.ORDER,
+        relatedId: orderId,
+        operatorId: `mini:${mini.accountId}`,
+        operatorRole: mini.role,
+        remark: `小程序订单 ${orderId} 消费（充值积分 ${split.recharge} + 配送费积分 ${split.deliveryFee}）`
+      }
+    );
+    const payTx = paySplit.txs[0] || null;
 
     // ⑮ 库存扣减（复用既有单源函数，行锁 + 允许负数）
     for (const item of orderItems) {
@@ -417,7 +465,13 @@ async function createMiniOrder(mini, body) {
         walletId: walletRow.wallet_id,
         fulfillmentType,
         orderScene,
-        payTx: payTx.transaction_no
+        payTx: payTx ? payTx.transaction_no : null,
+        pointsSplit: {
+          recharge: split.recharge,
+          deliveryFee: split.deliveryFee,
+          auto: split.auto,
+          txs: paySplit.txs.map(t => ({ pointsType: t.points_type, no: t.transaction_no, amount: t.amount }))
+        }
       }
     });
 
@@ -600,16 +654,27 @@ async function settleOrderReversal(conn, order, { reason, operatorId, operatorRo
 
   // 5) 钱包 + 原订单实际扣除积分（三联事务：余额 + 流水同事务）
   const walletRow = await walletService.loadWalletForUpdateIncludingDisabled(conn, order.wallet_id);
-  const refundTx = await creditWallet(conn, walletRow, {
-    txType: WALLET_TX_TYPE.REFUND,
-    amount: round2(payTx.amount),
-    relatedType: WALLET_RELATED_TYPE.ORDER,
-    relatedId: order.order_id,
-    reversalOf: payTx.transaction_id,
-    operatorId,
-    operatorRole,
-    remark: reason || `订单 ${order.order_id} 退款`
-  });
+  // ⚠️ 双积分（2026-09-23）：混合抵扣会产生**多条** ORDER_PAYMENT 流水，
+  //    必须**逐条**按原类型、原金额回冲。若只退第一条（本函数早先的写法），
+  //    配送费积分那部分就永远退不回来 —— 而总额恒等式**仍然成立**，属静默错账。
+  const createdRefunds = [];
+  for (const pay of payTxs) {
+    createdRefunds.push(
+      await creditWallet(conn, walletRow, {
+        txType: WALLET_TX_TYPE.REFUND,
+        amount: round2(pay.amount),
+        // 按原流水的积分类型回补（不得一律记成充值积分）
+        pointsType: pay.points_type,
+        relatedType: WALLET_RELATED_TYPE.ORDER,
+        relatedId: order.order_id,
+        reversalOf: pay.transaction_id,
+        operatorId,
+        operatorRole,
+        remark: reason || `订单 ${order.order_id} 退款`
+      })
+    );
+  }
+  const refundTx = createdRefunds[0] || null;
 
   // 6) 回冲营收入账（既有函数；与钱包回补同事务，保证两套账本一致，§24.5 约束 1）
   await revertOrderRevenue(conn, order.order_id);

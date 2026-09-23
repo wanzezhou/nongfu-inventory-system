@@ -24,7 +24,17 @@
 //   ⑦ 不改既有资金体系：finance_accounts / finance_transactions 的记账规则、
 //      账户类型、对账口径均不因小程序而改变（见 §52）。
 // ===========================================================================
-const { WALLET_TX_TYPE, TX_DIRECTION, TX_TYPE_DIRECTION, IDEM_SCOPE, IDEM_TTL_HOURS } = require('../constants/mini');
+const {
+  WALLET_TX_TYPE,
+  TX_DIRECTION,
+  TX_TYPE_DIRECTION,
+  POINTS_TYPE,
+  POINTS_TYPE_VALUES,
+  POINTS_TYPE_LABEL,
+  TX_TYPE_POINTS_TYPE,
+  IDEM_SCOPE,
+  IDEM_TTL_HOURS
+} = require('../constants/mini');
 
 /** 金额统一两位小数（仓库规范：Math.round(n*100)/100） */
 const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
@@ -77,7 +87,9 @@ function genTxNo() {
 /** 按主体查钱包（不加锁，用于读展示） */
 async function findWallet(conn, ownerType, ownerId) {
   const [rows] = await conn.execute(
-    `SELECT wallet_id, owner_type, owner_id, owner_name, initial_balance, balance, status, remark, created_at, updated_at
+    `SELECT wallet_id, owner_type, owner_id, owner_name,
+                initial_balance, balance, recharge_balance, delivery_fee_balance,
+                status, remark, created_at, updated_at
        FROM wallet_accounts WHERE owner_type = ? AND owner_id = ?`,
     [ownerType, ownerId]
   );
@@ -87,7 +99,9 @@ async function findWallet(conn, ownerType, ownerId) {
 /** 按 wallet_id 查钱包（不加锁，用于读展示；**不校验 status**，停用钱包也要能查账） */
 async function findWalletById(conn, walletId) {
   const [rows] = await conn.execute(
-    `SELECT wallet_id, owner_type, owner_id, owner_name, initial_balance, balance, status, remark, created_at, updated_at
+    `SELECT wallet_id, owner_type, owner_id, owner_name,
+                initial_balance, balance, recharge_balance, delivery_fee_balance,
+                status, remark, created_at, updated_at
        FROM wallet_accounts WHERE wallet_id = ?`,
     [walletId]
   );
@@ -101,7 +115,9 @@ async function findWalletById(conn, walletId) {
  */
 async function loadWalletForUpdate(conn, walletId) {
   const [rows] = await conn.execute(
-    `SELECT wallet_id, owner_type, owner_id, owner_name, initial_balance, balance, status, remark, created_at, updated_at
+    `SELECT wallet_id, owner_type, owner_id, owner_name,
+                initial_balance, balance, recharge_balance, delivery_fee_balance,
+                status, remark, created_at, updated_at
        FROM wallet_accounts WHERE wallet_id = ? AND status = 1 FOR UPDATE`,
     [walletId]
   );
@@ -124,7 +140,9 @@ async function loadWalletForUpdate(conn, walletId) {
  */
 async function loadWalletForUpdateIncludingDisabled(conn, walletId) {
   const [rows] = await conn.execute(
-    `SELECT wallet_id, owner_type, owner_id, owner_name, initial_balance, balance, status, remark, created_at, updated_at
+    `SELECT wallet_id, owner_type, owner_id, owner_name,
+                initial_balance, balance, recharge_balance, delivery_fee_balance,
+                status, remark, created_at, updated_at
        FROM wallet_accounts WHERE wallet_id = ? FOR UPDATE`,
     [walletId]
   );
@@ -160,17 +178,29 @@ async function ensureWallet(conn, { ownerType, ownerId, ownerName }) {
 }
 
 /**
- * ★ 唯一允许写 wallet_accounts.balance 的函数（§11.7 第 6 条）
+ * ★ 唯一允许写 wallet_accounts 余额的函数（§11.7 第 6 条）
  *
  * 必须在事务内调用，且调用前已通过 loadWalletForUpdate / loadWalletForUpdateIncludingDisabled
  * 拿到行锁。金额变动与流水写入在**同一事务**内完成（§11.7 第 1 条三联事务）。
  *
+ * ★ 双积分（2026-09-23）：本函数同时维护**总额**与**分账户**：
+ *      wallet_accounts.balance            = 充值积分 + 配送费积分（恒等式，恒成立）
+ *      wallet_accounts.recharge_balance    ← pointsType = RECHARGE 时变动
+ *      wallet_accounts.delivery_fee_balance ← pointsType = DELIVERY_FEE 时变动
+ *   总额与分账户**必须写在同一条 UPDATE 里** —— 分两条语句会在中途暴露「总额已减、分账户未减」
+ *   的不一致状态，一旦此时回滚/崩溃就留下对不上的账。
+ *   出账时**两道校验都要过**：总额够、且「对应那一类积分」也够
+ *   （总额够但某类不够是真实场景：充值 90 + 配送费 10，要扣配送费 20）。
+ *
  * @param {object} conn       事务连接（不负责 begin/commit）
- * @param {object} walletRow  已加锁的钱包行
+ * @param {object} walletRow  已加锁的钱包行（必须由本文件的读函数取得 —— 缺分账户列会直接报错）
  * @param {object} opts
- *   - txType       wallet_transactions.transaction_type（决定方向）
+ *   - txType       wallet_transactions.transaction_type（决定默认方向与默认积分类型）
  *   - amount       金额，必须是正数（方向由 direction 决定）
  *   - direction    可选：显式覆盖方向（撤销类必传，见 reverseTransaction）
+ *   - pointsType   可选：'RECHARGE' | 'DELIVERY_FEE'，不传则按 txType 推导；
+ *                  ORDER_PAYMENT / REFUND **必须显式传**（见 constants 的说明）
+ *   - pointsMonth  可选：配送费积分的发行月份 YYYY-MM（仅发行入账填写，用于按月核对发放）
  *   - relatedType / relatedId / reversalOf / operatorId / operatorRole / remark
  * @returns {Promise<object>} 写入的流水行
  */
@@ -184,11 +214,24 @@ async function applyTransaction(conn, walletRow, opts) {
     reversalOf = null,
     operatorId = null,
     operatorRole = null,
-    remark = null
+    remark = null,
+    pointsType: explicitPointsType = null,
+    pointsMonth = null
   } = opts;
 
   if (!Object.values(WALLET_TX_TYPE).includes(txType)) {
     throw businessError(`未知的钱包流水类型: ${txType}`);
+  }
+
+  // ★ 积分类型：显式优先 → 按流水类型推导 → 都没有则**拒收**
+  const pointsType = explicitPointsType || TX_TYPE_POINTS_TYPE[txType] || null;
+  if (!pointsType || !POINTS_TYPE_VALUES.includes(pointsType)) {
+    throw businessError(
+      `无法确定积分类型（流水类型 ${txType}）：调用方必须显式传 pointsType，取值 ${POINTS_TYPE_VALUES.join(' / ')}`
+    );
+  }
+  if (pointsMonth !== null && pointsMonth !== undefined && !/^\d{4}-\d{2}$/.test(String(pointsMonth))) {
+    throw businessError(`积分归属月份格式非法：${pointsMonth}（应为 YYYY-MM）`);
   }
 
   const amt = round2(amount);
@@ -205,20 +248,42 @@ async function applyTransaction(conn, walletRow, opts) {
     throw businessError(`未知的资金方向: ${direction}`);
   }
 
+  // 分账户列必须已随行读入（否则会把分账户静默重置为 0 —— 这是最容易漏、后果最重的一类）
+  if (walletRow.recharge_balance === undefined || walletRow.delivery_fee_balance === undefined) {
+    throw businessError('钱包行缺少分账户字段：请用 walletService 的读函数获取行（禁止自行拼装行对象）');
+  }
+
   const before = round2(walletRow.balance);
   // ⚠️ §11.7 第 2 条：**支出方向**才校验余额；收入方向不校验
   if (direction === TX_DIRECTION.OUT && before < amt) {
     throw businessError(`积分不足：当前 ${before}，本次需要 ${amt}`);
   }
-  const after = direction === TX_DIRECTION.IN ? round2(before + amt) : round2(before - amt);
+  // 双积分：总额够不等于该类够
+  const isDelivery = pointsType === POINTS_TYPE.DELIVERY_FEE;
+  const beforeSub = round2(isDelivery ? walletRow.delivery_fee_balance : walletRow.recharge_balance);
+  if (direction === TX_DIRECTION.OUT && beforeSub < amt) {
+    throw businessError(`${POINTS_TYPE_LABEL[pointsType]}不足：当前 ${beforeSub}，本次需要 ${amt}`);
+  }
 
-  // ① 改余额（全仓库仅此一处）
-  await conn.execute('UPDATE wallet_accounts SET balance = ?, updated_at = NOW() WHERE wallet_id = ?', [
-    after,
-    walletRow.wallet_id
-  ]);
+  const after = direction === TX_DIRECTION.IN ? round2(before + amt) : round2(before - amt);
+  const afterSub = direction === TX_DIRECTION.IN ? round2(beforeSub + amt) : round2(beforeSub - amt);
+
+  // ① 改余额：总额与分账户在**同一条 UPDATE**（全仓库仅此一处写钱包余额）
+  await conn.execute(
+    `UPDATE wallet_accounts
+        SET balance = ?, recharge_balance = ?, delivery_fee_balance = ?, updated_at = NOW()
+      WHERE wallet_id = ?`,
+    [
+      after,
+      isDelivery ? round2(walletRow.recharge_balance) : afterSub,
+      isDelivery ? afterSub : round2(walletRow.delivery_fee_balance),
+      walletRow.wallet_id
+    ]
+  );
   // 让同一事务内多次变动时余额串联正确（与 orderRevenuePosting.postIncome 同一手法）
   walletRow.balance = after;
+  if (isDelivery) walletRow.delivery_fee_balance = round2(afterSub);
+  else walletRow.recharge_balance = round2(afterSub);
 
   // ② 写流水（字段齐备是 §11.7 第 3 条硬要求）
   const transactionId = genTxId();
@@ -226,9 +291,9 @@ async function applyTransaction(conn, walletRow, opts) {
   await conn.execute(
     `INSERT INTO wallet_transactions
        (transaction_id, transaction_no, wallet_id, transaction_type, direction, amount,
-        balance_before, balance_after, related_type, related_id, reversal_of,
-        operator_id, operator_role, remark, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        points_type, points_month, balance_before, balance_after, related_type, related_id,
+        reversal_of, operator_id, operator_role, remark, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       transactionId,
       transactionNo,
@@ -236,6 +301,8 @@ async function applyTransaction(conn, walletRow, opts) {
       txType,
       direction,
       amt,
+      pointsType,
+      pointsMonth || null,
       before,
       after,
       relatedType,
@@ -254,6 +321,8 @@ async function applyTransaction(conn, walletRow, opts) {
     transaction_type: txType,
     direction,
     amount: amt,
+    points_type: pointsType,
+    points_month: pointsMonth || null,
     balance_before: before,
     balance_after: after,
     related_type: relatedType,
@@ -273,6 +342,53 @@ async function debitWallet(conn, walletRow, opts) {
 }
 
 /**
+ * ★ 按分配额扣款：双积分「混合抵扣」（2026-09-23）
+ *
+ * 一次下单可由用户**自选**「充值积分 + 配送费积分」的组合（业务方确认的交互）。
+ * 本函数把它编排成**两条独立流水**（各类型一条、同一 related_id），而不是一条带明细的流水：
+ *   · 流水表是唯一的对账事实源 —— 一类积分一条流水，才能直接按 points_type 汇总核对；
+ *   · 冲回（退款）时天然按原流水逐条还原，不需要解析明细。
+ *
+ * 实现上**复用 applyTransaction**（本文件唯一的记账入口）：余额校验、分账户维护、
+ * 流水字段、恒等式全部继承，避免出现第二套记账逻辑（历史教训：两套口径必然分叉）。
+ *
+ * ⚠️ 分两次调用是安全的：同事务内、同一行已加锁，且任一步失败都会让调用方整体回滚；
+ *    金额为 0 的那一类**不写流水**（流水金额必须为正数）。
+ *
+ * @param {object} split { rechargeAmount, deliveryFeeAmount } 金额可传 0，但两者之和须 > 0
+ * @param {object} opts  透传给 applyTransaction（txType / relatedType / relatedId / operatorId …）
+ * @returns {Promise<{txs: object[], total: number}>}
+ */
+async function debitWalletBySplit(conn, walletRow, split, opts = {}) {
+  const rechargeAmount = round2((split && split.rechargeAmount) || 0);
+  const deliveryFeeAmount = round2((split && split.deliveryFeeAmount) || 0);
+  if (rechargeAmount < 0 || deliveryFeeAmount < 0) {
+    throw businessError('抵扣积分不能为负数');
+  }
+  const total = round2(rechargeAmount + deliveryFeeAmount);
+  if (total <= 0) {
+    throw businessError('抵扣积分必须大于 0（请指定充值积分或配送费积分的抵扣数量）');
+  }
+
+  const parts = [
+    { pointsType: POINTS_TYPE.RECHARGE, amount: rechargeAmount },
+    { pointsType: POINTS_TYPE.DELIVERY_FEE, amount: deliveryFeeAmount }
+  ].filter(p => p.amount > 0);
+
+  const txs = [];
+  for (const p of parts) {
+    txs.push(
+      await debitWallet(conn, walletRow, {
+        ...opts,
+        amount: p.amount,
+        pointsType: p.pointsType
+      })
+    );
+  }
+  return { txs, total };
+}
+
+/**
  * 产生一笔冲回/撤销流水（§11.7 第 4、5 条）
  *
  * 撤销 = **原方向的反向**：
@@ -289,7 +405,8 @@ async function debitWallet(conn, walletRow, opts) {
  */
 async function reverseTransaction(conn, originalTxId, opts = {}) {
   const [rows] = await conn.execute(
-    `SELECT transaction_id, wallet_id, transaction_type, direction, amount, related_type, related_id
+    `SELECT transaction_id, wallet_id, transaction_type, direction, amount, points_type, points_month,
+            related_type, related_id
        FROM wallet_transactions WHERE transaction_id = ?`,
     [originalTxId]
   );
@@ -311,6 +428,11 @@ async function reverseTransaction(conn, originalTxId, opts = {}) {
     relatedType: opts.relatedType !== undefined ? opts.relatedType : original.related_type,
     relatedId: opts.relatedId !== undefined ? opts.relatedId : original.related_id,
     reversalOf: original.transaction_id,
+    // ★ 双积分：冲回**必须按原流水的积分类型**走。
+    //   若一律记成充值积分，配送费积分的冲回会加错账户 —— 两张分账户各自都对不上，
+    //   而总额恒等式**依然成立**（这正是最危险的一类静默错账）。
+    pointsType: opts.pointsType || original.points_type || null,
+    pointsMonth: opts.pointsMonth !== undefined ? opts.pointsMonth : original.points_month || null,
     operatorId: opts.operatorId || null,
     operatorRole: opts.operatorRole || null,
     remark: opts.remark || `冲回流水 ${original.transaction_id}`
@@ -325,6 +447,7 @@ async function reverseTransaction(conn, originalTxId, opts = {}) {
  */
 async function findTransactionsByRelated(conn, { relatedType, relatedId, txType = null }) {
   let sql = `SELECT transaction_id, wallet_id, transaction_type, direction, amount,
+                    points_type, points_month,
                     balance_before, balance_after, related_type, related_id, reversal_of, created_at
                FROM wallet_transactions WHERE related_type = ? AND related_id = ?`;
   const params = [relatedType, relatedId];
@@ -340,11 +463,15 @@ async function findTransactionsByRelated(conn, { relatedType, relatedId, txType 
 /**
  * 恒等式校验（§11.5 / §44.12 ① ②）：当前余额 = 期初 + Σ正向 − Σ负向，精确到分。
  * 停用钱包同样必须成立 —— 因此这里不按 status 过滤。
+ *
+ * ★ 双积分（2026-09-23）新增**第二条恒等式**：余额 = 充值积分 + 配送费积分。
+ *   两条都要成立：只验总额的话，「配送费积分被记成充值积分」这类错误完全看不出来。
  * @returns {Promise<{ok:boolean, balance:number, expected:number, diff:number, ...}>}
  */
 async function assertWalletIdentity(conn, walletId) {
   const [w] = await conn.execute(
-    `SELECT wallet_id, owner_type, owner_id, initial_balance, balance, status
+    `SELECT wallet_id, owner_type, owner_id, initial_balance, balance,
+            recharge_balance, delivery_fee_balance, status
        FROM wallet_accounts WHERE wallet_id = ?`,
     [walletId]
   );
@@ -366,6 +493,11 @@ async function assertWalletIdentity(conn, walletId) {
   const balance = round2(wallet.balance);
   const diff = round2(balance - expected);
 
+  // ★ 第二条恒等式：总额 = 两类分账户之和
+  const rechargeBalance = round2(wallet.recharge_balance);
+  const deliveryFeeBalance = round2(wallet.delivery_fee_balance);
+  const splitDiff = round2(balance - round2(rechargeBalance + deliveryFeeBalance));
+
   return {
     walletId,
     ownerType: wallet.owner_type,
@@ -377,8 +509,12 @@ async function assertWalletIdentity(conn, walletId) {
     balance,
     expected,
     diff,
+    rechargeBalance,
+    deliveryFeeBalance,
+    splitDiff,
+    splitOk: splitDiff === 0,
     txCount: Number(agg[0].tx_count),
-    ok: diff === 0
+    ok: diff === 0 && splitDiff === 0
   };
 }
 
@@ -492,6 +628,7 @@ module.exports = {
   applyTransaction,
   creditWallet,
   debitWallet,
+  debitWalletBySplit,
   reverseTransaction,
   findTransactionsByRelated,
   assertWalletIdentity,

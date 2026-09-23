@@ -127,13 +127,28 @@ async function main() {
     const [stRes] = await conn.query(`SELECT id FROM mini_accounts WHERE openid = ?`, [`smoke_station_${TS}`]);
     const stationAccountId = stRes[0].id;
 
-    await conn.query(
-      `INSERT INTO mini_accounts (openid, phone, role, target_id, nickname, status, created_at)
-       VALUES (?, ?, 'admin', ?, '冒烟管理员', 1, NOW())`,
-      [`smoke_admin_${TS}`, '13500000000', adminTargetId]
+    // ⚠️ mini_accounts 上有唯一索引 uk_role_active（role + target_id，仅活动行）：
+    //    同一角色+目标只能有一个活动账号。**管理员账号在库里通常已存在**
+    //    （本地开发登录会建，运维也必需），直接 INSERT 必然撞唯一键
+    //    —— 2026-09-23 实测（脚本崩在准备阶段，不是被测功能有问题）。
+    //    → 存在则**复用**、不存在才新建。复用只用于鉴权，本脚本操作对象全是自建冒烟数据。
+    const [existAdmin] = await conn.query(
+      `SELECT id FROM mini_accounts WHERE role = 'admin' AND target_id = ? AND status = 1 LIMIT 1`,
+      [adminTargetId]
     );
-    const [adRes] = await conn.query(`SELECT id FROM mini_accounts WHERE openid = ?`, [`smoke_admin_${TS}`]);
-    const adminAccountId = adRes[0].id;
+    let adminAccountId;
+    if (existAdmin.length) {
+      adminAccountId = existAdmin[0].id;
+      console.log(`  （复用已存在的小程序管理员账号 id=${adminAccountId}）`);
+    } else {
+      await conn.query(
+        `INSERT INTO mini_accounts (openid, phone, role, target_id, nickname, status, created_at)
+         VALUES (?, ?, 'admin', ?, '冒烟管理员', 1, NOW())`,
+        [`smoke_admin_${TS}`, '13500000000', adminTargetId]
+      );
+      const [adRes] = await conn.query(`SELECT id FROM mini_accounts WHERE openid = ?`, [`smoke_admin_${TS}`]);
+      adminAccountId = adRes[0].id;
+    }
 
     // 钱包：开立并各注入 1000 积分（走 applyTransaction，即受审计的正规路径）
     await conn.beginTransaction();
@@ -938,8 +953,14 @@ async function main() {
       `④ 禁用后**下单**被拒（HTTP 401，非 403）：实得 ${writeWhileDisabled.code}`
     );
 
-    const rechargeWhileDisabled = await call('POST', '/mini/wallet/recharge', { amount: 100 }, salesmanToken);
-    assert(rechargeWhileDisabled.code === 401, `④ 禁用后**充值**被拒（401）：实得 ${rechargeWhileDisabled.code}`);
+    // ⚠️ 2026-09-23：本断言原用 POST /wallet/recharge 验证，该端点已随「在线充值下线」删除。
+    //    改用同样挂 requireMiniActive 的另一写端点（取消订单）—— 目的不变：
+    //    证明「禁用后**任意**写接口都在鉴权层被拦（401）」，而不是只有下单被拦。
+    const cancelWhileDisabled = await call('POST', `/mini/orders/${salesmanOrderId}/cancel`, {}, salesmanToken);
+    assert(
+      cancelWhileDisabled.code === 401,
+      `④ 禁用后另一写接口（取消订单）同样被拒（401）：实得 ${cancelWhileDisabled.code}`
+    );
 
     await pool.query('UPDATE mini_accounts SET status = 1 WHERE id = ?', [salesmanAccountId]);
     // ⑤ 主体停用
