@@ -60,8 +60,9 @@ database/backup_*.sql
 #    因此 `database/backup/xxx.sql` 这个**子目录**完全落在规则之外、静默不被忽略。
 #    实测：`database/backup/pre_wallet_points_split_2026-09-23.sql`（135KB，含真实业务数据）
 #    在 `git status` 里是 `??`，一次 `git add -A` 就会把它推上公开仓库。
-#    ⚠️ 已跟踪的 `database/backup/nongfu_inventory_20260710.sql` 不受本规则影响（忽略规则对
-#    已跟踪文件无效），是否清理另行决定。
+#    ⚠️ 已跟踪文件不受本规则影响 —— `database/backup/nongfu_inventory_20260710.sql` 自早年
+#    提交起就在库里，已于 2026-09-23 用 `git rm --cached` 移出索引（本地文件保留）。
+#    ⚠️ `--cached` 只改「当前版本」，该文件仍存在于历史提交中；彻底清除需重写历史。
 database/backup/
 
 # 误提交的临时产物
