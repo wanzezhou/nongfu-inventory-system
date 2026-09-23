@@ -800,6 +800,104 @@ try {
     return true
   `)
   await sleep(400)
+  console.log('\n=== 15) 积分钱包（Web 管理端新增页：菜单可达 + 双积分展示 + 调整弹窗）===')
+  // 2026-09-23 新增。断言「这个新页面真的能用」，而不只是「文件存在」：
+  //   · 侧边栏有「积分钱包」入口（menuConfig 登记生效 —— 本仓库反复栽在「界面不可达」上）
+  //   · 页面结构：汇总卡 + 主体卡片（主体为主数据，必有行）
+  //   · **未开立主体必须有「开立钱包」** —— 否则未接入小程序的水站永远拿不到积分
+  //   · 调整弹窗含积分类型 / 方向 / 数量 / 操作原因（§18 原因必填）
+  const sideHasWallet = await cdp.eval(`
+    const els = [...document.querySelectorAll('aside .el-menu-item, aside .el-sub-menu__title, .el-menu-item')]
+    return els.some(e => e.textContent.trim().includes('积分钱包'))
+  `)
+  ok(!!sideHasWallet, '侧边栏有「积分钱包」入口（菜单登记生效，防界面不可达）')
+
+  await cdp.send('Page.navigate', { url: APP + 'wallet' })
+  await waitFor(async () => (await cdp.eval('return location.pathname')) === '/wallet', {
+    desc: '路由到 /wallet',
+    timeout: 20000
+  })
+  await waitFor(async () => !!(await cdp.eval("return document.querySelectorAll('.owner-card').length > 0")), {
+    desc: '主体卡片渲染',
+    timeout: 15000
+  })
+  await sleep(600)
+
+  const walletShape = await cdp.eval(`
+    const cards = [...document.querySelectorAll('.owner-card')]
+    const btnTexts = cards.map(c => [...c.querySelectorAll('button')].map(b => b.textContent.trim()).join('|'))
+    const body = document.body.textContent || ''
+    return {
+      summaryCards: document.querySelectorAll('.sum-card').length,
+      cards: cards.length,
+      hasAdjust: btnTexts.some(t => t.includes('调整积分')),
+      hasOpen: btnTexts.some(t => t.includes('开立钱包')),
+      hasUnopened: cards.some(c => /未开立/.test(c.textContent || '')),
+      mentionsRecharge: body.includes('充值积分'),
+      mentionsDelivery: body.includes('配送费积分'),
+      hasKeywordInput: !!document.querySelector('input[placeholder*="名称"]')
+    }
+  `)
+  console.log('    页面结构：', JSON.stringify(walletShape))
+  ok(
+    walletShape.summaryCards === 4,
+    '有 4 张汇总卡（总额 / 充值积分 / 配送费积分 / 开立情况）',
+    String(walletShape.summaryCards)
+  )
+  ok(walletShape.cards > 0, '渲染出主体卡片（水站 + 业务员为主数据，必有行）', String(walletShape.cards))
+  ok(!!walletShape.mentionsRecharge && !!walletShape.mentionsDelivery, '两类积分在页面可见（充值积分 / 配送费积分）')
+  ok(!!walletShape.hasKeywordInput, '有按名称/编号搜索的输入框')
+  // 开立入口是「未接入小程序的主体拿得到积分」的前提，两条都要在
+  ok(!!walletShape.hasOpen, '★ 未开立主体提供「开立钱包」入口')
+  ok(!!walletShape.hasAdjust, '已开立主体提供「调整积分」入口')
+  ok(
+    walletShape.hasUnopened ? walletShape.hasOpen : true,
+    '存在未开立主体时，卡片上确实显示「开立钱包」',
+    String(walletShape.hasUnopened)
+  )
+
+  const adjustOpened = await cdp.eval(`
+    const btn = [...document.querySelectorAll('.owner-card button')].find(b => b.textContent.trim() === '调整积分')
+    if (!btn) return false
+    btn.click()
+    return true
+  `)
+  ok(!!adjustOpened, '点击「调整积分」')
+  await waitFor(async () => !!(await cdp.eval("return !!document.querySelector('.el-dialog .el-form')")), {
+    desc: '调整积分的弹窗',
+    timeout: 10000
+  })
+  await sleep(400)
+
+  const adjustForm = await cdp.eval(`
+    const dlg = document.querySelector('.el-dialog')
+    const t = dlg?.textContent || ''
+    const labels = [...dlg.querySelectorAll('.el-form-item__label')].map(l => l.textContent.trim())
+    return {
+      labels,
+      hasRechargeOption: t.includes('充值积分'),
+      hasDeliveryOption: t.includes('配送费积分'),
+      hasDirection: t.includes('增加') && t.includes('扣减'),
+      reasonPlaceholder: !!dlg.querySelector('input[placeholder*="必填"]')
+    }
+  `)
+  console.log('    调整弹窗：', JSON.stringify(adjustForm))
+  for (const f of ['积分类型', '调整方向', '积分数量', '操作原因']) {
+    ok((adjustForm?.labels || []).includes(f), `调整弹窗含「${f}」`)
+  }
+  ok(
+    !!adjustForm?.hasRechargeOption && !!adjustForm?.hasDeliveryOption,
+    '积分类型可选「充值积分 / 配送费积分」（两类要能分开指定）'
+  )
+  ok(!!adjustForm?.hasDirection, '调整方向可选「增加 / 扣减」')
+  ok(!!adjustForm?.reasonPlaceholder, '操作原因标注必填（§18 强制留痕）')
+
+  await cdp.eval(`
+    const cancel = [...document.querySelectorAll('.el-dialog__footer button')].find(b => /取消/.test(b.textContent))
+    if (cancel) cancel.click()
+    return true
+  `)
+  await sleep(400)
 } catch (e) {
   fail++
   console.log('\n❌ 执行异常: ' + e.message)
