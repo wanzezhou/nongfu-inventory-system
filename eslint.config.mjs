@@ -222,6 +222,27 @@ export default [
     }
   },
 
+  // 部署模板：pm2 / 发布脚本，运行于 Node（CommonJS）
+  // ⚠️ 2026-09-23 补：`deploy/` 新增后没有任何配置块覆盖它 —— 与上面根 scripts/ 那次
+  //    （2026-09-18，自家门禁脚本被 no-undef 判红）是**同一类缺口**：
+  //    `deploy/ecosystem.config.js` 用 `module.exports`（pm2 要求 CommonJS），
+  //    而默认配置块只有 js.configs.recommended、不含 Node 全局 → `module` 被 no-undef 判红。
+  //    表现很别扭：模板本身是给运维照抄的「标准答案」，却过不了自家门禁。
+  //    这里与前端 scripts/、根 scripts/ 保持一致：只补 globals 与 console，
+  //    不并入项目红线（R1–R7 的对象是应用代码 / SQL / 服务端响应出口，在部署脚本里没有对应物，
+  //    硬套只会制造无意义告警 —— 而误报会训练人忽略告警）。
+  {
+    files: ['deploy/**/*.{js,cjs}'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: { ...globals.node }
+    },
+    rules: {
+      'no-console': 'off'
+    }
+  },
+
   // 后端 controllers/services：禁止横向 import 当工具库（历史问题 A2）
   // 注意：仅约束 controllers/services 内部，routes 导入 controller 是合法的，不在此列。
   {

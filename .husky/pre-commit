@@ -49,7 +49,13 @@ if [ -n "$blocked_path" ]; then
   exit 1
 fi
 
-if echo "$STAGED" | grep -qE "^database/backup_.*\.sql$"; then
+# ⚠️ 2026-09-23 修门禁自身缺陷（与 .gitignore 同一个洞）：原模式是 `^database/backup_.*\.sql$`，
+#    只覆盖 `backup_` 前缀的**文件名**，漏掉 `database/backup/` 这个**子目录**形态。
+#    两个洞方向一致 —— `.gitignore` 不忽略它、这里也不拦它，等于备份文件完全不设防。
+#    实测：`database/backup/pre_wallet_points_split_2026-09-23.sql`（135KB，含真实业务数据）
+#    是 `??` 未跟踪状态，`git add -A` 即可入库，而 hook 会**放行**。
+#    改为同时匹配两种形态：`backup_*.sql`（历史命名）与 `backup/*.sql`（目录形态）。
+if echo "$STAGED" | grep -qE "^database/backup_.*\.sql$|^database/backup/.*\.sql$"; then
   echo "❌ 禁止提交数据库备份：含真实业务数据（含客户手机号/银行账号）。"
   echo "   备份只留本地，已在 .gitignore 中排除。"
   exit 1

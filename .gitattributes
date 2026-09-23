@@ -1,0 +1,42 @@
+# ============================================================================
+# 行尾（EOL）约束
+#
+# ⚠️ 背景：本项目主要开发机是 Windows，且 core.autocrlf=true。
+#    默认行为下，仓库里存的虽然是 LF，但每次 checkout 都会把**工作区**文件
+#    转成 CRLF。Shell 脚本一旦带上 CRLF，上传到 Linux 服务器执行就会报
+#    `bash: $'\r': command not found`（且报错位置飘忽、极难定位）。
+#
+#    因此对「必须在 Linux 上执行」的文件强制 LF，与开发机平台无关。
+# ============================================================================
+
+# Shell 脚本：必须在 Linux 上运行，强制 LF
+*.sh text eol=lf
+
+# ⚠️ Git 钩子：必须是 LF。本机 core.autocrlf=true，默认会在 checkout 时把工作区文件
+#    转成 CRLF —— 而 POSIX sh 解析不了 `\r`，一旦钩子变成 CRLF，**每一次提交都会失败**，
+#    且报错信息（`bash: $'\r': command not found` 之类）指向的是钩子内部，
+#    不容易联想到「行尾」这个根因。
+.husky/pre-commit text eol=lf
+.husky/commit-msg text eol=lf
+
+# nginx 配置：同样只在 Linux 上使用
+deploy/nginx-nongfu.conf text eol=lf
+
+# 环境变量模板：值里可能含多行内容，保持 LF 更安全
+deploy/*.env.production.example text eol=lf
+
+# 数据库脚本：由 Linux 上的 mysql 客户端读取
+*.sql text eol=lf
+
+# Windows 批处理：必须保持 CRLF
+*.bat text eol=crlf
+
+# 图片等二进制：禁止任何换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.xlsx binary
+*.woff binary
+*.woff2 binary
